@@ -3,6 +3,13 @@
 
 const MYMEMORY_API = "https://api.mymemory.translated.net/get";
 
+const CACHE_MAX_SIZE = 200;
+const translationCache = new Map<string, string>();
+
+function getCacheKey(text: string, sourceLang: string, targetLang: string) {
+  return `${sourceLang}|${targetLang}|${text}`;
+}
+
 export interface TranslationResult {
   translatedText: string;
   detectedLanguage?: string;
@@ -16,6 +23,13 @@ export async function translateText(
 ): Promise<TranslationResult> {
   if (!text.trim()) {
     return { translatedText: "" };
+  }
+
+  // Check cache first
+  const cacheKey = getCacheKey(text.trim(), sourceLang, targetLang);
+  const cached = translationCache.get(cacheKey);
+  if (cached) {
+    return { translatedText: cached };
   }
 
   const langPair = `${sourceLang}|${targetLang}`;
@@ -69,10 +83,23 @@ export async function translateText(
     throw new Error(data.responseDetails || "Translation failed. Try again.");
   }
 
+  const translatedText: string = data.responseData.translatedText;
+
+  // Store in cache, evicting oldest entries if at capacity
+  if (translationCache.size >= CACHE_MAX_SIZE) {
+    const firstKey = translationCache.keys().next().value!;
+    translationCache.delete(firstKey);
+  }
+  translationCache.set(cacheKey, translatedText);
+
   return {
-    translatedText: data.responseData.translatedText,
+    translatedText,
     detectedLanguage: data.responseData.detectedLanguage,
   };
+}
+
+export function clearTranslationCache() {
+  translationCache.clear();
 }
 
 export interface Language {
