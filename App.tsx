@@ -19,6 +19,7 @@ import {
 } from "expo-speech-recognition";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
+import * as Speech from "expo-speech";
 import LanguagePicker from "./src/components/LanguagePicker";
 import {
   translateText,
@@ -53,6 +54,7 @@ export default function App() {
   const finalTextRef = useRef("");
 
   const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [speakingText, setSpeakingText] = useState<string | null>(null);
   const HISTORY_KEY = "translation_history";
 
   // Load persisted history on mount
@@ -73,6 +75,25 @@ export default function App() {
     setTimeout(() => setCopiedText(null), 1500);
   }, []);
 
+  const speakText = useCallback(
+    async (text: string, langCode: string) => {
+      if (speakingText === text) {
+        Speech.stop();
+        setSpeakingText(null);
+        return;
+      }
+      Speech.stop();
+      setSpeakingText(text);
+      Speech.speak(text, {
+        language: langCode,
+        onDone: () => setSpeakingText(null),
+        onStopped: () => setSpeakingText(null),
+        onError: () => setSpeakingText(null),
+      });
+    },
+    [speakingText]
+  );
+
   const showError = useCallback((msg: string) => {
     if (errorDismissTimeout.current) clearTimeout(errorDismissTimeout.current);
     setErrorMessage(msg);
@@ -90,12 +111,13 @@ export default function App() {
     AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-100)));
   }, [history]);
 
-  // Cleanup timeouts on unmount
+  // Cleanup timeouts and speech on unmount
   useEffect(() => {
     return () => {
       if (translationTimeout.current) clearTimeout(translationTimeout.current);
       if (errorDismissTimeout.current) clearTimeout(errorDismissTimeout.current);
       abortControllerRef.current?.abort();
+      Speech.stop();
     };
   }, []);
 
@@ -305,19 +327,30 @@ export default function App() {
                   <Text style={styles.copiedBadge}>Copied!</Text>
                 )}
               </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => copyToClipboard(item.translated)}
-                style={[styles.bubble, styles.translatedBubble]}
-                accessibilityRole="button"
-                accessibilityLabel={`Translation: ${item.translated}. Tap to copy.`}
-              >
-                <Text style={styles.translatedTextHistory}>
-                  {item.translated}
-                </Text>
-                {copiedText === item.translated && (
-                  <Text style={styles.copiedBadge}>Copied!</Text>
-                )}
-              </TouchableOpacity>
+              <View style={[styles.bubble, styles.translatedBubble]}>
+                <TouchableOpacity
+                  onPress={() => copyToClipboard(item.translated)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Translation: ${item.translated}. Tap to copy.`}
+                >
+                  <Text style={styles.translatedTextHistory}>
+                    {item.translated}
+                  </Text>
+                  {copiedText === item.translated && (
+                    <Text style={styles.copiedBadge}>Copied!</Text>
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.speakButton}
+                  onPress={() => speakText(item.translated, targetLang.speechCode)}
+                  accessibilityRole="button"
+                  accessibilityLabel={speakingText === item.translated ? "Stop speaking" : `Speak translation: ${item.translated}`}
+                >
+                  <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
+                    {speakingText === item.translated ? "⏹" : "🔊"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
           )}
           ListFooterComponent={
@@ -336,19 +369,30 @@ export default function App() {
                 </View>
 
                 {translatedText ? (
-                  <TouchableOpacity
-                    onPress={() => copyToClipboard(translatedText)}
-                    style={[styles.bubble, styles.liveTranslatedBubble]}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Live translation: ${translatedText}. Tap to copy.`}
-                  >
-                    <Text style={styles.liveTranslatedText}>
-                      {translatedText}
-                    </Text>
-                    {copiedText === translatedText && (
-                      <Text style={styles.copiedBadge}>Copied!</Text>
-                    )}
-                  </TouchableOpacity>
+                  <View style={[styles.bubble, styles.liveTranslatedBubble]}>
+                    <TouchableOpacity
+                      onPress={() => copyToClipboard(translatedText)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Live translation: ${translatedText}. Tap to copy.`}
+                    >
+                      <Text style={styles.liveTranslatedText}>
+                        {translatedText}
+                      </Text>
+                      {copiedText === translatedText && (
+                        <Text style={styles.copiedBadge}>Copied!</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.speakButton}
+                      onPress={() => speakText(translatedText, targetLang.speechCode)}
+                      accessibilityRole="button"
+                      accessibilityLabel={speakingText === translatedText ? "Stop speaking" : `Speak translation: ${translatedText}`}
+                    >
+                      <Text style={[styles.speakIcon, speakingText === translatedText && styles.speakIconActive]}>
+                        {speakingText === translatedText ? "⏹" : "🔊"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 ) : isTranslating ? (
                   <View style={styles.translatingRow}>
                     <ActivityIndicator size="small" color="#6c63ff" />
@@ -632,5 +676,16 @@ const styles = StyleSheet.create({
     color: "#ff4757",
     fontSize: 13,
     fontWeight: "600",
+  },
+  speakButton: {
+    alignSelf: "flex-end",
+    marginTop: 6,
+    padding: 4,
+  },
+  speakIcon: {
+    fontSize: 18,
+  },
+  speakIconActive: {
+    opacity: 0.6,
   },
 });
