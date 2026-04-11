@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -336,6 +336,7 @@ export default function App() {
       return;
     }
     setErrorMessage("");
+    setSearchQuery("");
 
     const speechLang = (conversationMode && activeSpeakerRef.current === "B")
       ? targetLang.speechCode
@@ -388,6 +389,17 @@ export default function App() {
   }, [history]);
 
   const [typedText, setTypedText] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredHistory = useMemo(() => {
+    if (!searchQuery.trim()) return history;
+    const q = searchQuery.toLowerCase();
+    return history.filter(
+      (item) =>
+        item.original.toLowerCase().includes(q) ||
+        item.translated.toLowerCase().includes(q)
+    );
+  }, [history, searchQuery]);
 
   const submitTypedText = useCallback(async () => {
     const text = typedText.trim();
@@ -495,8 +507,33 @@ export default function App() {
           ref={listRef}
           style={styles.scrollArea}
           contentContainerStyle={styles.scrollContent}
-          data={history}
+          data={filteredHistory}
           keyExtractor={(_, index) => String(index)}
+          ListHeaderComponent={
+            history.length > 2 && !isListening ? (
+              <View style={styles.searchRow}>
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search translations..."
+                  placeholderTextColor="#555577"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  accessibilityLabel="Search translation history"
+                  returnKeyType="search"
+                />
+                {searchQuery ? (
+                  <TouchableOpacity
+                    style={styles.searchClear}
+                    onPress={() => setSearchQuery("")}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear search"
+                  >
+                    <Text style={styles.searchClearText}>✕</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            ) : null
+          }
           renderItem={({ item }) => {
             const isB = item.speaker === "B";
             const speakLang = isB ? sourceLang.speechCode : targetLang.speechCode;
@@ -863,6 +900,31 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 20,
     flexGrow: 1,
+  },
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  searchInput: {
+    flex: 1,
+    backgroundColor: "#1a1a2e",
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    color: "#ffffff",
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: "#333355",
+  },
+  searchClear: {
+    marginLeft: 8,
+    padding: 4,
+  },
+  searchClearText: {
+    color: "#8888aa",
+    fontSize: 16,
+    fontWeight: "700",
   },
   historyItem: {
     marginBottom: 16,
