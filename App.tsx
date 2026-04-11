@@ -3,7 +3,7 @@ import {
   View,
   Text,
   TouchableOpacity,
-  ScrollView,
+  FlatList,
   StyleSheet,
   SafeAreaView,
   StatusBar,
@@ -44,7 +44,7 @@ export default function App() {
     Array<{ original: string; translated: string }>
   >([]);
 
-  const scrollRef = useRef<ScrollView>(null);
+  const listRef = useRef<FlatList>(null);
   const translationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const errorDismissTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -196,7 +196,9 @@ export default function App() {
 
   // Auto-scroll history
   useEffect(() => {
-    scrollRef.current?.scrollToEnd({ animated: true });
+    if (history.length > 0 || liveText) {
+      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+    }
   }, [history, liveText, translatedText]);
 
   const startListening = async () => {
@@ -279,14 +281,14 @@ export default function App() {
         ) : null}
 
         {/* Live translation area */}
-        <ScrollView
-          ref={scrollRef}
+        <FlatList
+          ref={listRef}
           style={styles.scrollArea}
           contentContainerStyle={styles.scrollContent}
-        >
-          {/* History */}
-          {history.map((item, index) => (
-            <View key={index} style={styles.historyItem}>
+          data={history}
+          keyExtractor={(_, index) => String(index)}
+          renderItem={({ item }) => (
+            <View style={styles.historyItem}>
               <TouchableOpacity
                 onPress={() => copyToClipboard(item.original)}
                 style={styles.bubble}
@@ -312,54 +314,57 @@ export default function App() {
                 )}
               </TouchableOpacity>
             </View>
-          ))}
-
-          {/* Current live text */}
-          {liveText ? (
-            <View style={styles.liveSection}>
-              <View style={styles.liveDivider}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.liveLabel}>
-                  {isListening ? "● LIVE" : "PROCESSING"}
-                </Text>
-                <View style={styles.dividerLine} />
-              </View>
-
-              <View style={[styles.bubble, styles.liveBubble]}>
-                <Text style={styles.liveOriginalText}>{liveText}</Text>
-              </View>
-
-              {translatedText ? (
-                <TouchableOpacity
-                  onPress={() => copyToClipboard(translatedText)}
-                  style={[styles.bubble, styles.liveTranslatedBubble]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Live translation: ${translatedText}. Tap to copy.`}
-                >
-                  <Text style={styles.liveTranslatedText}>
-                    {translatedText}
+          )}
+          ListFooterComponent={
+            liveText ? (
+              <View style={styles.liveSection}>
+                <View style={styles.liveDivider}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.liveLabel}>
+                    {isListening ? "● LIVE" : "PROCESSING"}
                   </Text>
-                  {copiedText === translatedText && (
-                    <Text style={styles.copiedBadge}>Copied!</Text>
-                  )}
-                </TouchableOpacity>
-              ) : isTranslating ? (
-                <View style={styles.translatingRow}>
-                  <ActivityIndicator size="small" color="#6c63ff" />
-                  <Text style={styles.translatingText}>Translating...</Text>
+                  <View style={styles.dividerLine} />
                 </View>
-              ) : null}
-            </View>
-          ) : !isListening && history.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyIcon}>🎙️</Text>
-              <Text style={styles.emptyTitle}>Tap to start translating</Text>
-              <Text style={styles.emptySubtitle}>
-                Speak naturally and see translations appear in real time
-              </Text>
-            </View>
-          ) : null}
-        </ScrollView>
+
+                <View style={[styles.bubble, styles.liveBubble]}>
+                  <Text style={styles.liveOriginalText}>{liveText}</Text>
+                </View>
+
+                {translatedText ? (
+                  <TouchableOpacity
+                    onPress={() => copyToClipboard(translatedText)}
+                    style={[styles.bubble, styles.liveTranslatedBubble]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Live translation: ${translatedText}. Tap to copy.`}
+                  >
+                    <Text style={styles.liveTranslatedText}>
+                      {translatedText}
+                    </Text>
+                    {copiedText === translatedText && (
+                      <Text style={styles.copiedBadge}>Copied!</Text>
+                    )}
+                  </TouchableOpacity>
+                ) : isTranslating ? (
+                  <View style={styles.translatingRow}>
+                    <ActivityIndicator size="small" color="#6c63ff" />
+                    <Text style={styles.translatingText}>Translating...</Text>
+                  </View>
+                ) : null}
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={
+            !isListening && !liveText ? (
+              <View style={styles.emptyState}>
+                <Text style={styles.emptyIcon}>🎙️</Text>
+                <Text style={styles.emptyTitle}>Tap to start translating</Text>
+                <Text style={styles.emptySubtitle}>
+                  Speak naturally and see translations appear in real time
+                </Text>
+              </View>
+            ) : null
+          }
+        />
 
         {/* Bottom controls */}
         <View style={styles.controls}>
