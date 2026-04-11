@@ -8,27 +8,32 @@ import {
   FlatList,
   StyleSheet,
 } from "react-native";
-import { Language, LANGUAGES } from "../services/translation";
+import { Language, LANGUAGES, AUTO_DETECT_LANGUAGE } from "../services/translation";
 
 interface Props {
   label: string;
   selected: Language;
   onSelect: (lang: Language) => void;
+  showAutoDetect?: boolean;
 }
 
-export default function LanguagePicker({ label, selected, onSelect }: Props) {
+export default function LanguagePicker({ label, selected, onSelect, showAutoDetect }: Props) {
   const [visible, setVisible] = useState(false);
   const [search, setSearch] = useState("");
 
+  const allLanguages = useMemo(() => {
+    return showAutoDetect ? [AUTO_DETECT_LANGUAGE, ...LANGUAGES] : LANGUAGES;
+  }, [showAutoDetect]);
+
   const filteredLanguages = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return LANGUAGES;
-    return LANGUAGES.filter(
+    if (!q) return allLanguages;
+    return allLanguages.filter(
       (lang) =>
         lang.name.toLowerCase().includes(q) ||
         lang.code.toLowerCase().includes(q)
     );
-  }, [search]);
+  }, [search, allLanguages]);
 
   const closeModal = () => {
     setVisible(false);

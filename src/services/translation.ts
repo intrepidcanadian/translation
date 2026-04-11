@@ -108,6 +108,12 @@ export interface Language {
   speechCode: string; // BCP-47 code for speech recognition
 }
 
+export const AUTO_DETECT_LANGUAGE: Language = {
+  code: "autodetect",
+  name: "Auto-Detect",
+  speechCode: "", // Not used for speech input with auto-detect
+};
+
 export const LANGUAGES: Language[] = [
   { code: "en", name: "English", speechCode: "en-US" },
   { code: "es", name: "Spanish", speechCode: "es-ES" },

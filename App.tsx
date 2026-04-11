@@ -26,6 +26,7 @@ import {
   translateText,
   Language,
   LANGUAGES,
+  AUTO_DETECT_LANGUAGE,
 } from "./src/services/translation";
 
 export default function App() {
@@ -285,7 +286,7 @@ export default function App() {
     setErrorMessage("");
 
     ExpoSpeechRecognitionModule.start({
-      lang: sourceLang.speechCode,
+      lang: sourceLang.code === "autodetect" ? "en-US" : sourceLang.speechCode,
       interimResults: true, // Key for live translation!
       continuous: true, // Keep listening
       maxAlternatives: 1,
@@ -299,8 +300,14 @@ export default function App() {
 
   const swapLanguages = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setSourceLang(targetLang);
-    setTargetLang(sourceLang);
+    if (sourceLang.code === "autodetect") {
+      // Can't swap auto-detect into target; use English as source instead
+      setSourceLang(targetLang);
+      setTargetLang(LANGUAGES[0]); // English
+    } else {
+      setSourceLang(targetLang);
+      setTargetLang(sourceLang);
+    }
   };
 
   const clearHistory = () => {
@@ -321,6 +328,7 @@ export default function App() {
             label="From"
             selected={sourceLang}
             onSelect={setSourceLang}
+            showAutoDetect
           />
           <TouchableOpacity
             style={styles.swapButton}
