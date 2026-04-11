@@ -16,6 +16,7 @@ import {
   ExpoSpeechRecognitionModule,
   useSpeechRecognitionEvent,
 } from "expo-speech-recognition";
+import * as Clipboard from "expo-clipboard";
 import LanguagePicker from "./src/components/LanguagePicker";
 import {
   translateText,
@@ -47,6 +48,15 @@ export default function App() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const errorDismissTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTranslatedRef = useRef("");
+  const finalTextRef = useRef("");
+
+  const [copiedText, setCopiedText] = useState<string | null>(null);
+
+  const copyToClipboard = useCallback(async (text: string) => {
+    await Clipboard.setStringAsync(text);
+    setCopiedText(text);
+    setTimeout(() => setCopiedText(null), 1500);
+  }, []);
 
   const showError = useCallback((msg: string) => {
     if (errorDismissTimeout.current) clearTimeout(errorDismissTimeout.current);
@@ -123,6 +133,7 @@ export default function App() {
     setFinalText("");
     setTranslatedText("");
     lastTranslatedRef.current = "";
+    finalTextRef.current = "";
   });
 
   useSpeechRecognitionEvent("result", (event) => {
@@ -130,15 +141,18 @@ export default function App() {
     const isFinal = event.isFinal;
 
     if (isFinal) {
-      setFinalText((prev) => {
-        const updated = prev ? `${prev} ${transcript}` : transcript;
-        setLiveText(updated);
-        debouncedTranslate(updated);
-        return updated;
-      });
+      const updated = finalTextRef.current
+        ? `${finalTextRef.current} ${transcript}`
+        : transcript;
+      finalTextRef.current = updated;
+      setFinalText(updated);
+      setLiveText(updated);
+      debouncedTranslate(updated);
     } else {
       // Show partial results for live feel
-      const combined = finalText ? `${finalText} ${transcript}` : transcript;
+      const combined = finalTextRef.current
+        ? `${finalTextRef.current} ${transcript}`
+        : transcript;
       setLiveText(combined);
       debouncedTranslate(combined);
     }
@@ -247,20 +261,31 @@ export default function App() {
         >
           {/* History */}
           {history.map((item, index) => (
-            <View
-              key={index}
-              style={styles.historyItem}
-              accessible={true}
-              accessibilityLabel={`Original: ${item.original}. Translation: ${item.translated}`}
-            >
-              <View style={styles.bubble}>
+            <View key={index} style={styles.historyItem}>
+              <TouchableOpacity
+                onPress={() => copyToClipboard(item.original)}
+                style={styles.bubble}
+                accessibilityRole="button"
+                accessibilityLabel={`Original: ${item.original}. Tap to copy.`}
+              >
                 <Text style={styles.originalText}>{item.original}</Text>
-              </View>
-              <View style={[styles.bubble, styles.translatedBubble]}>
+                {copiedText === item.original && (
+                  <Text style={styles.copiedBadge}>Copied!</Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => copyToClipboard(item.translated)}
+                style={[styles.bubble, styles.translatedBubble]}
+                accessibilityRole="button"
+                accessibilityLabel={`Translation: ${item.translated}. Tap to copy.`}
+              >
                 <Text style={styles.translatedTextHistory}>
                   {item.translated}
                 </Text>
-              </View>
+                {copiedText === item.translated && (
+                  <Text style={styles.copiedBadge}>Copied!</Text>
+                )}
+              </TouchableOpacity>
             </View>
           ))}
 
@@ -280,11 +305,19 @@ export default function App() {
               </View>
 
               {translatedText ? (
-                <View style={[styles.bubble, styles.liveTranslatedBubble]}>
+                <TouchableOpacity
+                  onPress={() => copyToClipboard(translatedText)}
+                  style={[styles.bubble, styles.liveTranslatedBubble]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Live translation: ${translatedText}. Tap to copy.`}
+                >
                   <Text style={styles.liveTranslatedText}>
                     {translatedText}
                   </Text>
-                </View>
+                  {copiedText === translatedText && (
+                    <Text style={styles.copiedBadge}>Copied!</Text>
+                  )}
+                </TouchableOpacity>
               ) : isTranslating ? (
                 <View style={styles.translatingRow}>
                   <ActivityIndicator size="small" color="#6c63ff" />
@@ -423,6 +456,12 @@ const styles = StyleSheet.create({
     backgroundColor: "#1e1e40",
     borderLeftWidth: 3,
     borderLeftColor: "#6c63ff",
+  },
+  copiedBadge: {
+    color: "#4ade80",
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 6,
   },
   originalText: {
     color: "#ccccdd",

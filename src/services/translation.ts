@@ -11,7 +11,8 @@ export interface TranslationResult {
 export async function translateText(
   text: string,
   sourceLang: string,
-  targetLang: string
+  targetLang: string,
+  signal?: AbortSignal
 ): Promise<TranslationResult> {
   if (!text.trim()) {
     return { translatedText: "" };
@@ -20,15 +21,28 @@ export async function translateText(
   const langPair = `${sourceLang}|${targetLang}`;
   const url = `${MYMEMORY_API}?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langPair)}`;
 
-  const response = await fetch(url);
+  let response: Response;
+  try {
+    response = await fetch(url, { signal });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    throw new Error("No internet connection. Check your network and try again.");
+  }
+
+  if (response.status === 429) {
+    throw new Error("Translation rate limit reached. Wait a moment and try again.");
+  }
   if (!response.ok) {
-    throw new Error(`Translation failed: ${response.status}`);
+    throw new Error(`Translation service error (${response.status}). Try again.`);
   }
 
   const data = await response.json();
 
+  if (data.responseStatus === 429) {
+    throw new Error("Too many translation requests. Wait a moment and try again.");
+  }
   if (data.responseStatus !== 200) {
-    throw new Error(data.responseDetails || "Translation failed");
+    throw new Error(data.responseDetails || "Translation failed. Try again.");
   }
 
   return {
