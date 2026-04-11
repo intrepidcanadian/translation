@@ -24,9 +24,11 @@ export default function LanguagePicker({ label, selected, onSelect }: Props) {
       <TouchableOpacity
         style={styles.button}
         onPress={() => setVisible(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`${label} language: ${selected.name}. Tap to change.`}
       >
         <Text style={styles.buttonText}>{selected.name}</Text>
-        <Text style={styles.arrow}>▼</Text>
+        <Text style={styles.arrow} importantForAccessibility="no">▼</Text>
       </TouchableOpacity>
 
       <Modal visible={visible} animationType="slide" transparent>
@@ -46,6 +48,9 @@ export default function LanguagePicker({ label, selected, onSelect }: Props) {
                     onSelect(item);
                     setVisible(false);
                   }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${item.name}`}
+                  accessibilityState={{ selected: item.code === selected.code }}
                 >
                   <Text
                     style={[
@@ -62,6 +67,8 @@ export default function LanguagePicker({ label, selected, onSelect }: Props) {
             <TouchableOpacity
               style={styles.closeButton}
               onPress={() => setVisible(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel language selection"
             >
               <Text style={styles.closeText}>Cancel</Text>
             </TouchableOpacity>

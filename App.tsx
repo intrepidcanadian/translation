@@ -9,6 +9,8 @@ import {
   StatusBar,
   ActivityIndicator,
   Platform,
+  Alert,
+  Linking,
 } from "react-native";
 import {
   ExpoSpeechRecognitionModule,
@@ -33,6 +35,7 @@ export default function App() {
   // Translation state
   const [translatedText, setTranslatedText] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   // History of completed translations
   const [history, setHistory] = useState<
@@ -41,7 +44,24 @@ export default function App() {
 
   const scrollRef = useRef<ScrollView>(null);
   const translationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const errorDismissTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTranslatedRef = useRef("");
+
+  const showError = useCallback((msg: string) => {
+    if (errorDismissTimeout.current) clearTimeout(errorDismissTimeout.current);
+    setErrorMessage(msg);
+    errorDismissTimeout.current = setTimeout(() => setErrorMessage(""), 4000);
+  }, []);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (translationTimeout.current) clearTimeout(translationTimeout.current);
+      if (errorDismissTimeout.current) clearTimeout(errorDismissTimeout.current);
+      abortControllerRef.current?.abort();
+    };
+  }, []);
 
   // Debounced translation - translates as text comes in
   const debouncedTranslate = useCallback(
@@ -53,23 +73,35 @@ export default function App() {
       if (!text.trim() || text.trim() === lastTranslatedRef.current) return;
 
       translationTimeout.current = setTimeout(async () => {
+        // Cancel any in-flight translation request
+        abortControllerRef.current?.abort();
+        const controller = new AbortController();
+        abortControllerRef.current = controller;
+
         setIsTranslating(true);
         try {
           const result = await translateText(
             text.trim(),
             sourceLang.code,
-            targetLang.code
+            targetLang.code,
+            controller.signal
           );
-          setTranslatedText(result.translatedText);
-          lastTranslatedRef.current = text.trim();
+          if (!controller.signal.aborted) {
+            setTranslatedText(result.translatedText);
+            lastTranslatedRef.current = text.trim();
+          }
         } catch (err) {
-          console.warn("Translation error:", err);
+          if (controller.signal.aborted) return; // Ignore cancelled requests
+          const msg = err instanceof Error ? err.message : "Translation failed";
+          showError(msg);
         } finally {
-          setIsTranslating(false);
+          if (!controller.signal.aborted) {
+            setIsTranslating(false);
+          }
         }
       }, 300); // 300ms debounce - fast enough to feel live
     },
-    [sourceLang.code, targetLang.code]
+    [sourceLang.code, targetLang.code, showError]
   );
 
   // Speech recognition events
@@ -113,7 +145,14 @@ export default function App() {
   });
 
   useSpeechRecognitionEvent("error", (event) => {
-    console.warn("Speech recognition error:", event.error);
+    const errorMap: Record<string, string> = {
+      "no-speech": "No speech detected. Try speaking louder.",
+      "audio-capture": "Microphone unavailable. Check your device settings.",
+      "not-allowed": "Microphone permission denied.",
+      "network": "Network error during speech recognition.",
+    };
+    const msg = errorMap[event.error] || `Speech error: ${event.error}`;
+    showError(msg);
     setIsListening(false);
   });
 
@@ -125,9 +164,17 @@ export default function App() {
   const startListening = async () => {
     const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!result.granted) {
-      console.warn("Permissions not granted", result);
+      Alert.alert(
+        "Microphone Permission Required",
+        "Live Translator needs microphone access to translate speech. Please enable it in Settings.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ]
+      );
       return;
     }
+    setErrorMessage("");
 
     ExpoSpeechRecognitionModule.start({
       lang: sourceLang.speechCode,
@@ -164,7 +211,12 @@ export default function App() {
             selected={sourceLang}
             onSelect={setSourceLang}
           />
-          <TouchableOpacity style={styles.swapButton} onPress={swapLanguages}>
+          <TouchableOpacity
+            style={styles.swapButton}
+            onPress={swapLanguages}
+            accessibilityRole="button"
+            accessibilityLabel={`Swap languages. Currently translating from ${sourceLang.name} to ${targetLang.name}`}
+          >
             <Text style={styles.swapIcon}>⇄</Text>
           </TouchableOpacity>
           <LanguagePicker
@@ -174,6 +226,19 @@ export default function App() {
           />
         </View>
 
+        {/* Error banner */}
+        {errorMessage ? (
+          <TouchableOpacity
+            style={styles.errorBanner}
+            onPress={() => setErrorMessage("")}
+            accessibilityRole="alert"
+            accessibilityLabel={`Error: ${errorMessage}. Tap to dismiss.`}
+          >
+            <Text style={styles.errorText}>{errorMessage}</Text>
+            <Text style={styles.errorDismiss} importantForAccessibility="no">✕</Text>
+          </TouchableOpacity>
+        ) : null}
+
         {/* Live translation area */}
         <ScrollView
           ref={scrollRef}
@@ -182,7 +247,12 @@ export default function App() {
         >
           {/* History */}
           {history.map((item, index) => (
-            <View key={index} style={styles.historyItem}>
+            <View
+              key={index}
+              style={styles.historyItem}
+              accessible={true}
+              accessibilityLabel={`Original: ${item.original}. Translation: ${item.translated}`}
+            >
               <View style={styles.bubble}>
                 <Text style={styles.originalText}>{item.original}</Text>
               </View>
@@ -239,6 +309,8 @@ export default function App() {
             <TouchableOpacity
               style={styles.clearButton}
               onPress={clearHistory}
+              accessibilityRole="button"
+              accessibilityLabel="Clear translation history"
             >
               <Text style={styles.clearText}>Clear</Text>
             </TouchableOpacity>
@@ -251,13 +323,17 @@ export default function App() {
             ]}
             onPress={isListening ? stopListening : startListening}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={isListening ? "Stop listening" : "Start listening"}
+            accessibilityState={{ busy: isListening }}
+            accessibilityHint={isListening ? "Stops speech recognition" : "Starts speech recognition for translation"}
           >
-            <Text style={styles.micIcon}>{isListening ? "⏹" : "🎙️"}</Text>
+            <Text style={styles.micIcon} importantForAccessibility="no">{isListening ? "⏹" : "🎙️"}</Text>
           </TouchableOpacity>
 
           {isListening && (
-            <View style={styles.listeningIndicator}>
-              <Text style={styles.listeningDot}>●</Text>
+            <View style={styles.listeningIndicator} accessibilityLiveRegion="polite">
+              <Text style={styles.listeningDot} importantForAccessibility="no">●</Text>
               <Text style={styles.listeningLabel}>Listening...</Text>
             </View>
           )}
@@ -302,6 +378,28 @@ const styles = StyleSheet.create({
   swapIcon: {
     color: "#6c63ff",
     fontSize: 20,
+    fontWeight: "700",
+  },
+  errorBanner: {
+    backgroundColor: "#3d1a1a",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: "#ff4757",
+  },
+  errorText: {
+    color: "#ff6b7a",
+    fontSize: 14,
+    flex: 1,
+  },
+  errorDismiss: {
+    color: "#ff4757",
+    fontSize: 16,
+    marginLeft: 12,
     fontWeight: "700",
   },
   scrollArea: {
