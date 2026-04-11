@@ -21,13 +21,37 @@ export async function translateText(
   const langPair = `${sourceLang}|${targetLang}`;
   const url = `${MYMEMORY_API}?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langPair)}`;
 
+  // Timeout after 8 seconds to prevent hanging requests
+  const timeoutController = new AbortController();
+  const timeoutId = setTimeout(() => timeoutController.abort(), 8000);
+
+  // If a caller-provided signal exists, forward its abort to our timeout controller
+  if (signal) {
+    if (signal.aborted) {
+      clearTimeout(timeoutId);
+      timeoutController.abort();
+    } else {
+      signal.addEventListener("abort", () => {
+        clearTimeout(timeoutId);
+        timeoutController.abort();
+      });
+    }
+  }
+
   let response: Response;
   try {
-    response = await fetch(url, { signal });
+    response = await fetch(url, { signal: timeoutController.signal });
   } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    clearTimeout(timeoutId);
+    if (err instanceof DOMException && err.name === "AbortError") {
+      // If the caller's signal caused the abort, re-throw as-is
+      if (signal?.aborted) throw err;
+      // Otherwise it was our timeout
+      throw new Error("Translation timed out. Check your connection and try again.");
+    }
     throw new Error("No internet connection. Check your network and try again.");
   }
+  clearTimeout(timeoutId);
 
   if (response.status === 429) {
     throw new Error("Translation rate limit reached. Wait a moment and try again.");
