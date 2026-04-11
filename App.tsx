@@ -7,7 +7,7 @@ import {
   StyleSheet,
   SafeAreaView,
   StatusBar,
-  ActivityIndicator,
+
   Platform,
   Alert,
   Linking,
@@ -63,6 +63,9 @@ export default function App() {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseOpacity = useRef(new Animated.Value(0)).current;
 
+  // Skeleton shimmer animation
+  const skeletonAnim = useRef(new Animated.Value(0.3)).current;
+
   useEffect(() => {
     if (isListening) {
       const pulse = Animated.loop(
@@ -100,6 +103,21 @@ export default function App() {
       pulseOpacity.setValue(0);
     }
   }, [isListening, pulseAnim, pulseOpacity]);
+
+  useEffect(() => {
+    if (isTranslating) {
+      const shimmer = Animated.loop(
+        Animated.sequence([
+          Animated.timing(skeletonAnim, { toValue: 0.7, duration: 800, useNativeDriver: true }),
+          Animated.timing(skeletonAnim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+        ])
+      );
+      shimmer.start();
+      return () => shimmer.stop();
+    } else {
+      skeletonAnim.setValue(0.3);
+    }
+  }, [isTranslating, skeletonAnim]);
 
   // Load persisted history on mount
   useEffect(() => {
@@ -445,9 +463,12 @@ export default function App() {
                     </TouchableOpacity>
                   </View>
                 ) : isTranslating ? (
-                  <View style={styles.translatingRow}>
-                    <ActivityIndicator size="small" color="#6c63ff" />
-                    <Text style={styles.translatingText}>Translating...</Text>
+                  <View style={[styles.bubble, styles.liveTranslatedBubble]}
+                    accessibilityLabel="Translation loading"
+                    accessibilityRole="progressbar"
+                  >
+                    <Animated.View style={[styles.skeletonLine, styles.skeletonLong, { opacity: skeletonAnim }]} />
+                    <Animated.View style={[styles.skeletonLine, styles.skeletonShort, { opacity: skeletonAnim }]} />
                   </View>
                 ) : null}
               </View>
@@ -660,15 +681,18 @@ const styles = StyleSheet.create({
     lineHeight: 28,
     fontWeight: "600",
   },
-  translatingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    padding: 12,
+  skeletonLine: {
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: "#333366",
+    marginBottom: 8,
   },
-  translatingText: {
-    color: "#6c63ff",
-    fontSize: 14,
+  skeletonLong: {
+    width: "80%",
+  },
+  skeletonShort: {
+    width: "50%",
+    marginBottom: 0,
   },
   emptyState: {
     flex: 1,
