@@ -12,6 +12,7 @@ import {
   Alert,
   Linking,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   ExpoSpeechRecognitionModule,
   useSpeechRecognitionEvent,
@@ -51,6 +52,18 @@ export default function App() {
   const finalTextRef = useRef("");
 
   const [copiedText, setCopiedText] = useState<string | null>(null);
+  const HISTORY_KEY = "translation_history";
+
+  // Load persisted history on mount
+  useEffect(() => {
+    AsyncStorage.getItem(HISTORY_KEY).then((stored) => {
+      if (stored) {
+        try {
+          setHistory(JSON.parse(stored));
+        } catch {}
+      }
+    });
+  }, []);
 
   const copyToClipboard = useCallback(async (text: string) => {
     await Clipboard.setStringAsync(text);
@@ -63,6 +76,17 @@ export default function App() {
     setErrorMessage(msg);
     errorDismissTimeout.current = setTimeout(() => setErrorMessage(""), 4000);
   }, []);
+
+  // Persist history to AsyncStorage whenever it changes
+  const historyLoaded = useRef(false);
+  useEffect(() => {
+    if (!historyLoaded.current) {
+      // Skip saving on initial render; mark loaded after first history state update
+      historyLoaded.current = true;
+      return;
+    }
+    AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-100)));
+  }, [history]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {
@@ -209,6 +233,7 @@ export default function App() {
 
   const clearHistory = () => {
     setHistory([]);
+    AsyncStorage.removeItem(HISTORY_KEY);
   };
 
   return (
