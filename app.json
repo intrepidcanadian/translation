@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "mobiletranslator",
+    "name": "Live Translator",
     "slug": "mobiletranslator",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -10,21 +10,37 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#1a1a2e"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to provide live translation.",
+        "NSMicrophoneUsageDescription": "This app needs microphone access to listen and translate speech in real time."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#1a1a2e"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Live Translator to access your microphone for real-time speech translation.",
+          "speechRecognitionPermission": "Allow Live Translator to use speech recognition for live translation."
+        }
+      ]
+    ]
   }
 }
