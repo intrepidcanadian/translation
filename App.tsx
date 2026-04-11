@@ -11,6 +11,7 @@ import {
   Platform,
   Alert,
   Linking,
+  Animated,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -56,6 +57,48 @@ export default function App() {
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
   const HISTORY_KEY = "translation_history";
+
+  // Pulse animation for mic button
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const pulseOpacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (isListening) {
+      const pulse = Animated.loop(
+        Animated.parallel([
+          Animated.sequence([
+            Animated.timing(pulseAnim, {
+              toValue: 1.6,
+              duration: 1000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulseAnim, {
+              toValue: 1,
+              duration: 0,
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.sequence([
+            Animated.timing(pulseOpacity, {
+              toValue: 0.5,
+              duration: 0,
+              useNativeDriver: true,
+            }),
+            Animated.timing(pulseOpacity, {
+              toValue: 0,
+              duration: 1000,
+              useNativeDriver: true,
+            }),
+          ]),
+        ])
+      );
+      pulse.start();
+      return () => pulse.stop();
+    } else {
+      pulseAnim.setValue(1);
+      pulseOpacity.setValue(0);
+    }
+  }, [isListening, pulseAnim, pulseOpacity]);
 
   // Load persisted history on mount
   useEffect(() => {
@@ -428,20 +471,33 @@ export default function App() {
             </TouchableOpacity>
           )}
 
-          <TouchableOpacity
-            style={[
-              styles.micButton,
-              isListening && styles.micButtonActive,
-            ]}
-            onPress={isListening ? stopListening : startListening}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={isListening ? "Stop listening" : "Start listening"}
-            accessibilityState={{ busy: isListening }}
-            accessibilityHint={isListening ? "Stops speech recognition" : "Starts speech recognition for translation"}
-          >
-            <Text style={styles.micIcon} importantForAccessibility="no">{isListening ? "⏹" : "🎙️"}</Text>
-          </TouchableOpacity>
+          <View style={styles.micButtonWrapper}>
+            {isListening && (
+              <Animated.View
+                style={[
+                  styles.pulseRing,
+                  {
+                    transform: [{ scale: pulseAnim }],
+                    opacity: pulseOpacity,
+                  },
+                ]}
+              />
+            )}
+            <TouchableOpacity
+              style={[
+                styles.micButton,
+                isListening && styles.micButtonActive,
+              ]}
+              onPress={isListening ? stopListening : startListening}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={isListening ? "Stop listening" : "Start listening"}
+              accessibilityState={{ busy: isListening }}
+              accessibilityHint={isListening ? "Stops speech recognition" : "Starts speech recognition for translation"}
+            >
+              <Text style={styles.micIcon} importantForAccessibility="no">{isListening ? "⏹" : "🎙️"}</Text>
+            </TouchableOpacity>
+          </View>
 
           {isListening && (
             <View style={styles.listeningIndicator} accessibilityLiveRegion="polite">
@@ -641,6 +697,19 @@ const styles = StyleSheet.create({
     color: "#555577",
     fontSize: 14,
     fontWeight: "600",
+  },
+  micButtonWrapper: {
+    width: 80,
+    height: 80,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pulseRing: {
+    position: "absolute",
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: "#ff4757",
   },
   micButton: {
     width: 80,
