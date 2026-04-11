@@ -14,7 +14,14 @@ import {
   Animated,
   Keyboard,
   Share,
+  PanResponder,
+  LayoutAnimation,
+  UIManager,
 } from "react-native";
+
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   ExpoSpeechRecognitionModule,
@@ -31,6 +38,82 @@ import {
   LANGUAGES,
   AUTO_DETECT_LANGUAGE,
 } from "./src/services/translation";
+
+function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
+  const translateX = useRef(new Animated.Value(0)).current;
+  const rowHeight = useRef(new Animated.Value(1)).current;
+  const THRESHOLD = -80;
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
+      onPanResponderMove: (_, gestureState) => {
+        if (gestureState.dx < 0) {
+          translateX.setValue(gestureState.dx);
+        }
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        if (gestureState.dx < THRESHOLD) {
+          Animated.timing(translateX, {
+            toValue: -400,
+            duration: 200,
+            useNativeDriver: true,
+          }).start(() => onDelete());
+        } else {
+          Animated.spring(translateX, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 8,
+          }).start();
+        }
+      },
+    })
+  ).current;
+
+  return (
+    <View style={swipeStyles.container}>
+      <View style={swipeStyles.deleteBackground}>
+        <Text style={swipeStyles.deleteText}>Delete</Text>
+        <Text style={swipeStyles.deleteIcon}>🗑</Text>
+      </View>
+      <Animated.View
+        style={{ transform: [{ translateX }] }}
+        {...panResponder.panHandlers}
+      >
+        {children}
+      </Animated.View>
+    </View>
+  );
+}
+
+const swipeStyles = StyleSheet.create({
+  container: {
+    overflow: "hidden",
+  },
+  deleteBackground: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 120,
+    backgroundColor: "#ff4757",
+    borderRadius: 16,
+    justifyContent: "center",
+    alignItems: "center",
+    flexDirection: "row",
+    gap: 6,
+    alignSelf: "flex-end",
+  },
+  deleteText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  deleteIcon: {
+    fontSize: 16,
+  },
+});
 
 export default function App() {
   const [isListening, setIsListening] = useState(false);
@@ -377,6 +460,12 @@ export default function App() {
     AsyncStorage.removeItem(HISTORY_KEY);
   };
 
+  const deleteHistoryItem = useCallback((index: number) => {
+    if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setHistory((prev) => prev.filter((_, i) => i !== index));
+  }, [settings.hapticsEnabled]);
+
   const shareHistory = useCallback(async () => {
     if (history.length === 0) return;
     const lines = history.map(
@@ -508,7 +597,7 @@ export default function App() {
           style={styles.scrollArea}
           contentContainerStyle={styles.scrollContent}
           data={filteredHistory}
-          keyExtractor={(_, index) => String(index)}
+          keyExtractor={(item, index) => `${index}-${item.original.slice(0, 20)}`}
           ListHeaderComponent={
             history.length > 2 && !isListening ? (
               <View style={styles.searchRow}>
@@ -534,10 +623,16 @@ export default function App() {
               </View>
             ) : null
           }
-          renderItem={({ item }) => {
+          renderItem={({ item, index }) => {
             const isB = item.speaker === "B";
             const speakLang = isB ? sourceLang.speechCode : targetLang.speechCode;
-            return conversationMode && item.speaker ? (
+            // Find the real index in the full history array for deletion
+            const realIndex = searchQuery.trim()
+              ? history.findIndex((h) => h === item)
+              : index;
+            return (
+            <SwipeableRow onDelete={() => deleteHistoryItem(realIndex)}>
+            {conversationMode && item.speaker ? (
               <View style={[styles.chatRow, isB && styles.chatRowRight]}>
                 <View style={[styles.chatBubble, isB ? styles.chatBubbleB : styles.chatBubbleA]}>
                   <Text style={styles.chatSpeakerLabel}>
@@ -602,6 +697,8 @@ export default function App() {
                   </TouchableOpacity>
                 </View>
               </View>
+            )}
+            </SwipeableRow>
             );
           }}
           ListFooterComponent={
