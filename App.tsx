@@ -4,14 +4,15 @@ import {
   Text,
   TouchableOpacity,
   FlatList,
+  TextInput,
   StyleSheet,
   SafeAreaView,
   StatusBar,
-
   Platform,
   Alert,
   Linking,
   Animated,
+  Keyboard,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -333,6 +334,38 @@ export default function App() {
     AsyncStorage.removeItem(HISTORY_KEY);
   };
 
+  const [typedText, setTypedText] = useState("");
+
+  const submitTypedText = useCallback(async () => {
+    const text = typedText.trim();
+    if (!text) return;
+    Keyboard.dismiss();
+    setTypedText("");
+
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setIsTranslating(true);
+    setLiveText(text);
+    try {
+      const result = await translateText(text, sourceLang.code, targetLang.code, controller.signal);
+      if (!controller.signal.aborted) {
+        setHistory((prev) => [...prev, { original: text, translated: result.translatedText }]);
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) {
+        const msg = err instanceof Error ? err.message : "Translation failed";
+        showError(msg);
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setIsTranslating(false);
+        setLiveText("");
+      }
+    }
+  }, [typedText, sourceLang.code, targetLang.code, showError]);
+
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" />
@@ -532,6 +565,32 @@ export default function App() {
             <View style={styles.listeningIndicator} accessibilityLiveRegion="polite">
               <Text style={styles.listeningDot} importantForAccessibility="no">●</Text>
               <Text style={styles.listeningLabel}>Listening...</Text>
+            </View>
+          )}
+
+          {!isListening && (
+            <View style={styles.textInputRow}>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Or type to translate..."
+                placeholderTextColor="#555577"
+                value={typedText}
+                onChangeText={setTypedText}
+                onSubmitEditing={submitTypedText}
+                returnKeyType="send"
+                editable={!isTranslating}
+                accessibilityLabel="Type text to translate"
+              />
+              {typedText.trim() ? (
+                <TouchableOpacity
+                  style={styles.sendButton}
+                  onPress={submitTypedText}
+                  accessibilityRole="button"
+                  accessibilityLabel="Translate typed text"
+                >
+                  <Text style={styles.sendIcon}>→</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           )}
         </View>
@@ -777,6 +836,37 @@ const styles = StyleSheet.create({
     color: "#ff4757",
     fontSize: 13,
     fontWeight: "600",
+  },
+  textInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 12,
+    gap: 8,
+    width: "100%",
+  },
+  textInput: {
+    flex: 1,
+    backgroundColor: "#1a1a2e",
+    borderRadius: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    color: "#ffffff",
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: "#333355",
+  },
+  sendButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#6c63ff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sendIcon: {
+    color: "#ffffff",
+    fontSize: 18,
+    fontWeight: "700",
   },
   speakButton: {
     alignSelf: "flex-end",
