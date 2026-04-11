@@ -18,6 +18,7 @@ import {
   useSpeechRecognitionEvent,
 } from "expo-speech-recognition";
 import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
 import LanguagePicker from "./src/components/LanguagePicker";
 import {
   translateText,
@@ -67,6 +68,7 @@ export default function App() {
 
   const copyToClipboard = useCallback(async (text: string) => {
     await Clipboard.setStringAsync(text);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setCopiedText(text);
     setTimeout(() => setCopiedText(null), 1500);
   }, []);
@@ -202,6 +204,7 @@ export default function App() {
   }, [history, liveText, translatedText]);
 
   const startListening = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!result.granted) {
       Alert.alert(
@@ -225,10 +228,12 @@ export default function App() {
   };
 
   const stopListening = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     ExpoSpeechRecognitionModule.stop();
   };
 
   const swapLanguages = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSourceLang(targetLang);
     setTargetLang(sourceLang);
   };
