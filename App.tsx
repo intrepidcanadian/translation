@@ -13,6 +13,7 @@ import {
   Linking,
   Animated,
   Keyboard,
+  Share,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -334,6 +335,17 @@ export default function App() {
     AsyncStorage.removeItem(HISTORY_KEY);
   };
 
+  const shareHistory = useCallback(async () => {
+    if (history.length === 0) return;
+    const lines = history.map(
+      (item, i) => `${i + 1}. ${item.original}\n   → ${item.translated}`
+    );
+    const text = `Live Translator - ${history.length} translation(s)\n\n${lines.join("\n\n")}`;
+    try {
+      await Share.share({ message: text });
+    } catch {}
+  }, [history]);
+
   const [typedText, setTypedText] = useState("");
 
   const submitTypedText = useCallback(async () => {
@@ -523,14 +535,24 @@ export default function App() {
         {/* Bottom controls */}
         <View style={styles.controls}>
           {history.length > 0 && !isListening && (
-            <TouchableOpacity
-              style={styles.clearButton}
-              onPress={clearHistory}
-              accessibilityRole="button"
-              accessibilityLabel="Clear translation history"
-            >
-              <Text style={styles.clearText}>Clear</Text>
-            </TouchableOpacity>
+            <View style={styles.historyActions}>
+              <TouchableOpacity
+                style={styles.clearButton}
+                onPress={clearHistory}
+                accessibilityRole="button"
+                accessibilityLabel="Clear translation history"
+              >
+                <Text style={styles.clearText}>Clear</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.clearButton}
+                onPress={shareHistory}
+                accessibilityRole="button"
+                accessibilityLabel="Share translation history"
+              >
+                <Text style={styles.shareText}>Share</Text>
+              </TouchableOpacity>
+            </View>
           )}
 
           <View style={styles.micButtonWrapper}>
@@ -781,11 +803,20 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === "android" ? 20 : 10,
     paddingTop: 10,
   },
-  clearButton: {
+  historyActions: {
+    flexDirection: "row",
+    gap: 20,
     marginBottom: 12,
+  },
+  clearButton: {
   },
   clearText: {
     color: "#555577",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  shareText: {
+    color: "#6c63ff",
     fontSize: 14,
     fontWeight: "600",
   },
