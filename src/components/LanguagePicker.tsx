@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   Modal,
   FlatList,
@@ -17,6 +18,22 @@ interface Props {
 
 export default function LanguagePicker({ label, selected, onSelect }: Props) {
   const [visible, setVisible] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const filteredLanguages = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return LANGUAGES;
+    return LANGUAGES.filter(
+      (lang) =>
+        lang.name.toLowerCase().includes(q) ||
+        lang.code.toLowerCase().includes(q)
+    );
+  }, [search]);
+
+  const closeModal = () => {
+    setVisible(false);
+    setSearch("");
+  };
 
   return (
     <View style={styles.container}>
@@ -35,9 +52,23 @@ export default function LanguagePicker({ label, selected, onSelect }: Props) {
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Select Language</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search languages..."
+              placeholderTextColor="#555577"
+              value={search}
+              onChangeText={setSearch}
+              autoCorrect={false}
+              autoCapitalize="none"
+              accessibilityLabel="Search languages"
+            />
             <FlatList
-              data={LANGUAGES}
+              data={filteredLanguages}
               keyExtractor={(item) => item.code}
+              keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={
+                <Text style={styles.noResults}>No languages found</Text>
+              }
               renderItem={({ item }) => (
                 <TouchableOpacity
                   style={[
@@ -46,7 +77,7 @@ export default function LanguagePicker({ label, selected, onSelect }: Props) {
                   ]}
                   onPress={() => {
                     onSelect(item);
-                    setVisible(false);
+                    closeModal();
                   }}
                   accessibilityRole="button"
                   accessibilityLabel={`${item.name}`}
@@ -66,7 +97,7 @@ export default function LanguagePicker({ label, selected, onSelect }: Props) {
             />
             <TouchableOpacity
               style={styles.closeButton}
-              onPress={() => setVisible(false)}
+              onPress={closeModal}
               accessibilityRole="button"
               accessibilityLabel="Cancel language selection"
             >
@@ -126,7 +157,17 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
     textAlign: "center",
-    marginBottom: 16,
+    marginBottom: 12,
+  },
+  searchInput: {
+    backgroundColor: "#252547",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    color: "#ffffff",
+    fontSize: 16,
   },
   langItem: {
     flexDirection: "row",
@@ -152,6 +193,12 @@ const styles = StyleSheet.create({
     color: "#555577",
     fontSize: 13,
     fontWeight: "600",
+  },
+  noResults: {
+    color: "#555577",
+    fontSize: 16,
+    textAlign: "center",
+    paddingVertical: 24,
   },
   closeButton: {
     padding: 18,
