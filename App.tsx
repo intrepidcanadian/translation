@@ -45,9 +45,13 @@ export default function App() {
   const [isTranslating, setIsTranslating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
+  // Conversation mode
+  const [conversationMode, setConversationMode] = useState(false);
+  const activeSpeakerRef = useRef<"A" | "B">("A");
+
   // History of completed translations
   const [history, setHistory] = useState<
-    Array<{ original: string; translated: string }>
+    Array<{ original: string; translated: string; speaker?: "A" | "B" }>
   >([]);
 
   const listRef = useRef<FlatList>(null);
@@ -200,12 +204,16 @@ export default function App() {
         const controller = new AbortController();
         abortControllerRef.current = controller;
 
+        // In conversation mode, speaker B translates in reverse direction
+        const fromCode = (conversationMode && activeSpeakerRef.current === "B") ? targetLang.code : sourceLang.code;
+        const toCode = (conversationMode && activeSpeakerRef.current === "B") ? sourceLang.code : targetLang.code;
+
         setIsTranslating(true);
         try {
           const result = await translateText(
             text.trim(),
-            sourceLang.code,
-            targetLang.code,
+            fromCode,
+            toCode,
             controller.signal
           );
           if (!controller.signal.aborted) {
@@ -223,7 +231,7 @@ export default function App() {
         }
       }, 300); // 300ms debounce - fast enough to feel live
     },
-    [sourceLang.code, targetLang.code, showError]
+    [sourceLang.code, targetLang.code, conversationMode, showError]
   );
 
   // Speech recognition events
@@ -236,9 +244,10 @@ export default function App() {
 
     // Save to history when speech ends
     if (finalText.trim() && translatedText.trim()) {
+      const speaker = conversationMode ? activeSpeakerRef.current : undefined;
       setHistory((prev) => [
         ...prev,
-        { original: finalText.trim(), translated: translatedText.trim() },
+        { original: finalText.trim(), translated: translatedText.trim(), speaker },
       ]);
     }
     setLiveText("");
@@ -305,12 +314,21 @@ export default function App() {
     }
     setErrorMessage("");
 
+    const speechLang = (conversationMode && activeSpeakerRef.current === "B")
+      ? targetLang.speechCode
+      : (sourceLang.code === "autodetect" ? "en-US" : sourceLang.speechCode);
+
     ExpoSpeechRecognitionModule.start({
-      lang: sourceLang.code === "autodetect" ? "en-US" : sourceLang.speechCode,
+      lang: speechLang,
       interimResults: true, // Key for live translation!
       continuous: true, // Keep listening
       maxAlternatives: 1,
     });
+  };
+
+  const startListeningAs = (speaker: "A" | "B") => {
+    activeSpeakerRef.current = speaker;
+    startListening();
   };
 
   const stopListening = () => {
@@ -383,7 +401,20 @@ export default function App() {
       <StatusBar barStyle="light-content" />
       <View style={styles.container}>
         {/* Header */}
-        <Text style={styles.title}>Live Translator</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.title}>Live Translator</Text>
+          <TouchableOpacity
+            style={[styles.modeToggle, conversationMode && styles.modeToggleActive]}
+            onPress={() => setConversationMode((m) => !m)}
+            accessibilityRole="button"
+            accessibilityLabel={conversationMode ? "Switch to standard mode" : "Switch to conversation mode"}
+            accessibilityState={{ selected: conversationMode }}
+          >
+            <Text style={[styles.modeToggleText, conversationMode && styles.modeToggleTextActive]}>
+              {conversationMode ? "Chat" : "Chat"}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         {/* Language selectors */}
         <View style={styles.langRow}>
@@ -428,45 +459,76 @@ export default function App() {
           contentContainerStyle={styles.scrollContent}
           data={history}
           keyExtractor={(_, index) => String(index)}
-          renderItem={({ item }) => (
-            <View style={styles.historyItem}>
-              <TouchableOpacity
-                onPress={() => copyToClipboard(item.original)}
-                style={styles.bubble}
-                accessibilityRole="button"
-                accessibilityLabel={`Original: ${item.original}. Tap to copy.`}
-              >
-                <Text style={styles.originalText}>{item.original}</Text>
-                {copiedText === item.original && (
-                  <Text style={styles.copiedBadge}>Copied!</Text>
-                )}
-              </TouchableOpacity>
-              <View style={[styles.bubble, styles.translatedBubble]}>
-                <TouchableOpacity
-                  onPress={() => copyToClipboard(item.translated)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Translation: ${item.translated}. Tap to copy.`}
-                >
-                  <Text style={styles.translatedTextHistory}>
-                    {item.translated}
+          renderItem={({ item }) => {
+            const isB = item.speaker === "B";
+            const speakLang = isB ? sourceLang.speechCode : targetLang.speechCode;
+            return conversationMode && item.speaker ? (
+              <View style={[styles.chatRow, isB && styles.chatRowRight]}>
+                <View style={[styles.chatBubble, isB ? styles.chatBubbleB : styles.chatBubbleA]}>
+                  <Text style={styles.chatSpeakerLabel}>
+                    {isB ? targetLang.name : sourceLang.name}
                   </Text>
-                  {copiedText === item.translated && (
+                  <TouchableOpacity onPress={() => copyToClipboard(item.original)}>
+                    <Text style={styles.chatOriginal}>{item.original}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => copyToClipboard(item.translated)}>
+                    <Text style={styles.chatTranslated}>{item.translated}</Text>
+                  </TouchableOpacity>
+                  {copiedText === item.original || copiedText === item.translated ? (
+                    <Text style={styles.copiedBadge}>Copied!</Text>
+                  ) : null}
+                  <TouchableOpacity
+                    style={styles.speakButton}
+                    onPress={() => speakText(item.translated, speakLang)}
+                    accessibilityRole="button"
+                    accessibilityLabel={speakingText === item.translated ? "Stop speaking" : "Speak translation"}
+                  >
+                    <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
+                      {speakingText === item.translated ? "⏹" : "🔊"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.historyItem}>
+                <TouchableOpacity
+                  onPress={() => copyToClipboard(item.original)}
+                  style={styles.bubble}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Original: ${item.original}. Tap to copy.`}
+                >
+                  <Text style={styles.originalText}>{item.original}</Text>
+                  {copiedText === item.original && (
                     <Text style={styles.copiedBadge}>Copied!</Text>
                   )}
                 </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.speakButton}
-                  onPress={() => speakText(item.translated, targetLang.speechCode)}
-                  accessibilityRole="button"
-                  accessibilityLabel={speakingText === item.translated ? "Stop speaking" : `Speak translation: ${item.translated}`}
-                >
-                  <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
-                    {speakingText === item.translated ? "⏹" : "🔊"}
-                  </Text>
-                </TouchableOpacity>
+                <View style={[styles.bubble, styles.translatedBubble]}>
+                  <TouchableOpacity
+                    onPress={() => copyToClipboard(item.translated)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Translation: ${item.translated}. Tap to copy.`}
+                  >
+                    <Text style={styles.translatedTextHistory}>
+                      {item.translated}
+                    </Text>
+                    {copiedText === item.translated && (
+                      <Text style={styles.copiedBadge}>Copied!</Text>
+                    )}
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.speakButton}
+                    onPress={() => speakText(item.translated, targetLang.speechCode)}
+                    accessibilityRole="button"
+                    accessibilityLabel={speakingText === item.translated ? "Stop speaking" : `Speak translation: ${item.translated}`}
+                  >
+                    <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
+                      {speakingText === item.translated ? "⏹" : "🔊"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </View>
-          )}
+            );
+          }}
           ListFooterComponent={
             liveText ? (
               <View style={styles.liveSection}>
@@ -555,39 +617,82 @@ export default function App() {
             </View>
           )}
 
-          <View style={styles.micButtonWrapper}>
-            {isListening && (
-              <Animated.View
-                style={[
-                  styles.pulseRing,
-                  {
-                    transform: [{ scale: pulseAnim }],
-                    opacity: pulseOpacity,
-                  },
-                ]}
-              />
-            )}
-            <TouchableOpacity
-              style={[
-                styles.micButton,
-                isListening && styles.micButtonActive,
-              ]}
-              onPress={isListening ? stopListening : startListening}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={isListening ? "Stop listening" : "Start listening"}
-              accessibilityState={{ busy: isListening }}
-              accessibilityHint={isListening ? "Stops speech recognition" : "Starts speech recognition for translation"}
-            >
-              <Text style={styles.micIcon} importantForAccessibility="no">{isListening ? "⏹" : "🎙️"}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {isListening && (
-            <View style={styles.listeningIndicator} accessibilityLiveRegion="polite">
-              <Text style={styles.listeningDot} importantForAccessibility="no">●</Text>
-              <Text style={styles.listeningLabel}>Listening...</Text>
+          {conversationMode ? (
+            <View style={styles.convoControls}>
+              <View style={styles.convoMicCol}>
+                <View style={styles.micButtonWrapper}>
+                  {isListening && activeSpeakerRef.current === "A" && (
+                    <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseAnim }], opacity: pulseOpacity }]} />
+                  )}
+                  <TouchableOpacity
+                    style={[styles.micButton, styles.micButtonSmall, isListening && activeSpeakerRef.current === "A" && styles.micButtonActive]}
+                    onPress={isListening ? stopListening : () => startListeningAs("A")}
+                    activeOpacity={0.7}
+                    disabled={isListening && activeSpeakerRef.current !== "A"}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Speak ${sourceLang.name}`}
+                  >
+                    <Text style={styles.micIcon} importantForAccessibility="no">🎙️</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.convoLabel}>{sourceLang.name}</Text>
+              </View>
+              <View style={styles.convoMicCol}>
+                <View style={styles.micButtonWrapper}>
+                  {isListening && activeSpeakerRef.current === "B" && (
+                    <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseAnim }], opacity: pulseOpacity }]} />
+                  )}
+                  <TouchableOpacity
+                    style={[styles.micButton, styles.micButtonSmall, isListening && activeSpeakerRef.current === "B" && styles.micButtonActive]}
+                    onPress={isListening ? stopListening : () => startListeningAs("B")}
+                    activeOpacity={0.7}
+                    disabled={isListening && activeSpeakerRef.current !== "B"}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Speak ${targetLang.name}`}
+                  >
+                    <Text style={styles.micIcon} importantForAccessibility="no">🎙️</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.convoLabel}>{targetLang.name}</Text>
+              </View>
             </View>
+          ) : (
+            <>
+              <View style={styles.micButtonWrapper}>
+                {isListening && (
+                  <Animated.View
+                    style={[
+                      styles.pulseRing,
+                      {
+                        transform: [{ scale: pulseAnim }],
+                        opacity: pulseOpacity,
+                      },
+                    ]}
+                  />
+                )}
+                <TouchableOpacity
+                  style={[
+                    styles.micButton,
+                    isListening && styles.micButtonActive,
+                  ]}
+                  onPress={isListening ? stopListening : startListening}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={isListening ? "Stop listening" : "Start listening"}
+                  accessibilityState={{ busy: isListening }}
+                  accessibilityHint={isListening ? "Stops speech recognition" : "Starts speech recognition for translation"}
+                >
+                  <Text style={styles.micIcon} importantForAccessibility="no">{isListening ? "⏹" : "🎙️"}</Text>
+                </TouchableOpacity>
+              </View>
+
+              {isListening && (
+                <View style={styles.listeningIndicator} accessibilityLiveRegion="polite">
+                  <Text style={styles.listeningDot} importantForAccessibility="no">●</Text>
+                  <Text style={styles.listeningLabel}>Listening...</Text>
+                </View>
+              )}
+            </>
           )}
 
           {!isListening && (
@@ -631,12 +736,36 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: Platform.OS === "android" ? 40 : 10,
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
   title: {
     color: "#ffffff",
     fontSize: 28,
     fontWeight: "800",
     textAlign: "center",
-    marginBottom: 20,
+  },
+  modeToggle: {
+    position: "absolute",
+    right: 0,
+    backgroundColor: "#252547",
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  modeToggleActive: {
+    backgroundColor: "#6c63ff",
+  },
+  modeToggleText: {
+    color: "#8888aa",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  modeToggleTextActive: {
+    color: "#ffffff",
   },
   langRow: {
     flexDirection: "row",
@@ -898,6 +1027,65 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 18,
     fontWeight: "700",
+  },
+  chatRow: {
+    marginBottom: 12,
+    alignItems: "flex-start",
+  },
+  chatRowRight: {
+    alignItems: "flex-end",
+  },
+  chatBubble: {
+    maxWidth: "80%",
+    borderRadius: 16,
+    padding: 12,
+  },
+  chatBubbleA: {
+    backgroundColor: "#1a1a2e",
+    borderBottomLeftRadius: 4,
+  },
+  chatBubbleB: {
+    backgroundColor: "#1e1e40",
+    borderBottomRightRadius: 4,
+  },
+  chatSpeakerLabel: {
+    color: "#6c63ff",
+    fontSize: 11,
+    fontWeight: "700",
+    marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  chatOriginal: {
+    color: "#ccccdd",
+    fontSize: 15,
+    lineHeight: 21,
+  },
+  chatTranslated: {
+    color: "#a8a4ff",
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: "500",
+    marginTop: 4,
+  },
+  convoControls: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 40,
+  },
+  convoMicCol: {
+    alignItems: "center",
+    gap: 8,
+  },
+  convoLabel: {
+    color: "#8888aa",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  micButtonSmall: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
   },
   speakButton: {
     alignSelf: "flex-end",
