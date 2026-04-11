@@ -1,0 +1,164 @@
+import React from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Modal,
+  Switch,
+  StyleSheet,
+  ScrollView,
+  Platform,
+} from "react-native";
+
+export interface Settings {
+  hapticsEnabled: boolean;
+  autoPlayTTS: boolean;
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  hapticsEnabled: true,
+  autoPlayTTS: false,
+};
+
+interface Props {
+  visible: boolean;
+  onClose: () => void;
+  settings: Settings;
+  onUpdate: (settings: Settings) => void;
+}
+
+export default function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
+  const toggle = (key: keyof Settings) => {
+    onUpdate({ ...settings, [key]: !settings[key] });
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.overlay}>
+        <View style={styles.content}>
+          <Text style={styles.title}>Settings</Text>
+
+          <ScrollView style={styles.list}>
+            <View style={styles.row}>
+              <View style={styles.rowText}>
+                <Text style={styles.rowTitle}>Haptic Feedback</Text>
+                <Text style={styles.rowSubtitle}>Vibration on button presses</Text>
+              </View>
+              <Switch
+                value={settings.hapticsEnabled}
+                onValueChange={() => toggle("hapticsEnabled")}
+                trackColor={{ false: "#333355", true: "#6c63ff" }}
+                thumbColor="#ffffff"
+                accessibilityLabel="Toggle haptic feedback"
+              />
+            </View>
+
+            <View style={styles.row}>
+              <View style={styles.rowText}>
+                <Text style={styles.rowTitle}>Auto-Play Translation</Text>
+                <Text style={styles.rowSubtitle}>Speak translations automatically</Text>
+              </View>
+              <Switch
+                value={settings.autoPlayTTS}
+                onValueChange={() => toggle("autoPlayTTS")}
+                trackColor={{ false: "#333355", true: "#6c63ff" }}
+                thumbColor="#ffffff"
+                accessibilityLabel="Toggle auto-play translation speech"
+              />
+            </View>
+
+            <View style={styles.infoSection}>
+              <Text style={styles.infoTitle}>About</Text>
+              <Text style={styles.infoText}>Live Translator v1.0.0</Text>
+              <Text style={styles.infoText}>Translation powered by MyMemory API</Text>
+            </View>
+          </ScrollView>
+
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close settings"
+          >
+            <Text style={styles.closeText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "flex-end",
+  },
+  content: {
+    backgroundColor: "#1a1a2e",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "70%",
+    paddingTop: 20,
+  },
+  title: {
+    color: "#ffffff",
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  list: {
+    paddingHorizontal: 20,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#252547",
+  },
+  rowText: {
+    flex: 1,
+    marginRight: 16,
+  },
+  rowTitle: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  rowSubtitle: {
+    color: "#666688",
+    fontSize: 13,
+    marginTop: 2,
+  },
+  infoSection: {
+    paddingTop: 24,
+    paddingBottom: 12,
+  },
+  infoTitle: {
+    color: "#8888aa",
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  infoText: {
+    color: "#555577",
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  closeButton: {
+    padding: 18,
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: "#252547",
+  },
+  closeText: {
+    color: "#6c63ff",
+    fontSize: 17,
+    fontWeight: "600",
+  },
+});

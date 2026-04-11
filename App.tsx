@@ -24,6 +24,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
 import LanguagePicker from "./src/components/LanguagePicker";
+import SettingsModal, { Settings, DEFAULT_SETTINGS } from "./src/components/SettingsModal";
 import {
   translateText,
   Language,
@@ -63,7 +64,10 @@ export default function App() {
 
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const HISTORY_KEY = "translation_history";
+  const SETTINGS_KEY = "app_settings";
 
   // Pulse animation for mic button
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -125,7 +129,7 @@ export default function App() {
     }
   }, [isTranslating, skeletonAnim]);
 
-  // Load persisted history on mount
+  // Load persisted history and settings on mount
   useEffect(() => {
     AsyncStorage.getItem(HISTORY_KEY).then((stored) => {
       if (stored) {
@@ -134,11 +138,23 @@ export default function App() {
         } catch {}
       }
     });
+    AsyncStorage.getItem(SETTINGS_KEY).then((stored) => {
+      if (stored) {
+        try {
+          setSettings((prev) => ({ ...prev, ...JSON.parse(stored) }));
+        } catch {}
+      }
+    });
+  }, []);
+
+  const updateSettings = useCallback((newSettings: Settings) => {
+    setSettings(newSettings);
+    AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
   }, []);
 
   const copyToClipboard = useCallback(async (text: string) => {
     await Clipboard.setStringAsync(text);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setCopiedText(text);
     setTimeout(() => setCopiedText(null), 1500);
   }, []);
@@ -249,6 +265,13 @@ export default function App() {
         ...prev,
         { original: finalText.trim(), translated: translatedText.trim(), speaker },
       ]);
+      // Auto-play the translation if enabled
+      if (settings.autoPlayTTS) {
+        const ttsLang = (conversationMode && speaker === "B")
+          ? sourceLang.speechCode
+          : targetLang.speechCode;
+        Speech.speak(translatedText.trim(), { language: ttsLang });
+      }
     }
     setLiveText("");
     setFinalText("");
@@ -299,7 +322,7 @@ export default function App() {
   }, [history, liveText, translatedText]);
 
   const startListening = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
     if (!result.granted) {
       Alert.alert(
@@ -332,12 +355,12 @@ export default function App() {
   };
 
   const stopListening = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     ExpoSpeechRecognitionModule.stop();
   };
 
   const swapLanguages = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (sourceLang.code === "autodetect") {
       // Can't swap auto-detect into target; use English as source instead
       setSourceLang(targetLang);
@@ -402,6 +425,14 @@ export default function App() {
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.headerRow}>
+          <TouchableOpacity
+            style={styles.settingsButton}
+            onPress={() => setShowSettings(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Open settings"
+          >
+            <Text style={styles.settingsIcon}>⚙</Text>
+          </TouchableOpacity>
           <Text style={styles.title}>Live Translator</Text>
           <TouchableOpacity
             style={[styles.modeToggle, conversationMode && styles.modeToggleActive]}
@@ -415,6 +446,13 @@ export default function App() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        <SettingsModal
+          visible={showSettings}
+          onClose={() => setShowSettings(false)}
+          settings={settings}
+          onUpdate={updateSettings}
+        />
 
         {/* Language selectors */}
         <View style={styles.langRow}>
@@ -747,6 +785,15 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "800",
     textAlign: "center",
+  },
+  settingsButton: {
+    position: "absolute",
+    left: 0,
+    padding: 4,
+  },
+  settingsIcon: {
+    color: "#8888aa",
+    fontSize: 22,
   },
   modeToggle: {
     position: "absolute",
