@@ -15,7 +15,6 @@ import {
   Keyboard,
   KeyboardAvoidingView,
   Share,
-  PanResponder,
   LayoutAnimation,
   UIManager,
   useWindowDimensions,
@@ -50,6 +49,8 @@ import {
 import { getColors } from "./src/theme";
 import { PHRASE_CATEGORIES, getPhraseOfTheDay, type OfflinePhrase } from "./src/services/offlinePhrases";
 import { romanize, needsRomanization, getRomanizationName } from "./src/services/romanization";
+import SwipeableRow from "./src/components/SwipeableRow";
+import TranslationBubble from "./src/components/TranslationBubble";
 import CameraTranslator from "./src/components/CameraTranslator";
 import DocumentScanner from "./src/components/DocumentScanner";
 import NotesViewer from "./src/components/NotesViewer";
@@ -63,109 +64,8 @@ import PhrasebookModal from "./src/components/PhrasebookModal";
 import StatsModal from "./src/components/StatsModal";
 import OnboardingModal from "./src/components/OnboardingModal";
 import type { ScannerModeKey } from "./src/services/scannerModes";
-
-function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const rowHeight = useRef(new Animated.Value(1)).current;
-  const THRESHOLD = -80;
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gestureState) =>
-        Math.abs(gestureState.dx) > 10 && Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-      onPanResponderMove: (_, gestureState) => {
-        if (gestureState.dx < 0) {
-          translateX.setValue(gestureState.dx);
-        }
-      },
-      onPanResponderRelease: (_, gestureState) => {
-        if (gestureState.dx < THRESHOLD) {
-          Animated.timing(translateX, {
-            toValue: -400,
-            duration: 200,
-            useNativeDriver: true,
-          }).start(() => onDelete());
-        } else {
-          Animated.spring(translateX, {
-            toValue: 0,
-            useNativeDriver: true,
-            bounciness: 8,
-          }).start();
-        }
-      },
-    })
-  ).current;
-
-  return (
-    <View style={swipeStyles.container}>
-      <View style={swipeStyles.deleteBackground}>
-        <Text style={swipeStyles.deleteText}>Delete</Text>
-        <Text style={swipeStyles.deleteIcon}>🗑</Text>
-      </View>
-      <Animated.View
-        style={{ transform: [{ translateX }] }}
-        {...panResponder.panHandlers}
-      >
-        {children}
-      </Animated.View>
-    </View>
-  );
-}
-
-const swipeStyles = StyleSheet.create({
-  container: {
-    overflow: "hidden",
-  },
-  deleteBackground: {
-    position: "absolute",
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: 120,
-    backgroundColor: "#ff4757",
-    borderRadius: 16,
-    justifyContent: "center",
-    alignItems: "center",
-    flexDirection: "row",
-    gap: 6,
-    alignSelf: "flex-end",
-  },
-  deleteText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 14,
-  },
-  deleteIcon: {
-    fontSize: 16,
-  },
-});
-
-function formatRelativeTime(timestamp?: number): string | null {
-  if (!timestamp) return null;
-  const now = Date.now();
-  const diff = now - timestamp;
-  const seconds = Math.floor(diff / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-
-  if (seconds < 60) return "Just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-
-  const date = new Date(timestamp);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  if (timestamp >= today.getTime()) {
-    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  }
-  if (timestamp >= yesterday.getTime()) {
-    return "Yesterday " + date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  }
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
+import type { HistoryItem } from "./src/types";
+import { formatRelativeTime } from "./src/utils/formatRelativeTime";
 
 export default function App() {
   return (
@@ -197,9 +97,7 @@ function AppContent() {
   const activeSpeakerRef = useRef<"A" | "B">("A");
 
   // History of completed translations
-  const [history, setHistory] = useState<
-    Array<{ original: string; translated: string; speaker?: "A" | "B"; favorited?: boolean; pending?: boolean; error?: boolean; sourceLangCode?: string; targetLangCode?: string; confidence?: number; detectedLang?: string; timestamp?: number }>
-  >([]);
+  const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
   const listRef = useRef<FlatList>(null);
@@ -251,6 +149,23 @@ function AppContent() {
   const [recentLangCodes, setRecentLangCodes] = useState<string[]>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
   // onboardingStep now managed internally by OnboardingModal
+  const HISTORY_PAGE_SIZE = 20;
+  const allHistoryRef = useRef<typeof history>([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const hasMoreHistory = useMemo(
+    () => allHistoryRef.current.length > history.length,
+    [history.length]
+  );
+
+  const loadMoreHistory = useCallback(() => {
+    if (!hasMoreHistory) return;
+    const all = allHistoryRef.current;
+    const nextPage = historyPage + 1;
+    const startIdx = Math.max(0, all.length - nextPage * HISTORY_PAGE_SIZE);
+    setHistory(all.slice(startIdx));
+    setHistoryPage(nextPage);
+  }, [hasMoreHistory, historyPage]);
+
   const HISTORY_KEY = "translation_history";
   const SETTINGS_KEY = "app_settings";
   const RECENT_LANGS_KEY = "recent_languages";
@@ -369,7 +284,12 @@ function AppContent() {
         .catch((err) => console.warn(`Failed to load ${key}:`, err));
     };
 
-    loadJSON<typeof history>(HISTORY_KEY, (data) => setHistory(data));
+    loadJSON<typeof history>(HISTORY_KEY, (data) => {
+      allHistoryRef.current = data;
+      // Only load the most recent page initially
+      const startIdx = Math.max(0, data.length - HISTORY_PAGE_SIZE);
+      setHistory(data.slice(startIdx));
+    });
     loadJSON<Settings>(SETTINGS_KEY, (data) => {
       // Migrate removed providers (deepl/google) to apple
       const provider = data.translationProvider;
@@ -716,6 +636,8 @@ function AppContent() {
       historyLoaded.current = true;
       return;
     }
+    // Keep full history ref in sync for pagination
+    allHistoryRef.current = history;
     AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-100)));
   }, [history]);
 
@@ -1131,7 +1053,33 @@ function AppContent() {
   }, [selectedIndices, history]);
 
   const [typedText, setTypedText] = useState("");
+  const [typedPreview, setTypedPreview] = useState("");
+  const typedTranslateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+
+  // Translate-as-you-type: debounced preview of typed text
+  useEffect(() => {
+    if (typedTranslateTimer.current) clearTimeout(typedTranslateTimer.current);
+    const text = typedText.trim();
+    if (!text || isListening) {
+      setTypedPreview("");
+      return;
+    }
+    typedTranslateTimer.current = setTimeout(async () => {
+      try {
+        const glossaryMatch = glossaryLookup(text, sourceLang.code, targetLang.code);
+        if (glossaryMatch) {
+          setTypedPreview(glossaryMatch);
+          return;
+        }
+        const result = await translateText(text, sourceLang.code, targetLang.code, { provider: settings.translationProvider });
+        setTypedPreview(result.translatedText);
+      } catch {
+        setTypedPreview("");
+      }
+    }, 500);
+    return () => { if (typedTranslateTimer.current) clearTimeout(typedTranslateTimer.current); };
+  }, [typedText, sourceLang.code, targetLang.code, settings.translationProvider, glossaryLookup, isListening]);
 
   const filteredHistory = useMemo(() => {
     let filtered = history;
@@ -1241,6 +1189,7 @@ function AppContent() {
     if (!text) return;
     Keyboard.dismiss();
     setTypedText("");
+    setTypedPreview("");
 
     // Queue if offline
     if (isOffline) {
@@ -1563,6 +1512,16 @@ function AppContent() {
           ListHeaderComponent={
             history.length > 2 && !isListening ? (
               <View>
+                {hasMoreHistory && (
+                  <TouchableOpacity
+                    style={[styles.loadMoreButton, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
+                    onPress={loadMoreHistory}
+                    accessibilityRole="button"
+                    accessibilityLabel="Load older translations"
+                  >
+                    <Text style={[styles.loadMoreText, { color: colors.primary }]}>Load older translations</Text>
+                  </TouchableOpacity>
+                )}
                 <View style={styles.searchRow}>
                   <TextInput
                     style={[styles.searchInput, { backgroundColor: colors.bubbleBg, color: colors.primaryText, borderColor: colors.border }]}
@@ -1692,142 +1651,24 @@ function AppContent() {
                 </View>
               </View>
             ) : (
-              <View style={styles.historyItem}>
-                <TouchableOpacity
-                  onPress={() => copyToClipboard(item.original)}
-                  style={[styles.bubble, { backgroundColor: colors.bubbleBg }]}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Original: ${item.original}. Tap to copy.`}
-                >
-                  <Text style={[styles.originalText, { color: colors.secondaryText }, dynamicFontSizes.original]}>{item.original}</Text>
-                  {item.detectedLang && (() => {
-                    const lang = LANGUAGES.find((l) => l.code === item.detectedLang);
-                    return lang ? (
-                      <Text style={[styles.detectedLangBadge, { color: colors.primary, backgroundColor: colors.primary + "18" }]}>
-                        Detected: {lang.name}
-                      </Text>
-                    ) : null;
-                  })()}
-                  {settings.showRomanization && item.sourceLangCode && (
-                    <AlignedRomanization text={item.original} langCode={item.sourceLangCode} textColor={colors.secondaryText} romanColor={colors.mutedText} />
-                  )}
-                  {copiedText === item.original && (
-                    <Text style={styles.copiedBadge}>Copied!</Text>
-                  )}
-                </TouchableOpacity>
-                <View style={[styles.bubble, styles.translatedBubble, { backgroundColor: colors.translatedBubbleBg, borderLeftColor: item.error ? colors.errorBorder : item.pending ? colors.offlineText : colors.primary }]}>
-                  <TouchableOpacity
-                    onPress={() => !item.pending && !item.error && copyToClipboard(item.translated)}
-                    accessibilityRole="button"
-                    accessibilityLabel={item.error ? `Translation failed: ${item.translated}` : item.pending ? `Queued for translation when online` : `Translation: ${item.translated}. Tap to copy. Long-press a word for alternatives.`}
-                    disabled={item.pending || item.error}
-                  >
-                    {item.pending && (
-                      <Text style={[styles.pendingBadge, { color: colors.offlineText }]}>
-                        Queued offline
-                      </Text>
-                    )}
-                    {item.error && (
-                      <Text style={[styles.pendingBadge, { color: colors.errorText }]}>
-                        Failed
-                      </Text>
-                    )}
-                    <Text style={[styles.translatedTextHistory, { color: item.error ? colors.errorText : item.pending ? colors.dimText : colors.translatedText }, dynamicFontSizes.translated, (item.pending || item.error) && { fontStyle: "italic" }]}>
-                      {!item.error && !item.pending && item.sourceLangCode && item.targetLangCode
-                        ? item.translated.split(/(\s+)/).map((segment: string, si: number) =>
-                            /\s+/.test(segment) ? segment : (
-                              <Text
-                                key={si}
-                                onLongPress={() => {
-                                  const cleaned = segment.replace(/[^\p{L}\p{N}]/gu, "");
-                                  if (cleaned) lookupWordAlternatives(cleaned, item.targetLangCode!, item.sourceLangCode!);
-                                }}
-                                style={styles.tappableWord}
-                              >
-                                {segment}
-                              </Text>
-                            )
-                          )
-                        : item.translated
-                      }
-                    </Text>
-                    {settings.showRomanization && !item.error && !item.pending && item.targetLangCode && (
-                      <AlignedRomanization text={item.translated} langCode={item.targetLangCode} textColor={colors.translatedText} romanColor={colors.mutedText} />
-                    )}
-                    {copiedText === item.translated && (
-                      <Text style={styles.copiedBadge}>Copied!</Text>
-                    )}
-                  </TouchableOpacity>
-                  <View style={styles.bubbleActions}>
-                    {!item.error && !item.pending && (
-                      <Text style={[styles.wordCountBubble, { color: colors.dimText }]}>
-                        {item.original.trim().split(/\s+/).filter(Boolean).length} → {item.translated.trim().split(/\s+/).filter(Boolean).length} words
-                        {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
-                      </Text>
-                    )}
-                    {(() => {
-                      const timeStr = formatRelativeTime(item.timestamp);
-                      return timeStr ? (
-                        <Text style={[styles.timestampText, { color: colors.dimText }]}>{timeStr}</Text>
-                      ) : null;
-                    })()}
-                    {item.error ? (
-                      <TouchableOpacity
-                        style={styles.retryButton}
-                        onPress={() => retryTranslation(realIndex)}
-                        accessibilityRole="button"
-                        accessibilityLabel="Retry translation"
-                      >
-                        <Text style={styles.retryIcon}>↻</Text>
-                        <Text style={[styles.retryText, { color: colors.primary }]}>Retry</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.speakButton}
-                        onPress={() => speakText(item.translated, targetLang.speechCode)}
-                        accessibilityRole="button"
-                        accessibilityLabel={speakingText === item.translated ? "Stop speaking" : `Speak translation: ${item.translated}`}
-                      >
-                        <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
-                          {speakingText === item.translated ? "⏹" : "🔊"}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                    <TouchableOpacity
-                      style={styles.favoriteButton}
-                      onPress={() => toggleFavorite(realIndex)}
-                      accessibilityRole="button"
-                      accessibilityLabel={item.favorited ? "Remove from favorites" : "Add to favorites"}
-                    >
-                      <Text style={[styles.favoriteIcon, { color: colors.dimText }, item.favorited && styles.favoriteIconActive]}>
-                        {item.favorited ? "★" : "☆"}
-                      </Text>
-                    </TouchableOpacity>
-                    {!item.error && !item.pending && (
-                      <TouchableOpacity
-                        style={styles.speakButton}
-                        onPress={() => compareTranslation(item.original, item.translated)}
-                        accessibilityRole="button"
-                        accessibilityLabel="Compare translations from different engines"
-                      >
-                        <Text style={[styles.compareIcon, { color: colors.dimText }]}>⇔</Text>
-                      </TouchableOpacity>
-                    )}
-                    {!item.error && !item.pending && (
-                      <TouchableOpacity
-                        style={styles.speakButton}
-                        onPress={() => {
-                          setCorrectionPrompt({ index: realIndex, original: item.original, translated: item.translated });
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel="Suggest a better translation"
-                      >
-                        <Text style={[{ fontSize: 14, color: colors.dimText }]}>✏️</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              </View>
+              <TranslationBubble
+                item={item}
+                realIndex={realIndex}
+                colors={colors}
+                dynamicFontSizes={dynamicFontSizes}
+                showRomanization={settings.showRomanization}
+                fontSizeScale={fontScale}
+                copiedText={copiedText}
+                speakingText={speakingText}
+                targetSpeechCode={targetLang.speechCode}
+                onCopy={copyToClipboard}
+                onSpeak={speakText}
+                onToggleFavorite={toggleFavorite}
+                onRetry={retryTranslation}
+                onCompare={compareTranslation}
+                onCorrection={setCorrectionPrompt}
+                onWordLongPress={lookupWordAlternatives}
+              />
             )}
             </SwipeableRow>
             );
@@ -2126,6 +1967,16 @@ function AppContent() {
                   </Text>
                 </View>
               )}
+              {typedPreview ? (
+                <TouchableOpacity
+                  style={[styles.typedPreview, { backgroundColor: colors.translatedBubbleBg, borderLeftColor: colors.primary }]}
+                  onPress={() => copyToClipboard(typedPreview)}
+                  accessibilityLabel={`Preview: ${typedPreview}. Tap to copy.`}
+                >
+                  <Text style={[styles.typedPreviewText, { color: colors.translatedText }]}>{typedPreview}</Text>
+                  {copiedText === typedPreview && <Text style={styles.copiedBadge}>Copied!</Text>}
+                </TouchableOpacity>
+              ) : null}
             </View>
           )}
         </View>
@@ -2775,6 +2626,29 @@ const styles = StyleSheet.create({
   compareIcon: {
     fontSize: 16,
     fontWeight: "700",
+  },
+  loadMoreButton: {
+    alignSelf: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    marginBottom: 12,
+  },
+  loadMoreText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  typedPreview: {
+    marginTop: 8,
+    borderRadius: 12,
+    padding: 10,
+    borderLeftWidth: 3,
+  },
+  typedPreviewText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "500",
   },
   // Landscape overrides
   containerLandscape: {
