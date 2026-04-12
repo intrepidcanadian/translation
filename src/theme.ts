@@ -41,6 +41,11 @@ export interface ThemeColors {
   // Skeleton
   skeleton: string;
 
+  // Offline
+  offlineBg: string;
+  offlineText: string;
+  offlineBorder: string;
+
   // Status bar
   statusBar: "light-content" | "dark-content";
 }
@@ -80,6 +85,10 @@ export const darkColors: ThemeColors = {
 
   skeleton: "#333366",
 
+  offlineBg: "#2a2a1a",
+  offlineText: "#ffbb33",
+  offlineBorder: "#665500",
+
   statusBar: "light-content",
 };
 
@@ -117,6 +126,10 @@ export const lightColors: ThemeColors = {
   errorBorder: "#ff6b7a",
 
   skeleton: "#d8d8e8",
+
+  offlineBg: "#fff8e0",
+  offlineText: "#996600",
+  offlineBorder: "#eebb44",
 
   statusBar: "dark-content",
 };

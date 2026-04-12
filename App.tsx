@@ -23,6 +23,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import NetInfo, { useNetInfo } from "@react-native-community/netinfo";
 import {
   ExpoSpeechRecognitionModule,
   useSpeechRecognitionEvent,
@@ -539,6 +540,10 @@ export default function App() {
 
   const colors = useMemo(() => getColors(settings.theme), [settings.theme]);
 
+  // Network connectivity
+  const netInfo = useNetInfo();
+  const isOffline = netInfo.isConnected === false;
+
   const submitTypedText = useCallback(async () => {
     const text = typedText.trim();
     if (!text) return;
@@ -630,6 +635,20 @@ export default function App() {
             colors={colors}
           />
         </View>
+
+        {/* Offline banner */}
+        {isOffline && (
+          <View
+            style={[styles.offlineBanner, { backgroundColor: colors.offlineBg, borderColor: colors.offlineBorder }]}
+            accessibilityRole="alert"
+            accessibilityLabel="No internet connection. Translations require network access."
+          >
+            <Text style={[styles.offlineIcon]}>⚡</Text>
+            <Text style={[styles.offlineText, { color: colors.offlineText }]}>
+              No connection — translations unavailable
+            </Text>
+          </View>
+        )}
 
         {/* Error banner */}
         {errorMessage ? (
@@ -1050,6 +1069,23 @@ const styles = StyleSheet.create({
   swapIcon: {
     fontSize: 20,
     fontWeight: "700",
+  },
+  offlineBanner: {
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    gap: 8,
+  },
+  offlineIcon: {
+    fontSize: 16,
+  },
+  offlineText: {
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
   },
   errorBanner: {
     borderRadius: 12,
