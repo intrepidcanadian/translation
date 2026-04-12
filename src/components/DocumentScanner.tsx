@@ -7,8 +7,8 @@ import {
   Platform,
   ActivityIndicator,
   ScrollView,
-  Dimensions,
   Share,
+  Alert,
 } from "react-native";
 import {
   Camera,
@@ -19,7 +19,14 @@ import {
 import TextRecognition, {
   TextRecognitionScript,
 } from "@react-native-ml-kit/text-recognition";
-import { translateText, translateAppleBatch, type TranslateOptions } from "../services/translation";
+import { translateText, translateAppleBatch } from "../services/translation";
+import {
+  SCANNER_MODES,
+  getScannerMode,
+  type ScannerModeKey,
+  type ExtractedField,
+} from "../services/scannerModes";
+import { saveNote } from "../services/notes";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 
@@ -46,9 +53,10 @@ interface DocumentScannerProps {
   apiKey?: string;
   hapticsEnabled?: boolean;
   colors: any;
+  initialMode?: ScannerModeKey;
+  onNoteSaved?: () => void;
 }
 
-// Map language codes to ML Kit scripts
 function getMLKitScript(langCode: string): TextRecognitionScript {
   switch (langCode) {
     case "zh": return TextRecognitionScript.CHINESE;
@@ -59,7 +67,7 @@ function getMLKitScript(langCode: string): TextRecognitionScript {
   }
 }
 
-type AnalysisPhase = "camera" | "processing" | "results";
+type Phase = "camera" | "processing" | "results";
 
 export default function DocumentScanner({
   visible,
@@ -70,19 +78,26 @@ export default function DocumentScanner({
   apiKey,
   hapticsEnabled = true,
   colors,
+  initialMode = "document",
+  onNoteSaved,
 }: DocumentScannerProps) {
   const device = useCameraDevice("back");
   const { hasPermission, requestPermission } = useCameraPermission();
   const cameraRef = useRef<Camera>(null);
-  const [phase, setPhase] = useState<AnalysisPhase>("camera");
+  const [phase, setPhase] = useState<Phase>("camera");
   const [processingStep, setProcessingStep] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [selectedMode, setSelectedMode] = useState<ScannerModeKey>(initialMode);
 
   // Results
   const [originalText, setOriginalText] = useState("");
   const [translatedText, setTranslatedText] = useState("");
   const [analysis, setAnalysis] = useState<DocumentAnalysis | null>(null);
+  const [modeFields, setModeFields] = useState<ExtractedField[]>([]);
   const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [noteSaved, setNoteSaved] = useState(false);
+
+  const mode = getScannerMode(selectedMode);
 
   useEffect(() => {
     if (visible && !hasPermission) {
@@ -90,16 +105,18 @@ export default function DocumentScanner({
     }
   }, [visible, hasPermission, requestPermission]);
 
-  // Reset state when opening
   useEffect(() => {
     if (visible) {
       setPhase("camera");
       setOriginalText("");
       setTranslatedText("");
       setAnalysis(null);
+      setModeFields([]);
       setError(null);
+      setNoteSaved(false);
+      setSelectedMode(initialMode);
     }
-  }, [visible]);
+  }, [visible, initialMode]);
 
   const copyText = useCallback(async (text: string) => {
     await Clipboard.setStringAsync(text);
@@ -108,9 +125,34 @@ export default function DocumentScanner({
     setTimeout(() => setCopiedText(null), 1500);
   }, [hapticsEnabled]);
 
+  const handleSaveNote = useCallback(async () => {
+    if (noteSaved) return;
+    const fields = modeFields.map((f) => ({ label: f.label, value: f.value }));
+    const formatted = mode.formatNotes(originalText, translatedText, modeFields);
+    const firstLine = translatedText.split("\n")[0]?.slice(0, 60) || "Untitled";
+
+    try {
+      await saveNote({
+        title: `${mode.icon} ${firstLine}`,
+        originalText,
+        translatedText,
+        formattedNote: formatted,
+        scanMode: selectedMode,
+        sourceLang: sourceLangCode,
+        targetLang: targetLangCode,
+        fields,
+      });
+      setNoteSaved(true);
+      if (hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      onNoteSaved?.();
+    } catch {
+      Alert.alert("Error", "Failed to save note");
+    }
+  }, [noteSaved, modeFields, mode, originalText, translatedText, selectedMode, sourceLangCode, targetLangCode, hapticsEnabled, onNoteSaved]);
+
   const shareResults = useCallback(async () => {
     const sections: string[] = [];
-    sections.push("=== DOCUMENT INTELLIGENCE REPORT ===\n");
+    sections.push(`=== ${mode.label.toUpperCase()} SCAN REPORT ===\n`);
 
     if (analysis?.detectedLanguage) {
       sections.push(`Detected Language: ${analysis.detectedLanguage}`);
@@ -119,23 +161,27 @@ export default function DocumentScanner({
       sections.push(`Words: ${analysis.wordCount} | Sentences: ${analysis.sentenceCount}\n`);
     }
 
-    sections.push("--- ORIGINAL TEXT ---");
-    sections.push(originalText);
-    sections.push("\n--- TRANSLATED TEXT ---");
-    sections.push(translatedText);
+    if (modeFields.length > 0) {
+      sections.push("--- KEY INFORMATION ---");
+      for (const f of modeFields) {
+        sections.push(`${f.label}: ${f.value}`);
+      }
+      sections.push("");
+    }
 
-    if (analysis) {
+    sections.push("--- TRANSLATED TEXT ---");
+    sections.push(translatedText);
+    sections.push("\n--- ORIGINAL TEXT ---");
+    sections.push(originalText);
+
+    // Include NER entities for document mode
+    if (selectedMode === "document" && analysis) {
       const entities: string[] = [];
       if (analysis.persons.length > 0) entities.push(`People: ${analysis.persons.join(", ")}`);
       if (analysis.organizations.length > 0) entities.push(`Organizations: ${analysis.organizations.join(", ")}`);
       if (analysis.places.length > 0) entities.push(`Places: ${analysis.places.join(", ")}`);
-      if (analysis.dates.length > 0) entities.push(`Dates: ${analysis.dates.join(", ")}`);
-      if (analysis.moneyAmounts.length > 0) entities.push(`Amounts: ${analysis.moneyAmounts.join(", ")}`);
-      if (analysis.phoneNumbers.length > 0) entities.push(`Phone Numbers: ${analysis.phoneNumbers.join(", ")}`);
-      if (analysis.addresses.length > 0) entities.push(`Addresses: ${analysis.addresses.join(", ")}`);
-
       if (entities.length > 0) {
-        sections.push("\n--- KEY INFORMATION ---");
+        sections.push("\n--- ENTITIES ---");
         sections.push(entities.join("\n"));
       }
     }
@@ -143,7 +189,7 @@ export default function DocumentScanner({
     try {
       await Share.share({ message: sections.join("\n") });
     } catch {}
-  }, [originalText, translatedText, analysis]);
+  }, [mode, originalText, translatedText, analysis, modeFields, selectedMode]);
 
   const captureAndAnalyze = useCallback(async () => {
     if (!cameraRef.current) return;
@@ -151,14 +197,14 @@ export default function DocumentScanner({
 
     setPhase("processing");
     setError(null);
+    setNoteSaved(false);
 
     try {
-      // Step 1: Capture photo
-      setProcessingStep("Capturing document...");
+      // Step 1: Capture
+      setProcessingStep("Capturing image...");
       const photo: PhotoFile = await cameraRef.current.takePhoto({
         enableShutterSound: true,
       });
-
       const imageUri = Platform.OS === "android" ? `file://${photo.path}` : photo.path;
 
       // Step 2: OCR
@@ -167,17 +213,16 @@ export default function DocumentScanner({
       const result = await TextRecognition.recognize(imageUri, script);
 
       if (!result.blocks.length) {
-        setError("No text detected in the image. Try again with a clearer photo.");
+        setError("No text detected. Try again with a clearer photo.");
         setPhase("camera");
         return;
       }
 
-      // Combine all text blocks into full document text
       const fullText = result.blocks.map((b) => b.text).join("\n");
       setOriginalText(fullText);
 
-      // Step 3: Analyze original text with on-device NER
-      setProcessingStep("Analyzing document (on-device AI)...");
+      // Step 3: On-device NER analysis (iOS only via Apple NaturalLanguage)
+      setProcessingStep("Analyzing with on-device AI...");
       let docAnalysis: DocumentAnalysis;
 
       if (Platform.OS === "ios") {
@@ -185,7 +230,6 @@ export default function DocumentScanner({
           const AppleTranslation = require("../../../modules/apple-translation");
           docAnalysis = await AppleTranslation.analyzeDocument(fullText);
         } catch {
-          // Fallback: basic analysis without native module
           docAnalysis = basicAnalysis(fullText);
         }
       } else {
@@ -194,23 +238,20 @@ export default function DocumentScanner({
 
       setAnalysis(docAnalysis);
 
-      // Step 4: Translate the full document
-      setProcessingStep("Translating document...");
+      // Step 4: Translate
+      setProcessingStep("Translating...");
       const srcLang = sourceLangCode === "autodetect"
         ? (docAnalysis.detectedLanguage || "en")
         : sourceLangCode;
 
-      let translated: string;
-
-      // For longer documents, translate paragraph by paragraph for better quality
       const paragraphs = fullText.split("\n").filter((p) => p.trim());
+      let translated: string;
 
       if (translationProvider === "apple" && Platform.OS === "ios" && paragraphs.length > 1) {
         try {
           const results = await translateAppleBatch(paragraphs, srcLang, targetLangCode);
           translated = results.join("\n");
         } catch {
-          // Fallback to sequential
           const results: string[] = [];
           for (const para of paragraphs) {
             const res = await translateText(para, srcLang, targetLangCode, {
@@ -236,18 +277,21 @@ export default function DocumentScanner({
 
       setTranslatedText(translated);
 
-      // Step 5: Also analyze the translated text for additional entity extraction
+      // Step 5: Mode-specific field extraction
       setProcessingStep("Extracting key information...");
+      const currentMode = getScannerMode(selectedMode);
+      const fields = currentMode.extractFields(fullText, translated);
+      setModeFields(fields);
+
+      // Step 6: Also analyze translated text for additional NER entities
       if (Platform.OS === "ios") {
         try {
           const AppleTranslation = require("../../../modules/apple-translation");
           const translatedAnalysis = await AppleTranslation.analyzeDocument(translated);
-          // Merge entities from translated text (might catch things missed in original)
           setAnalysis((prev) => {
             if (!prev) return docAnalysis;
             return {
               ...prev,
-              // Merge, deduplicate
               persons: [...new Set([...prev.persons, ...translatedAnalysis.persons])],
               organizations: [...new Set([...prev.organizations, ...translatedAnalysis.organizations])],
               places: [...new Set([...prev.places, ...translatedAnalysis.places])],
@@ -264,10 +308,10 @@ export default function DocumentScanner({
       setPhase("results");
       if (hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err: any) {
-      setError(err?.message || "Document analysis failed");
+      setError(err?.message || "Analysis failed");
       setPhase("camera");
     }
-  }, [sourceLangCode, targetLangCode, translationProvider, apiKey, hapticsEnabled]);
+  }, [sourceLangCode, targetLangCode, translationProvider, apiKey, hapticsEnabled, selectedMode]);
 
   if (!visible) return null;
 
@@ -305,6 +349,7 @@ export default function DocumentScanner({
     return (
       <View style={styles.container}>
         <View style={styles.centerContent}>
+          <Text style={styles.modeIcon}>{mode.icon}</Text>
           <ActivityIndicator size="large" color="#6c63ff" />
           <Text style={styles.processingStep}>{processingStep}</Text>
           <Text style={styles.processingHint}>All processing runs on-device</Text>
@@ -320,29 +365,24 @@ export default function DocumentScanner({
       analysis.organizations.length > 0 ||
       analysis.places.length > 0
     );
-    const hasFlags = analysis && (
-      analysis.moneyAmounts.length > 0 ||
-      analysis.dates.length > 0 ||
-      analysis.phoneNumbers.length > 0 ||
-      analysis.addresses.length > 0 ||
-      analysis.urls.length > 0
-    );
 
     return (
       <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
         {/* Header */}
         <View style={[styles.resultsHeader, { backgroundColor: colors.cardBg, borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={() => setPhase("camera")} accessibilityLabel="Scan another document">
+          <TouchableOpacity onPress={() => setPhase("camera")} accessibilityLabel="Scan again">
             <Text style={[styles.headerAction, { color: colors.primary }]}>Rescan</Text>
           </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.titleText }]}>Document Intelligence</Text>
-          <TouchableOpacity onPress={onClose} accessibilityLabel="Close document scanner">
+          <Text style={[styles.headerTitle, { color: colors.titleText }]}>
+            {mode.icon} {mode.label}
+          </Text>
+          <TouchableOpacity onPress={onClose} accessibilityLabel="Close scanner">
             <Text style={[styles.headerAction, { color: colors.primary }]}>Done</Text>
           </TouchableOpacity>
         </View>
 
         <ScrollView style={styles.resultsScroll} contentContainerStyle={styles.resultsContent}>
-          {/* Document stats bar */}
+          {/* Stats bar */}
           {analysis && (
             <View style={[styles.statsBar, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
               {analysis.detectedLanguage && (
@@ -362,29 +402,24 @@ export default function DocumentScanner({
             </View>
           )}
 
-          {/* Key Information / Flags */}
-          {hasFlags && (
+          {/* Mode-specific extracted fields */}
+          {modeFields.length > 0 && (
             <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Key Information</Text>
-              {analysis!.moneyAmounts.length > 0 && (
-                <EntityRow icon="$" label="Money" items={analysis!.moneyAmounts} colors={colors} iconColor="#4ade80" />
-              )}
-              {analysis!.dates.length > 0 && (
-                <EntityRow icon="D" label="Dates" items={analysis!.dates} colors={colors} iconColor="#f59e0b" />
-              )}
-              {analysis!.phoneNumbers.length > 0 && (
-                <EntityRow icon="#" label="Phone" items={analysis!.phoneNumbers} colors={colors} iconColor="#60a5fa" />
-              )}
-              {analysis!.addresses.length > 0 && (
-                <EntityRow icon="@" label="Addresses" items={analysis!.addresses} colors={colors} iconColor="#c084fc" />
-              )}
-              {analysis!.urls.length > 0 && (
-                <EntityRow icon="~" label="Links" items={analysis!.urls} colors={colors} iconColor="#22d3ee" />
-              )}
+              <Text style={[styles.sectionTitle, { color: colors.titleText }]}>
+                {selectedMode === "receipt" ? "Receipt Details" :
+                 selectedMode === "businessCard" ? "Contact Info" :
+                 selectedMode === "medicine" ? "Medication Details" :
+                 selectedMode === "menu" ? "Menu Analysis" :
+                 selectedMode === "textbook" ? "Content Summary" :
+                 "Key Information"}
+              </Text>
+              {modeFields.map((field, i) => (
+                <FieldRow key={i} field={field} colors={colors} onCopy={copyText} copiedText={copiedText} />
+              ))}
             </View>
           )}
 
-          {/* Named Entities */}
+          {/* NER entities (document mode or when entities found) */}
           {hasEntities && (
             <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
               <Text style={[styles.sectionTitle, { color: colors.titleText }]}>People, Places & Organizations</Text>
@@ -430,14 +465,25 @@ export default function DocumentScanner({
             </Text>
           </View>
 
-          {/* Share button */}
-          <TouchableOpacity
-            style={[styles.shareButton, { backgroundColor: colors.primary }]}
-            onPress={shareResults}
-            accessibilityLabel="Share document analysis"
-          >
-            <Text style={styles.shareButtonText}>Share Full Report</Text>
-          </TouchableOpacity>
+          {/* Action buttons */}
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: noteSaved ? "#4ade80" : colors.primary }]}
+              onPress={handleSaveNote}
+              accessibilityLabel="Save as note"
+            >
+              <Text style={styles.actionButtonText}>
+                {noteSaved ? "Saved!" : "Save as Note"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, { backgroundColor: colors.primary }]}
+              onPress={shareResults}
+              accessibilityLabel="Share report"
+            >
+              <Text style={styles.actionButtonText}>Share Report</Text>
+            </TouchableOpacity>
+          </View>
 
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -467,13 +513,41 @@ export default function DocumentScanner({
 
       {/* Top bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.topButton} onPress={onClose} accessibilityLabel="Close document scanner">
+        <TouchableOpacity style={styles.topButton} onPress={onClose} accessibilityLabel="Close scanner">
           <Text style={styles.topButtonText}>X</Text>
         </TouchableOpacity>
         <View style={styles.docBadge}>
-          <Text style={styles.docBadgeText}>Document Intelligence</Text>
+          <Text style={styles.docBadgeText}>{mode.icon} {mode.label}</Text>
         </View>
         <View style={{ width: 44 }} />
+      </View>
+
+      {/* Mode selector pills */}
+      <View style={styles.modeBar}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modeBarContent}>
+          {SCANNER_MODES.map((m) => (
+            <TouchableOpacity
+              key={m.key}
+              style={[
+                styles.modePill,
+                selectedMode === m.key && styles.modePillActive,
+              ]}
+              onPress={() => {
+                setSelectedMode(m.key);
+                if (hapticsEnabled) Haptics.selectionAsync();
+              }}
+              accessibilityLabel={`${m.label} scanner mode`}
+            >
+              <Text style={styles.modePillIcon}>{m.icon}</Text>
+              <Text style={[
+                styles.modePillText,
+                selectedMode === m.key && styles.modePillTextActive,
+              ]}>
+                {m.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
       </View>
 
       {/* Error banner */}
@@ -485,14 +559,12 @@ export default function DocumentScanner({
 
       {/* Bottom capture area */}
       <View style={styles.bottomArea}>
-        <Text style={styles.instructionText}>
-          Position document within frame and capture
-        </Text>
+        <Text style={styles.instructionText}>{mode.instruction}</Text>
         <TouchableOpacity
           style={styles.captureButton}
           onPress={captureAndAnalyze}
           activeOpacity={0.7}
-          accessibilityLabel="Capture and analyze document"
+          accessibilityLabel={`Capture and analyze ${mode.label.toLowerCase()}`}
         >
           <View style={styles.captureInner} />
         </TouchableOpacity>
@@ -504,7 +576,38 @@ export default function DocumentScanner({
   );
 }
 
-// Entity display row component
+// Field display row for mode-specific extracted fields
+function FieldRow({
+  field,
+  colors,
+  onCopy,
+  copiedText,
+}: {
+  field: ExtractedField;
+  colors: any;
+  onCopy: (text: string) => void;
+  copiedText: string | null;
+}) {
+  return (
+    <TouchableOpacity
+      style={entityStyles.row}
+      onPress={() => onCopy(field.value)}
+      accessibilityLabel={`${field.label}: ${field.value}. Tap to copy`}
+    >
+      <View style={[entityStyles.iconBadge, { backgroundColor: field.color + "22" }]}>
+        <Text style={[entityStyles.iconText, { color: field.color }]}>{field.icon}</Text>
+      </View>
+      <View style={entityStyles.content}>
+        <Text style={[entityStyles.label, { color: colors.dimText }]}>{field.label}</Text>
+        <Text style={[entityStyles.valueText, { color: colors.primaryText }]} numberOfLines={2}>
+          {copiedText === field.value ? "Copied!" : field.value}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// Entity display row component (NER results)
 function EntityRow({
   icon,
   label,
@@ -597,6 +700,10 @@ const entityStyles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 4,
   },
+  valueText: {
+    fontSize: 15,
+    lineHeight: 20,
+  },
   chips: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -625,6 +732,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 32,
+  },
+  modeIcon: {
+    fontSize: 48,
+    marginBottom: 16,
   },
   errorText: {
     color: "#fff",
@@ -704,10 +815,44 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
   },
+  // Mode selector
+  modeBar: {
+    position: "absolute",
+    top: Platform.OS === "ios" ? 108 : 94,
+    left: 0,
+    right: 0,
+  },
+  modeBarContent: {
+    paddingHorizontal: 12,
+    gap: 8,
+  },
+  modePill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    gap: 6,
+  },
+  modePillActive: {
+    backgroundColor: "rgba(108,99,255,0.85)",
+  },
+  modePillIcon: {
+    fontSize: 16,
+  },
+  modePillText: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  modePillTextActive: {
+    color: "#fff",
+  },
   // Frame guide
   frameGuide: {
     position: "absolute",
-    top: "15%",
+    top: "18%",
     left: "8%",
     right: "8%",
     bottom: "25%",
@@ -749,7 +894,7 @@ const styles = StyleSheet.create({
   // Error
   errorBanner: {
     position: "absolute",
-    top: Platform.OS === "ios" ? 110 : 96,
+    top: Platform.OS === "ios" ? 150 : 136,
     left: 20,
     right: 20,
     backgroundColor: "rgba(255,71,87,0.9)",
@@ -870,13 +1015,18 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
-  shareButton: {
+  actionRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 4,
+  },
+  actionButton: {
+    flex: 1,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: "center",
-    marginTop: 4,
   },
-  shareButtonText: {
+  actionButtonText: {
     color: "#fff",
     fontSize: 16,
     fontWeight: "700",

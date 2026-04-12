@@ -51,8 +51,10 @@ import { PHRASE_CATEGORIES, getPhrasesForCategory, getPhraseOfTheDay, type Phras
 import { romanize, needsRomanization, getRomanizationName } from "./src/services/romanization";
 import CameraTranslator from "./src/components/CameraTranslator";
 import DocumentScanner from "./src/components/DocumentScanner";
+import NotesViewer from "./src/components/NotesViewer";
 import AlignedRomanization from "./src/components/AlignedRomanization";
 import ErrorBoundary from "./src/components/ErrorBoundary";
+import type { ScannerModeKey } from "./src/services/scannerModes";
 
 function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
   const translateX = useRef(new Animated.Value(0)).current;
@@ -263,6 +265,9 @@ function AppContent() {
   const [showGlossary, setShowGlossary] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [showDocScanner, setShowDocScanner] = useState(false);
+  const [docScannerMode, setDocScannerMode] = useState<ScannerModeKey>("document");
+  const [showNotes, setShowNotes] = useState(false);
+  const [notesRefreshKey, setNotesRefreshKey] = useState(0);
   const [glossarySource, setGlossarySource] = useState("");
   const [glossaryTarget, setGlossaryTarget] = useState("");
 
@@ -385,6 +390,8 @@ function AppContent() {
       { id: "phrasebook", title: "Phrasebook", subtitle: "Browse common phrases", icon: Platform.OS === "ios" ? "symbol:book.fill" : undefined },
       { id: "camera_translate", title: "Camera Translate", subtitle: "Translate text with camera", icon: Platform.OS === "ios" ? "symbol:camera.viewfinder" : undefined },
       { id: "document_scan", title: "Document Intelligence", subtitle: "Scan and analyze documents", icon: Platform.OS === "ios" ? "symbol:doc.text.magnifyingglass" : undefined },
+      { id: "textbook_scan", title: "Scan to Notes", subtitle: "Scan textbook page as note", icon: Platform.OS === "ios" ? "symbol:book.fill" : undefined },
+      { id: "saved_notes", title: "Saved Notes", subtitle: "View saved scanned notes", icon: Platform.OS === "ios" ? "symbol:note.text" : undefined },
     ]);
 
     const sub = QuickActions.addListener((action) => {
@@ -429,7 +436,15 @@ function AppContent() {
           setShowCamera(true);
           break;
         case "document_scan":
+          setDocScannerMode("document");
           setShowDocScanner(true);
+          break;
+        case "textbook_scan":
+          setDocScannerMode("textbook");
+          setShowDocScanner(true);
+          break;
+        case "saved_notes":
+          setShowNotes(true);
           break;
       }
     }, 500);
@@ -1304,11 +1319,19 @@ function AppContent() {
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerIconButton}
-              onPress={() => setShowDocScanner(true)}
+              onPress={() => { setDocScannerMode("document"); setShowDocScanner(true); }}
               accessibilityRole="button"
-              accessibilityLabel="Open document intelligence scanner"
+              accessibilityLabel="Open document scanner"
             >
               <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>📄</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => setShowNotes(true)}
+              accessibilityRole="button"
+              accessibilityLabel="View saved notes"
+            >
+              <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>🗒️</Text>
             </TouchableOpacity>
           </View>
           <Text style={[styles.title, isLandscape && styles.titleLandscape, { color: colors.titleText }]}>Live Translator</Text>
@@ -1921,7 +1944,7 @@ function AppContent() {
                   { icon: "⌨️", title: "Type to Translate", desc: "Prefer typing? Use the text input at the bottom to translate written text, with multi-line support." },
                   { icon: "⭐", title: "Favorites & History", desc: "Star translations to bookmark them. Swipe left to delete. Search your full history anytime." },
                   { icon: "📷", title: "Camera Translate", desc: "Point your camera at any text — signs, menus, documents — and see translations overlaid in real time." },
-                  { icon: "📄", title: "Document Intelligence", desc: "Photograph contracts, menus, or forms — get a full translation plus extracted names, dates, amounts, and key information." },
+                  { icon: "📄", title: "Smart Scanner", desc: "6 modes: Document, Receipt, Business Card, Medicine, Menu, and Textbook. Each extracts mode-specific info. Save scans as Markdown notes." },
                   { icon: "⚙️", title: "Customize Everything", desc: "Adjust font size, speech speed, theme, haptics, and even switch translation providers in Settings." },
                 ];
                 const step = steps[onboardingStep];
@@ -2674,7 +2697,7 @@ function AppContent() {
         />
       )}
 
-      {/* Document Intelligence Scanner - full-screen overlay */}
+      {/* Document Scanner - full-screen overlay with mode selector */}
       {showDocScanner && (
         <DocumentScanner
           visible={showDocScanner}
@@ -2685,8 +2708,19 @@ function AppContent() {
           apiKey={settings.apiKey}
           hapticsEnabled={settings.hapticsEnabled}
           colors={colors}
+          initialMode={docScannerMode}
+          onNoteSaved={() => setNotesRefreshKey((k) => k + 1)}
         />
       )}
+
+      {/* Saved Notes Viewer */}
+      <NotesViewer
+        visible={showNotes}
+        onClose={() => setShowNotes(false)}
+        hapticsEnabled={settings.hapticsEnabled}
+        colors={colors}
+        refreshKey={notesRefreshKey}
+      />
     </>
   );
 }
