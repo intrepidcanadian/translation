@@ -192,6 +192,15 @@ export default function App() {
   const RATING_PROMPTED_KEY = "rating_prompted";
   const TRANSLATION_COUNT_KEY = "translation_count";
   const RATING_THRESHOLD = 20;
+  const GLOSSARY_KEY = "user_glossary";
+
+  // User glossary entries
+  const [glossary, setGlossary] = useState<
+    Array<{ source: string; target: string; sourceLang: string; targetLang: string }>
+  >([]);
+  const [showGlossary, setShowGlossary] = useState(false);
+  const [glossarySource, setGlossarySource] = useState("");
+  const [glossaryTarget, setGlossaryTarget] = useState("");
 
   // Saved language pair shortcuts
   const [savedPairs, setSavedPairs] = useState<
@@ -313,6 +322,13 @@ export default function App() {
     AsyncStorage.getItem(TRANSLATION_COUNT_KEY).then((stored) => {
       if (stored) translationCountRef.current = parseInt(stored, 10) || 0;
     });
+    AsyncStorage.getItem(GLOSSARY_KEY).then((stored) => {
+      if (stored) {
+        try {
+          setGlossary(JSON.parse(stored));
+        } catch {}
+      }
+    });
   }, []);
 
   const trackRecentLang = useCallback((code: string) => {
@@ -382,6 +398,41 @@ export default function App() {
       }
     }
   }, []);
+
+  const glossaryLookup = useCallback((text: string, srcLang: string, tgtLang: string): string | null => {
+    const normalized = text.trim().toLowerCase();
+    const entry = glossary.find(
+      (g) => g.source.toLowerCase() === normalized && g.sourceLang === srcLang && g.targetLang === tgtLang
+    );
+    return entry ? entry.target : null;
+  }, [glossary]);
+
+  const addGlossaryEntry = useCallback(() => {
+    const src = glossarySource.trim();
+    const tgt = glossaryTarget.trim();
+    if (!src || !tgt) return;
+    if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setGlossary((prev) => {
+      // Replace existing entry for same source+langs, or add new
+      const filtered = prev.filter(
+        (g) => !(g.source.toLowerCase() === src.toLowerCase() && g.sourceLang === sourceLang.code && g.targetLang === targetLang.code)
+      );
+      const updated = [...filtered, { source: src, target: tgt, sourceLang: sourceLang.code, targetLang: targetLang.code }];
+      AsyncStorage.setItem(GLOSSARY_KEY, JSON.stringify(updated));
+      return updated;
+    });
+    setGlossarySource("");
+    setGlossaryTarget("");
+  }, [glossarySource, glossaryTarget, sourceLang.code, targetLang.code, settings.hapticsEnabled]);
+
+  const removeGlossaryEntry = useCallback((index: number) => {
+    if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setGlossary((prev) => {
+      const updated = prev.filter((_, i) => i !== index);
+      AsyncStorage.setItem(GLOSSARY_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }, [settings.hapticsEnabled]);
 
   const copyToClipboard = useCallback(async (text: string) => {
     await Clipboard.setStringAsync(text);
@@ -509,12 +560,16 @@ export default function App() {
 
         setIsTranslating(true);
         try {
-          const result = await translateText(
-            text.trim(),
-            fromCode,
-            toCode,
-            { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey }
-          );
+          // Check user glossary first
+          const glossaryMatch = glossaryLookup(text.trim(), fromCode, toCode);
+          const result = glossaryMatch
+            ? { translatedText: glossaryMatch, confidence: 1.0 }
+            : await translateText(
+                text.trim(),
+                fromCode,
+                toCode,
+                { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey }
+              );
           if (!controller.signal.aborted) {
             setTranslatedText(result.translatedText);
             lastTranslatedRef.current = text.trim();
@@ -879,7 +934,7 @@ export default function App() {
       AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(updated));
       return updated;
     });
-    setHistory((prev) => [...prev, { original: text, translated: "Queued — will translate when online", pending: true }]);
+    setHistory((prev) => [...prev, { original: text, translated: "Queued — will translate when online", pending: true, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code }]);
     if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   }, [settings.hapticsEnabled]);
 
@@ -954,9 +1009,12 @@ export default function App() {
     setIsTranslating(true);
     setLiveText(text);
     try {
-      const result = await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey });
+      const glossaryMatch = glossaryLookup(text, sourceLang.code, targetLang.code);
+      const result = glossaryMatch
+        ? { translatedText: glossaryMatch, confidence: 1.0 }
+        : await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey });
       if (!controller.signal.aborted) {
-        setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence }]);
+        setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code }]);
         maybeRequestReview();
       }
     } catch (err) {
@@ -1010,6 +1068,14 @@ export default function App() {
               accessibilityLabel="View translation statistics"
             >
               <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>📊</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => setShowGlossary(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Open glossary"
+            >
+              <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>📝</Text>
             </TouchableOpacity>
           </View>
           <Text style={[styles.title, isLandscape && styles.titleLandscape, { color: colors.titleText }]}>Live Translator</Text>
@@ -1279,6 +1345,94 @@ export default function App() {
                 onPress={() => setShowStats(false)}
                 accessibilityRole="button"
                 accessibilityLabel="Close statistics"
+              >
+                <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Glossary modal */}
+        <Modal visible={showGlossary} animationType="slide" transparent>
+          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+            <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
+              <Text style={[styles.compareTitle, { color: colors.titleText }]}>My Glossary</Text>
+              <Text style={[{ color: colors.dimText, fontSize: 13, textAlign: "center" as const, marginBottom: 12, paddingHorizontal: 20 }]}>
+                Custom translations override API results. Entries apply to the current language pair ({sourceLang.name} → {targetLang.name}).
+              </Text>
+
+              <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+                <TextInput
+                  style={[styles.apiKeyInput, { backgroundColor: colors.cardBg, color: colors.primaryText, borderColor: colors.border, marginBottom: 8 }]}
+                  placeholder={`Source phrase (${sourceLang.name})`}
+                  placeholderTextColor={colors.placeholderText}
+                  value={glossarySource}
+                  onChangeText={setGlossarySource}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  accessibilityLabel="Glossary source phrase"
+                />
+                <TextInput
+                  style={[styles.apiKeyInput, { backgroundColor: colors.cardBg, color: colors.primaryText, borderColor: colors.border, marginBottom: 8 }]}
+                  placeholder={`Translation (${targetLang.name})`}
+                  placeholderTextColor={colors.placeholderText}
+                  value={glossaryTarget}
+                  onChangeText={setGlossaryTarget}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  accessibilityLabel="Glossary target translation"
+                />
+                <TouchableOpacity
+                  style={[styles.glossaryAddButton, { backgroundColor: glossarySource.trim() && glossaryTarget.trim() ? colors.primary : colors.border }]}
+                  onPress={addGlossaryEntry}
+                  disabled={!glossarySource.trim() || !glossaryTarget.trim()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add glossary entry"
+                >
+                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Add Entry</Text>
+                </TouchableOpacity>
+              </View>
+
+              <FlatList
+                data={glossary.filter((g) => g.sourceLang === sourceLang.code && g.targetLang === targetLang.code)}
+                keyExtractor={(_, i) => String(i)}
+                style={{ maxHeight: 250, paddingHorizontal: 16 }}
+                ListEmptyComponent={
+                  <Text style={[{ color: colors.mutedText, fontSize: 14, textAlign: "center" as const, paddingVertical: 20 }]}>
+                    No entries for this language pair yet.
+                  </Text>
+                }
+                renderItem={({ item }) => {
+                  const realIndex = glossary.findIndex((g) => g === item);
+                  return (
+                    <View style={[styles.glossaryEntry, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[{ color: colors.secondaryText, fontSize: 14 }]}>{item.source}</Text>
+                        <Text style={[{ color: colors.translatedText, fontSize: 14, fontWeight: "600" }]}>{item.target}</Text>
+                      </View>
+                      <TouchableOpacity
+                        onPress={() => removeGlossaryEntry(realIndex)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Remove glossary entry: ${item.source}`}
+                      >
+                        <Text style={{ color: colors.errorText, fontSize: 18 }}>✕</Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                }}
+              />
+
+              {glossary.length > 0 && (
+                <Text style={[{ color: colors.dimText, fontSize: 12, textAlign: "center" as const, marginTop: 8 }]}>
+                  {glossary.length} total {glossary.length === 1 ? "entry" : "entries"} across all language pairs
+                </Text>
+              )}
+
+              <TouchableOpacity
+                style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
+                onPress={() => setShowGlossary(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close glossary"
               >
                 <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
               </TouchableOpacity>
@@ -2847,5 +3001,27 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
+  },
+  apiKeyInput: {
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    borderWidth: 1,
+  },
+  glossaryAddButton: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  glossaryEntry: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 8,
+    gap: 10,
   },
 });
