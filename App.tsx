@@ -13,6 +13,7 @@ import {
   Linking,
   Animated,
   Keyboard,
+  KeyboardAvoidingView,
   Share,
   PanResponder,
   LayoutAnimation,
@@ -48,6 +49,7 @@ import {
 import { getColors } from "./src/theme";
 import { PHRASE_CATEGORIES, getPhrasesForCategory, getPhraseOfTheDay, type PhraseCategory, type OfflinePhrase } from "./src/services/offlinePhrases";
 import { romanize, needsRomanization, getRomanizationName } from "./src/services/romanization";
+import CameraTranslator from "./src/components/CameraTranslator";
 import AlignedRomanization from "./src/components/AlignedRomanization";
 
 function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
@@ -249,6 +251,7 @@ export default function App() {
     Array<{ source: string; target: string; sourceLang: string; targetLang: string }>
   >([]);
   const [showGlossary, setShowGlossary] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
   const [glossarySource, setGlossarySource] = useState("");
   const [glossaryTarget, setGlossaryTarget] = useState("");
 
@@ -395,6 +398,7 @@ export default function App() {
       { id: "translate_voice", title: "Voice Translate", subtitle: "Start speech translation", icon: Platform.OS === "ios" ? "symbol:mic.fill" : undefined },
       { id: "translate_paste", title: "Paste & Translate", subtitle: "Translate from clipboard", icon: Platform.OS === "ios" ? "symbol:doc.on.clipboard" : undefined },
       { id: "phrasebook", title: "Phrasebook", subtitle: "Browse common phrases", icon: Platform.OS === "ios" ? "symbol:book.fill" : undefined },
+      { id: "camera_translate", title: "Camera Translate", subtitle: "Translate text with camera", icon: Platform.OS === "ios" ? "symbol:camera.viewfinder" : undefined },
     ]);
 
     const sub = QuickActions.addListener((action) => {
@@ -434,6 +438,9 @@ export default function App() {
           break;
         case "phrasebook":
           setShowPhrasebook(true);
+          break;
+        case "camera_translate":
+          setShowCamera(true);
           break;
       }
     }, 500);
@@ -1247,8 +1254,14 @@ export default function App() {
   }, [typedText, sourceLang.code, targetLang.code, showError, isOffline, addToOfflineQueue]);
 
   return (
+    <>
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.safeBg }]}>
       <StatusBar barStyle={colors.statusBar} />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
+      >
       <View style={[styles.container, isLandscape && styles.containerLandscape]}>
         {/* Header */}
         <View style={[styles.headerRow, isLandscape && styles.headerRowLandscape]}>
@@ -1284,6 +1297,14 @@ export default function App() {
               accessibilityLabel="Open glossary"
             >
               <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>📝</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => setShowCamera(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Open camera translator"
+            >
+              <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>📷</Text>
             </TouchableOpacity>
           </View>
           <Text style={[styles.title, isLandscape && styles.titleLandscape, { color: colors.titleText }]}>Live Translator</Text>
@@ -1895,6 +1916,7 @@ export default function App() {
                   { icon: "📖", title: "Phrasebook", desc: "Browse common phrases by category for instant offline translations. Tap to copy, long-press to hear." },
                   { icon: "⌨️", title: "Type to Translate", desc: "Prefer typing? Use the text input at the bottom to translate written text, with multi-line support." },
                   { icon: "⭐", title: "Favorites & History", desc: "Star translations to bookmark them. Swipe left to delete. Search your full history anytime." },
+                  { icon: "📷", title: "Camera Translate", desc: "Point your camera at any text — signs, menus, documents — and see translations overlaid in real time." },
                   { icon: "⚙️", title: "Customize Everything", desc: "Adjust font size, speech speed, theme, haptics, and even switch translation providers in Settings." },
                 ];
                 const step = steps[onboardingStep];
@@ -2056,6 +2078,10 @@ export default function App() {
           contentContainerStyle={styles.scrollContent}
           data={filteredHistory}
           keyExtractor={(item, index) => `${index}-${item.original.slice(0, 20)}`}
+          removeClippedSubviews={Platform.OS !== "web"}
+          maxToRenderPerBatch={15}
+          windowSize={7}
+          initialNumToRender={10}
           ListHeaderComponent={
             history.length > 2 && !isListening ? (
               <View>
@@ -2627,7 +2653,22 @@ export default function App() {
           )}
         </View>
       </View>
+      </KeyboardAvoidingView>
     </SafeAreaView>
+
+      {/* Camera Translator - renders as full-screen overlay */}
+      {showCamera && (
+        <CameraTranslator
+          visible={showCamera}
+          onClose={() => setShowCamera(false)}
+          sourceLangCode={sourceLang.code === "autodetect" ? "en" : sourceLang.code}
+          targetLangCode={targetLang.code}
+          translationProvider={settings.translationProvider}
+          apiKey={settings.apiKey}
+          colors={colors}
+        />
+      )}
+    </>
   );
 }
 

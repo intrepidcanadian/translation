@@ -1,9 +1,10 @@
 // Translation service supporting multiple providers
-// MyMemory (free, no key), DeepL, Google Cloud Translation
+// MyMemory (free, no key), DeepL, Google Cloud Translation, Apple On-Device, ML Kit On-Device
 
+import { Platform } from "react-native";
 import { offlineTranslate } from "./offlinePhrases";
 
-export type TranslationProvider = "mymemory" | "deepl" | "google";
+export type TranslationProvider = "mymemory" | "deepl" | "google" | "apple" | "mlkit";
 
 const MYMEMORY_API = "https://api.mymemory.translated.net/get";
 const DEEPL_API = "https://api-free.deepl.com/v2/translate";
@@ -158,6 +159,104 @@ async function translateGoogle(text: string, sourceLang: string, targetLang: str
   };
 }
 
+// Apple on-device translation (iOS 17.4+, uses Neural Engine)
+async function translateApple(text: string, sourceLang: string, targetLang: string, signal?: AbortSignal): Promise<TranslationResult> {
+  if (Platform.OS !== "ios") {
+    throw new Error("Apple Translation is only available on iOS.");
+  }
+
+  try {
+    const AppleTranslation = require("../../modules/apple-translation");
+
+    const available = await AppleTranslation.isAvailable();
+    if (!available) {
+      throw new Error("Apple Translation requires iOS 17.4+. Update your device or choose another provider.");
+    }
+
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+    // Use "en" if auto-detect (Apple handles auto-detection internally)
+    const srcLang = sourceLang === "autodetect" ? "en" : sourceLang;
+
+    const translatedText = await AppleTranslation.translate(text, srcLang, targetLang);
+
+    // Also try to detect language if auto-detect was requested
+    let detectedLanguage: string | undefined;
+    if (sourceLang === "autodetect") {
+      detectedLanguage = await AppleTranslation.detectLanguage(text) || undefined;
+    }
+
+    return { translatedText, detectedLanguage, confidence: 1.0 };
+  } catch (err: any) {
+    if (err?.name === "AbortError") throw err;
+    throw new Error(err?.message || "Apple on-device translation failed. Try another provider.");
+  }
+}
+
+// Apple on-device batch translation (more efficient for multiple texts)
+export async function translateAppleBatch(
+  texts: string[],
+  sourceLang: string,
+  targetLang: string
+): Promise<string[]> {
+  if (Platform.OS !== "ios") {
+    throw new Error("Apple Translation is only available on iOS.");
+  }
+
+  const AppleTranslation = require("../../modules/apple-translation");
+  const available = await AppleTranslation.isAvailable();
+  if (!available) {
+    throw new Error("Apple Translation requires iOS 17.4+.");
+  }
+
+  const srcLang = sourceLang === "autodetect" ? "en" : sourceLang;
+  return AppleTranslation.translateBatch(texts, srcLang, targetLang);
+}
+
+// Check if Apple on-device translation is available
+export async function isAppleTranslationAvailable(): Promise<boolean> {
+  if (Platform.OS !== "ios") return false;
+  try {
+    const AppleTranslation = require("../../modules/apple-translation");
+    return await AppleTranslation.isAvailable();
+  } catch {
+    return false;
+  }
+}
+
+// Detect language using Apple's NaturalLanguage framework (on-device, uses Neural Engine)
+export async function detectLanguageOnDevice(text: string): Promise<string | null> {
+  if (Platform.OS !== "ios") return null;
+  try {
+    const AppleTranslation = require("../../modules/apple-translation");
+    return await AppleTranslation.detectLanguage(text);
+  } catch {
+    return null;
+  }
+}
+
+// ML Kit on-device translation (cross-platform, models downloaded on demand ~30MB each)
+async function translateMLKit(text: string, sourceLang: string, targetLang: string, signal?: AbortSignal): Promise<TranslationResult> {
+  try {
+    const MLKitTranslate = require("@react-native-ml-kit/translate-text");
+
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
+    const srcLang = sourceLang === "autodetect" ? "en" : sourceLang;
+
+    const translatedText = await MLKitTranslate.translate(text, srcLang, targetLang);
+
+    return { translatedText, confidence: 0.9 };
+  } catch (err: any) {
+    if (err?.name === "AbortError") throw err;
+    // If ML Kit module isn't installed, give a helpful error
+    if (err?.message?.includes("Cannot find module") || err?.code === "MODULE_NOT_FOUND") {
+      throw new Error("ML Kit translation not installed. Run: npx expo install @react-native-ml-kit/translate-text");
+    }
+    throw new Error(err?.message || "ML Kit on-device translation failed. The language model may need to download first.");
+  }
+}
+
 export async function translateText(
   text: string,
   sourceLang: string,
@@ -196,6 +295,12 @@ export async function translateText(
 
   let result: TranslationResult;
   switch (provider) {
+    case "apple":
+      result = await translateApple(text.trim(), sourceLang, targetLang, signal);
+      break;
+    case "mlkit":
+      result = await translateMLKit(text.trim(), sourceLang, targetLang, signal);
+      break;
     case "deepl":
       result = await translateDeepL(text.trim(), sourceLang, targetLang, apiKey, signal);
       break;

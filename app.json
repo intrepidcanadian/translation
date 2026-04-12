@@ -14,12 +14,18 @@
     },
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.tonylau.livetranslator",
       "infoPlist": {
-        "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to provide live translation.",
-        "NSMicrophoneUsageDescription": "This app needs microphone access to listen and translate speech in real time."
+        "NSSpeechRecognitionUsageDescription": "Allow Live Translator to use speech recognition for live translation.",
+        "NSMicrophoneUsageDescription": "Allow Live Translator to access your microphone for real-time speech translation.",
+        "NSCameraUsageDescription": "Allow Live Translator to access your camera for real-time text translation.",
+        "NSPhotoLibraryUsageDescription": "Allow Live Translator to save or select images for text recognition and translation.",
+        "NSLocationWhenInUseUsageDescription": "Live Translator may use your location to improve translation suggestions for nearby languages.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
+      "package": "com.tonylau.livetranslator",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1a1a2e"
@@ -27,7 +33,8 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": true,
       "permissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA"
       ]
     },
     "web": {
@@ -59,7 +66,32 @@
             }
           ]
         }
-      ]
-    ]
+      ],
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "Allow Live Translator to access your camera for real-time text translation.",
+          "enableFrameProcessors": true
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "17.4"
+          },
+          "android": {
+            "minSdkVersion": 24
+          }
+        }
+      ],
+      "./modules/apple-translation/expo-module.config.json"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "16ccc06f-0909-4236-85e9-29eb445bdc45"
+      }
+    },
+    "owner": "intrepid_cym"
   }
 }

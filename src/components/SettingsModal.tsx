@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,8 +12,9 @@ import {
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import { type ThemeMode, type ThemeColors, getColors } from "../theme";
+import { isAppleTranslationAvailable } from "../services/translation";
 
-export type TranslationProvider = "mymemory" | "deepl" | "google";
+export type TranslationProvider = "mymemory" | "deepl" | "google" | "apple" | "mlkit";
 
 export type FontSizeOption = "small" | "medium" | "large" | "xlarge";
 
@@ -63,6 +64,13 @@ interface Props {
 
 export default function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const colors = useMemo(() => getColors(settings.theme), [settings.theme]);
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  useEffect(() => {
+    if (Platform.OS === "ios") {
+      isAppleTranslationAvailable().then(setAppleAvailable);
+    }
+  }, []);
 
   const toggle = (key: keyof Settings) => {
     onUpdate({ ...settings, [key]: !settings[key] });
@@ -290,6 +298,72 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Choose your translation engine</Text>
               </View>
             </View>
+
+            {/* On-Device providers (no API key, no data leaves device) */}
+            {(appleAvailable || Platform.OS === "android") && (
+              <>
+                <Text style={[styles.providerSectionLabel, { color: colors.primary }]}>On-Device (Private, No Internet)</Text>
+                <View style={styles.fontSizeRow}>
+                  {appleAvailable && (
+                    <TouchableOpacity
+                      style={[
+                        styles.fontSizeOption,
+                        dynamicStyles.fontSizeOption,
+                        settings.translationProvider === "apple" && styles.fontSizeOptionActive,
+                      ]}
+                      onPress={() => onUpdate({ ...settings, translationProvider: "apple", apiKey: "" })}
+                      accessibilityRole="button"
+                      accessibilityLabel="Translation provider: Apple on-device (uses Neural Engine)"
+                      accessibilityState={{ selected: settings.translationProvider === "apple" }}
+                    >
+                      <Text
+                        style={[
+                          styles.fontSizeLabel,
+                          dynamicStyles.fontSizeLabel,
+                          settings.translationProvider === "apple" && styles.fontSizeLabelActive,
+                        ]}
+                      >
+                        Apple
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity
+                    style={[
+                      styles.fontSizeOption,
+                      dynamicStyles.fontSizeOption,
+                      settings.translationProvider === "mlkit" && styles.fontSizeOptionActive,
+                    ]}
+                    onPress={() => onUpdate({ ...settings, translationProvider: "mlkit", apiKey: "" })}
+                    accessibilityRole="button"
+                    accessibilityLabel="Translation provider: ML Kit on-device"
+                    accessibilityState={{ selected: settings.translationProvider === "mlkit" }}
+                  >
+                    <Text
+                      style={[
+                        styles.fontSizeLabel,
+                        dynamicStyles.fontSizeLabel,
+                        settings.translationProvider === "mlkit" && styles.fontSizeLabelActive,
+                      ]}
+                    >
+                      ML Kit
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+                {settings.translationProvider === "apple" && (
+                  <Text style={[styles.providerHint, { color: colors.dimText }]}>
+                    Uses Apple's Neural Engine for fast, private translation. No data leaves your device.
+                  </Text>
+                )}
+                {settings.translationProvider === "mlkit" && (
+                  <Text style={[styles.providerHint, { color: colors.dimText }]}>
+                    Google ML Kit runs on-device. Language models (~30MB each) download on first use.
+                  </Text>
+                )}
+              </>
+            )}
+
+            {/* Cloud providers */}
+            <Text style={[styles.providerSectionLabel, { color: colors.mutedText }]}>Cloud (Requires Internet)</Text>
             <View style={styles.fontSizeRow}>
               {([
                 { key: "mymemory" as const, label: "MyMemory" },
@@ -320,7 +394,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 </TouchableOpacity>
               ))}
             </View>
-            {settings.translationProvider !== "mymemory" && (
+            {(settings.translationProvider === "deepl" || settings.translationProvider === "google") && (
               <View style={styles.apiKeyRow}>
                 <TextInput
                   style={[styles.apiKeyInput, { backgroundColor: colors.cardBg, color: colors.primaryText, borderColor: colors.border }]}
@@ -340,7 +414,13 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
               <Text style={[styles.infoTitle, dynamicStyles.infoTitle]}>About</Text>
               <Text style={[styles.infoText, dynamicStyles.infoText]}>Live Translator v1.0.0</Text>
               <Text style={[styles.infoText, dynamicStyles.infoText]}>
-                Translation powered by {settings.translationProvider === "deepl" ? "DeepL" : settings.translationProvider === "google" ? "Google Cloud" : "MyMemory"} API
+                Translation powered by {
+                  settings.translationProvider === "apple" ? "Apple Neural Engine (on-device)" :
+                  settings.translationProvider === "mlkit" ? "Google ML Kit (on-device)" :
+                  settings.translationProvider === "deepl" ? "DeepL API" :
+                  settings.translationProvider === "google" ? "Google Cloud API" :
+                  "MyMemory API"
+                }
               </Text>
             </View>
           </ScrollView>
@@ -439,6 +519,20 @@ const styles = StyleSheet.create({
   },
   fontSizeLabelActive: {
     color: "#ffffff",
+  },
+  providerSectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  providerHint: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 8,
+    paddingHorizontal: 2,
   },
   apiKeyRow: {
     marginBottom: 8,
