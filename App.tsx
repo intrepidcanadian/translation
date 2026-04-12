@@ -150,6 +150,10 @@ export default function App() {
 
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
+
+  // Undo delete state
+  const [deletedItem, setDeletedItem] = useState<{ item: typeof history[number]; index: number } | null>(null);
+  const undoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [recentLangCodes, setRecentLangCodes] = useState<string[]>([]);
@@ -371,6 +375,7 @@ export default function App() {
     return () => {
       if (translationTimeout.current) clearTimeout(translationTimeout.current);
       if (errorDismissTimeout.current) clearTimeout(errorDismissTimeout.current);
+      if (undoTimeout.current) clearTimeout(undoTimeout.current);
       abortControllerRef.current?.abort();
       Speech.stop();
     };
@@ -565,8 +570,34 @@ export default function App() {
   const deleteHistoryItem = useCallback((index: number) => {
     if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setHistory((prev) => prev.filter((_, i) => i !== index));
+    setHistory((prev) => {
+      const removed = prev[index];
+      if (removed) {
+        // Clear any existing undo timeout
+        if (undoTimeout.current) clearTimeout(undoTimeout.current);
+        setDeletedItem({ item: removed, index });
+        undoTimeout.current = setTimeout(() => {
+          setDeletedItem(null);
+        }, 4000);
+      }
+      return prev.filter((_, i) => i !== index);
+    });
   }, [settings.hapticsEnabled]);
+
+  const undoDelete = useCallback(() => {
+    if (!deletedItem) return;
+    if (undoTimeout.current) clearTimeout(undoTimeout.current);
+    if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setHistory((prev) => {
+      const updated = [...prev];
+      // Re-insert at original position, clamped to current length
+      const insertAt = Math.min(deletedItem.index, updated.length);
+      updated.splice(insertAt, 0, deletedItem.item);
+      return updated;
+    });
+    setDeletedItem(null);
+  }, [deletedItem, settings.hapticsEnabled]);
 
   const toggleFavorite = useCallback((index: number) => {
     if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1130,6 +1161,23 @@ export default function App() {
             ) : null
           }
         />
+
+        {/* Undo delete toast */}
+        {deletedItem && (
+          <View style={[styles.undoToast, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+            <Text style={[styles.undoToastText, { color: colors.secondaryText }]} numberOfLines={1}>
+              Translation deleted
+            </Text>
+            <TouchableOpacity
+              style={styles.undoButton}
+              onPress={undoDelete}
+              accessibilityRole="button"
+              accessibilityLabel="Undo delete"
+            >
+              <Text style={[styles.undoButtonText, { color: colors.primary }]}>Undo</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* Bottom controls */}
         <View style={styles.controls}>
@@ -1729,5 +1777,29 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
     marginBottom: 4,
+  },
+  undoToast: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  undoToastText: {
+    fontSize: 14,
+    fontWeight: "500",
+    flex: 1,
+  },
+  undoButton: {
+    marginLeft: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+  },
+  undoButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
   },
 });
