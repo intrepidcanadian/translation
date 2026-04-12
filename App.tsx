@@ -157,6 +157,12 @@ export default function App() {
   const SETTINGS_KEY = "app_settings";
   const RECENT_LANGS_KEY = "recent_languages";
   const OFFLINE_QUEUE_KEY = "offline_translation_queue";
+  const LANG_PAIRS_KEY = "saved_language_pairs";
+
+  // Saved language pair shortcuts
+  const [savedPairs, setSavedPairs] = useState<
+    Array<{ sourceCode: string; targetCode: string }>
+  >([]);
 
   // Offline translation queue
   const [offlineQueue, setOfflineQueue] = useState<
@@ -254,6 +260,13 @@ export default function App() {
         } catch {}
       }
     });
+    AsyncStorage.getItem(LANG_PAIRS_KEY).then((stored) => {
+      if (stored) {
+        try {
+          setSavedPairs(JSON.parse(stored));
+        } catch {}
+      }
+    });
   }, []);
 
   const trackRecentLang = useCallback((code: string) => {
@@ -264,6 +277,45 @@ export default function App() {
       return updated;
     });
   }, []);
+
+  const isCurrentPairSaved = useMemo(
+    () => savedPairs.some((p) => p.sourceCode === sourceLang.code && p.targetCode === targetLang.code),
+    [savedPairs, sourceLang.code, targetLang.code]
+  );
+
+  const toggleSavePair = useCallback(() => {
+    if (sourceLang.code === "autodetect") return;
+    if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSavedPairs((prev) => {
+      const exists = prev.some(
+        (p) => p.sourceCode === sourceLang.code && p.targetCode === targetLang.code
+      );
+      const updated = exists
+        ? prev.filter((p) => !(p.sourceCode === sourceLang.code && p.targetCode === targetLang.code))
+        : [...prev, { sourceCode: sourceLang.code, targetCode: targetLang.code }].slice(0, 8);
+      AsyncStorage.setItem(LANG_PAIRS_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }, [sourceLang.code, targetLang.code, settings.hapticsEnabled]);
+
+  const applyPair = useCallback((sourceCode: string, targetCode: string) => {
+    const src = LANGUAGES.find((l) => l.code === sourceCode);
+    const tgt = LANGUAGES.find((l) => l.code === targetCode);
+    if (src && tgt) {
+      if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setSourceLang(src);
+      setTargetLang(tgt);
+    }
+  }, [settings.hapticsEnabled]);
+
+  const removeSavedPair = useCallback((sourceCode: string, targetCode: string) => {
+    if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setSavedPairs((prev) => {
+      const updated = prev.filter((p) => !(p.sourceCode === sourceCode && p.targetCode === targetCode));
+      AsyncStorage.setItem(LANG_PAIRS_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  }, [settings.hapticsEnabled]);
 
   const updateSettings = useCallback((newSettings: Settings) => {
     setSettings(newSettings);
@@ -742,14 +794,28 @@ export default function App() {
             recentCodes={recentLangCodes}
             colors={colors}
           />
-          <TouchableOpacity
-            style={[styles.swapButton, { backgroundColor: colors.cardBg }]}
-            onPress={swapLanguages}
-            accessibilityRole="button"
-            accessibilityLabel={`Swap languages. Currently translating from ${sourceLang.name} to ${targetLang.name}`}
-          >
-            <Text style={[styles.swapIcon, { color: colors.primary }]}>⇄</Text>
-          </TouchableOpacity>
+          <View style={styles.langMiddleButtons}>
+            <TouchableOpacity
+              style={[styles.swapButton, { backgroundColor: colors.cardBg }]}
+              onPress={swapLanguages}
+              accessibilityRole="button"
+              accessibilityLabel={`Swap languages. Currently translating from ${sourceLang.name} to ${targetLang.name}`}
+            >
+              <Text style={[styles.swapIcon, { color: colors.primary }]}>⇄</Text>
+            </TouchableOpacity>
+            {sourceLang.code !== "autodetect" && (
+              <TouchableOpacity
+                style={[styles.savePairButton, { backgroundColor: colors.cardBg }]}
+                onPress={toggleSavePair}
+                accessibilityRole="button"
+                accessibilityLabel={isCurrentPairSaved ? "Remove saved language pair" : "Save this language pair"}
+              >
+                <Text style={[styles.savePairIcon, isCurrentPairSaved && styles.savePairIconActive]}>
+                  {isCurrentPairSaved ? "★" : "☆"}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
           <LanguagePicker
             label="To"
             selected={targetLang}
@@ -758,6 +824,36 @@ export default function App() {
             colors={colors}
           />
         </View>
+
+        {/* Saved language pair shortcuts */}
+        {savedPairs.length > 0 && (
+          <View style={styles.savedPairsRow}>
+            <FlatList
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              data={savedPairs}
+              keyExtractor={(item) => `${item.sourceCode}-${item.targetCode}`}
+              renderItem={({ item }) => {
+                const isActive = item.sourceCode === sourceLang.code && item.targetCode === targetLang.code;
+                const srcName = LANGUAGES.find((l) => l.code === item.sourceCode)?.name || item.sourceCode;
+                const tgtName = LANGUAGES.find((l) => l.code === item.targetCode)?.name || item.targetCode;
+                return (
+                  <TouchableOpacity
+                    style={[styles.savedPairPill, { backgroundColor: colors.cardBg, borderColor: isActive ? colors.primary : colors.border }, isActive && styles.savedPairPillActive]}
+                    onPress={() => applyPair(item.sourceCode, item.targetCode)}
+                    onLongPress={() => removeSavedPair(item.sourceCode, item.targetCode)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Switch to ${srcName} to ${tgtName}. Long press to remove.`}
+                  >
+                    <Text style={[styles.savedPairText, { color: isActive ? colors.primary : colors.mutedText }]}>
+                      {srcName.slice(0, 3)} → {tgtName.slice(0, 3)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              }}
+            />
+          </View>
+        )}
 
         {/* Offline banner */}
         {isOffline && (
@@ -1204,16 +1300,52 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 20,
   },
+  langMiddleButtons: {
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 0,
+  },
   swapButton: {
     borderRadius: 12,
     width: 44,
     height: 44,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 0,
   },
   swapIcon: {
     fontSize: 20,
+    fontWeight: "700",
+  },
+  savePairButton: {
+    borderRadius: 10,
+    width: 32,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  savePairIcon: {
+    fontSize: 16,
+    color: "#8888aa",
+  },
+  savePairIconActive: {
+    color: "#ffd700",
+  },
+  savedPairsRow: {
+    marginBottom: 12,
+    marginTop: -8,
+  },
+  savedPairPill: {
+    borderRadius: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    marginRight: 8,
+    borderWidth: 1,
+  },
+  savedPairPillActive: {
+    borderWidth: 1.5,
+  },
+  savedPairText: {
+    fontSize: 12,
     fontWeight: "700",
   },
   offlineBanner: {
