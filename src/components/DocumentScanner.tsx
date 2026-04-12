@@ -28,7 +28,7 @@ import {
 } from "../services/scannerModes";
 import { saveNote } from "../services/notes";
 import * as Clipboard from "expo-clipboard";
-import * as Haptics from "expo-haptics";
+import { notifySuccess, impactMedium, selection } from "../services/haptics";
 
 interface DocumentAnalysis {
   detectedLanguage: string | null;
@@ -74,7 +74,6 @@ export default function DocumentScanner({
   sourceLangCode,
   targetLangCode,
   translationProvider,
-  hapticsEnabled = true,
   colors,
   initialMode = "document",
   onNoteSaved,
@@ -118,10 +117,10 @@ export default function DocumentScanner({
 
   const copyText = useCallback(async (text: string) => {
     await Clipboard.setStringAsync(text);
-    if (hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    notifySuccess();
     setCopiedText(text);
     setTimeout(() => setCopiedText(null), 1500);
-  }, [hapticsEnabled]);
+  }, []);
 
   const handleSaveNote = useCallback(async () => {
     if (noteSaved) return;
@@ -141,12 +140,12 @@ export default function DocumentScanner({
         fields,
       });
       setNoteSaved(true);
-      if (hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      notifySuccess();
       onNoteSaved?.();
     } catch {
       Alert.alert("Error", "Failed to save note");
     }
-  }, [noteSaved, modeFields, mode, originalText, translatedText, selectedMode, sourceLangCode, targetLangCode, hapticsEnabled, onNoteSaved]);
+  }, [noteSaved, modeFields, mode, originalText, translatedText, selectedMode, sourceLangCode, targetLangCode, onNoteSaved]);
 
   const shareResults = useCallback(async () => {
     const sections: string[] = [];
@@ -191,7 +190,7 @@ export default function DocumentScanner({
 
   const captureAndAnalyze = useCallback(async () => {
     if (!cameraRef.current) return;
-    if (hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    impactMedium();
 
     setPhase("processing");
     setError(null);
@@ -302,12 +301,12 @@ export default function DocumentScanner({
       }
 
       setPhase("results");
-      if (hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      notifySuccess();
     } catch (err: any) {
       setError(err?.message || "Analysis failed");
       setPhase("camera");
     }
-  }, [sourceLangCode, targetLangCode, translationProvider, hapticsEnabled, selectedMode]);
+  }, [sourceLangCode, targetLangCode, translationProvider, selectedMode]);
 
   if (!visible) return null;
 
@@ -530,7 +529,7 @@ export default function DocumentScanner({
               ]}
               onPress={() => {
                 setSelectedMode(m.key);
-                if (hapticsEnabled) Haptics.selectionAsync();
+                selection();
               }}
               accessibilityLabel={`${m.label} scanner mode`}
             >

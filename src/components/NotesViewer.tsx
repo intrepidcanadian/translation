@@ -14,7 +14,7 @@ import {
 import { loadNotes, deleteNote, updateNoteTitle, clearAllNotes, type SavedNote } from "../services/notes";
 import { getScannerMode } from "../services/scannerModes";
 import * as Clipboard from "expo-clipboard";
-import * as Haptics from "expo-haptics";
+import { notifySuccess, notifyWarning } from "../services/haptics";
 
 interface NotesViewerProps {
   visible: boolean;
@@ -27,7 +27,6 @@ interface NotesViewerProps {
 export default function NotesViewer({
   visible,
   onClose,
-  hapticsEnabled = true,
   colors,
   refreshKey = 0,
 }: NotesViewerProps) {
@@ -67,13 +66,13 @@ export default function NotesViewer({
         style: "destructive",
         onPress: async () => {
           await deleteNote(id);
-          if (hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          notifyWarning();
           if (selectedNote?.id === id) setSelectedNote(null);
           reload();
         },
       },
     ]);
-  }, [hapticsEnabled, selectedNote, reload]);
+  }, [selectedNote, reload]);
 
   const handleClearAll = useCallback(() => {
     if (notes.length === 0) return;
@@ -84,13 +83,13 @@ export default function NotesViewer({
         style: "destructive",
         onPress: async () => {
           await clearAllNotes();
-          if (hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+          notifyWarning();
           setSelectedNote(null);
           reload();
         },
       },
     ]);
-  }, [notes.length, hapticsEnabled, reload]);
+  }, [notes.length, reload]);
 
   const handleSaveTitle = useCallback(async () => {
     if (!selectedNote || !titleDraft.trim()) return;
@@ -108,10 +107,10 @@ export default function NotesViewer({
 
   const handleCopy = useCallback(async (text: string, id: string) => {
     await Clipboard.setStringAsync(text);
-    if (hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    notifySuccess();
     setCopiedId(id);
     setTimeout(() => setCopiedId(null), 1500);
-  }, [hapticsEnabled]);
+  }, []);
 
   const formatTime = (ts: number): string => {
     const d = new Date(ts);

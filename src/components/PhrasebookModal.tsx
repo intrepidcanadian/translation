@@ -7,7 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
-import * as Haptics from "expo-haptics";
+import { impactLight } from "../services/haptics";
 import {
   PHRASE_CATEGORIES,
   getPhrasesForCategory,
@@ -21,7 +21,7 @@ interface PhrasebookModalProps {
   targetLangCode: string;
   onCopy: (text: string) => void;
   onSpeak: (text: string, langCode: string) => void;
-  hapticsEnabled: boolean;
+  hapticsEnabled?: boolean;
   colors: any;
 }
 
@@ -32,7 +32,6 @@ export default function PhrasebookModal({
   targetLangCode,
   onCopy,
   onSpeak,
-  hapticsEnabled,
   colors,
 }: PhrasebookModalProps) {
   const [phraseCategory, setPhraseCategory] = useState<PhraseCategory>("greetings");
@@ -76,7 +75,7 @@ export default function PhrasebookModal({
                   onPress={() => {
                     if (tgtText) {
                       onCopy(tgtText);
-                      if (hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      impactLight();
                     }
                   }}
                   onLongPress={() => {
@@ -143,11 +142,12 @@ const styles = StyleSheet.create({
     flexDirection: "row" as const,
     alignItems: "center" as const,
     borderRadius: 16,
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 14,
     marginRight: 8,
     borderWidth: 1,
     gap: 6,
+    minHeight: 44,
   },
   phraseCategoryIcon: {
     fontSize: 14,
@@ -164,6 +164,7 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
+    minHeight: 44,
   },
   phraseSrcText: {
     fontSize: 15,

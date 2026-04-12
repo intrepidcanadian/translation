@@ -6,12 +6,12 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from "react-native";
-import * as Haptics from "expo-haptics";
+import { notifySuccess } from "../services/haptics";
 
 interface OnboardingModalProps {
   visible: boolean;
   onComplete: () => void;
-  hapticsEnabled: boolean;
+  hapticsEnabled?: boolean;
   colors: any;
 }
 
@@ -26,7 +26,7 @@ const steps = [
   { icon: "⚙️", title: "Customize Everything", desc: "Adjust font size, speech speed, theme, haptics, and even switch translation providers in Settings." },
 ];
 
-export default function OnboardingModal({ visible, onComplete, hapticsEnabled, colors }: OnboardingModalProps) {
+export default function OnboardingModal({ visible, onComplete, colors }: OnboardingModalProps) {
   const [step, setStep] = useState(0);
 
   const current = steps[step];
@@ -41,7 +41,7 @@ export default function OnboardingModal({ visible, onComplete, hapticsEnabled, c
     if (isLast) {
       setStep(0);
       onComplete();
-      if (hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      notifySuccess();
     } else {
       setStep((s) => s + 1);
     }
@@ -53,13 +53,20 @@ export default function OnboardingModal({ visible, onComplete, hapticsEnabled, c
         <View style={[styles.onboardingContent, { backgroundColor: colors.modalBg }]}>
           <View style={styles.onboardingDots}>
             {steps.map((_, i) => (
-              <View
+              <TouchableOpacity
                 key={i}
-                style={[
-                  styles.onboardingDot,
-                  { backgroundColor: i === step ? colors.primary : colors.border },
-                ]}
-              />
+                onPress={() => setStep(i)}
+                style={styles.onboardingDotTouchable}
+                accessibilityRole="button"
+                accessibilityLabel={`Go to step ${i + 1}`}
+              >
+                <View
+                  style={[
+                    styles.onboardingDot,
+                    { backgroundColor: i === step ? colors.primary : colors.border },
+                  ]}
+                />
+              </TouchableOpacity>
             ))}
           </View>
           <Text style={styles.onboardingIcon}>{current.icon}</Text>
@@ -103,13 +110,19 @@ const styles = StyleSheet.create({
   },
   onboardingDots: {
     flexDirection: "row" as const,
-    gap: 8,
+    gap: 4,
     marginBottom: 24,
   },
+  onboardingDotTouchable: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
   onboardingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
   },
   onboardingIcon: {
     fontSize: 56,

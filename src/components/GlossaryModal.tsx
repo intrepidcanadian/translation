@@ -11,7 +11,7 @@ import {
   Alert,
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import * as Haptics from "expo-haptics";
+import { notifySuccess } from "../services/haptics";
 
 interface GlossaryEntry {
   source: string;
@@ -31,7 +31,7 @@ interface GlossaryModalProps {
   targetLangName: string;
   sourceLangCode: string;
   targetLangCode: string;
-  hapticsEnabled: boolean;
+  hapticsEnabled?: boolean;
   colors: any;
 }
 
@@ -46,7 +46,6 @@ export default function GlossaryModal({
   targetLangName,
   sourceLangCode,
   targetLangCode,
-  hapticsEnabled,
   colors,
 }: GlossaryModalProps) {
   const [glossarySource, setGlossarySource] = useState("");
@@ -175,6 +174,7 @@ export default function GlossaryModal({
                   </View>
                   <TouchableOpacity
                     onPress={() => onRemove(realIndex)}
+                    style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}
                     accessibilityRole="button"
                     accessibilityLabel={`Remove glossary entry: ${item.source}`}
                   >
@@ -271,8 +271,7 @@ export default function GlossaryModal({
                       }
                       if (imported > 0) {
                         onImport(newEntries);
-                        if (hapticsEnabled)
-                          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                        notifySuccess();
                       }
                       Alert.alert(
                         "Import",
@@ -360,8 +359,11 @@ const styles = StyleSheet.create({
   },
   glossaryIOButton: {
     borderRadius: 10,
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 14,
+    minHeight: 44,
+    justifyContent: "center" as const,
+    alignItems: "center" as const,
   },
   glossaryEntry: {
     flexDirection: "row" as const,
