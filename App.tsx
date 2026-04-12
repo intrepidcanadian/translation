@@ -169,6 +169,10 @@ export default function App() {
     results: Array<{ provider: string; text: string; loading?: boolean }>;
   } | null>(null);
 
+  // Translation feedback
+  const [correctionPrompt, setCorrectionPrompt] = useState<{ index: number; original: string; translated: string } | null>(null);
+  const [correctionText, setCorrectionText] = useState("");
+
   // Multi-select state
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
@@ -434,6 +438,34 @@ export default function App() {
       return updated;
     });
   }, [settings.hapticsEnabled]);
+
+  const submitCorrection = useCallback(() => {
+    if (!correctionPrompt || !correctionText.trim()) return;
+    const { index, original } = correctionPrompt;
+    const correction = correctionText.trim();
+    // Update history with corrected translation
+    setHistory((prev) => {
+      const updated = [...prev];
+      if (updated[index]) {
+        updated[index] = { ...updated[index], translated: correction };
+      }
+      return updated;
+    });
+    // Save to glossary for future use
+    setGlossary((prev) => {
+      const srcLang = sourceLang.code;
+      const tgtLang = targetLang.code;
+      const filtered = prev.filter(
+        (g) => !(g.source.toLowerCase() === original.toLowerCase() && g.sourceLang === srcLang && g.targetLang === tgtLang)
+      );
+      const updated = [...filtered, { source: original, target: correction, sourceLang: srcLang, targetLang: tgtLang }];
+      AsyncStorage.setItem(GLOSSARY_KEY, JSON.stringify(updated));
+      return updated;
+    });
+    if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setCorrectionPrompt(null);
+    setCorrectionText("");
+  }, [correctionPrompt, correctionText, sourceLang.code, targetLang.code, settings.hapticsEnabled]);
 
   const copyToClipboard = useCallback(async (text: string) => {
     await Clipboard.setStringAsync(text);
@@ -1355,6 +1387,51 @@ export default function App() {
           </View>
         </Modal>
 
+        {/* Correction prompt modal */}
+        <Modal visible={correctionPrompt !== null} animationType="fade" transparent>
+          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+            <View style={[styles.compareContent, { backgroundColor: colors.modalBg, maxHeight: "50%" }]}>
+              <Text style={[styles.compareTitle, { color: colors.titleText }]}>Suggest Correction</Text>
+              <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
+                <Text style={[{ color: colors.dimText, fontSize: 13, marginBottom: 12 }]}>
+                  Original: "{correctionPrompt?.original}"
+                </Text>
+                <Text style={[{ color: colors.dimText, fontSize: 13, marginBottom: 12 }]}>
+                  Current: "{correctionPrompt?.translated}"
+                </Text>
+                <TextInput
+                  style={[styles.glossaryInput, { backgroundColor: colors.cardBg, color: colors.primaryText, borderColor: colors.border }]}
+                  placeholder="Enter better translation..."
+                  placeholderTextColor={colors.placeholderText}
+                  value={correctionText}
+                  onChangeText={setCorrectionText}
+                  autoFocus
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  accessibilityLabel="Correction input"
+                />
+                <TouchableOpacity
+                  style={[styles.glossaryAddButton, { backgroundColor: correctionText.trim() ? colors.primary : colors.border }]}
+                  onPress={submitCorrection}
+                  disabled={!correctionText.trim()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Submit correction"
+                >
+                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Save & Add to Glossary</Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
+                onPress={() => { setCorrectionPrompt(null); setCorrectionText(""); }}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel correction"
+              >
+                <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
         {/* Glossary modal */}
         <Modal visible={showGlossary} animationType="slide" transparent>
           <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
@@ -1858,6 +1935,19 @@ export default function App() {
                         accessibilityLabel="Compare translations from different engines"
                       >
                         <Text style={[styles.compareIcon, { color: colors.dimText }]}>⇔</Text>
+                      </TouchableOpacity>
+                    )}
+                    {!item.error && !item.pending && (
+                      <TouchableOpacity
+                        style={styles.speakButton}
+                        onPress={() => {
+                          setCorrectionPrompt({ index: realIndex, original: item.original, translated: item.translated });
+                          setCorrectionText("");
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Suggest a better translation"
+                      >
+                        <Text style={[{ fontSize: 14, color: colors.dimText }]}>✏️</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -3043,6 +3133,14 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: "center" as const,
     justifyContent: "center" as const,
+  },
+  glossaryInput: {
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    borderWidth: 1,
+    marginBottom: 8,
   },
   glossaryEntry: {
     flexDirection: "row" as const,
