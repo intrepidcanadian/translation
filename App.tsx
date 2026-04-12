@@ -544,8 +544,22 @@ export default function App() {
   };
 
   const clearHistory = () => {
-    setHistory([]);
-    AsyncStorage.removeItem(HISTORY_KEY);
+    Alert.alert(
+      "Clear History",
+      `Delete all ${history.length} translation${history.length === 1 ? "" : "s"}? This cannot be undone.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear All",
+          style: "destructive",
+          onPress: () => {
+            if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            setHistory([]);
+            AsyncStorage.removeItem(HISTORY_KEY);
+          },
+        },
+      ]
+    );
   };
 
   const deleteHistoryItem = useCallback((index: number) => {
