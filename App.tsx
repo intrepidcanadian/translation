@@ -271,12 +271,13 @@ export default function App() {
       setSpeakingText(text);
       Speech.speak(text, {
         language: langCode,
+        rate: settings.speechRate,
         onDone: () => setSpeakingText(null),
         onStopped: () => setSpeakingText(null),
         onError: () => setSpeakingText(null),
       });
     },
-    [speakingText]
+    [speakingText, settings.speechRate]
   );
 
   const showError = useCallback((msg: string) => {
@@ -371,7 +372,7 @@ export default function App() {
         const ttsLang = (conversationMode && speaker === "B")
           ? sourceLang.speechCode
           : targetLang.speechCode;
-        Speech.speak(translatedText.trim(), { language: ttsLang });
+        Speech.speak(translatedText.trim(), { language: ttsLang, rate: settings.speechRate });
       }
     }
     setLiveText("");

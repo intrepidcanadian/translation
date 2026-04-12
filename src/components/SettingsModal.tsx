@@ -9,15 +9,18 @@ import {
   ScrollView,
   Platform,
 } from "react-native";
+import Slider from "@react-native-community/slider";
 
 export interface Settings {
   hapticsEnabled: boolean;
   autoPlayTTS: boolean;
+  speechRate: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   hapticsEnabled: true,
   autoPlayTTS: false,
+  speechRate: 1.0,
 };
 
 interface Props {
@@ -66,6 +69,27 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 accessibilityLabel="Toggle auto-play translation speech"
               />
             </View>
+
+            <View style={styles.row}>
+              <View style={styles.rowText}>
+                <Text style={styles.rowTitle}>Speech Speed</Text>
+                <Text style={styles.rowSubtitle}>
+                  {settings.speechRate <= 0.6 ? "Very Slow" : settings.speechRate <= 0.8 ? "Slow" : settings.speechRate <= 1.1 ? "Normal" : settings.speechRate <= 1.5 ? "Fast" : "Very Fast"} ({settings.speechRate.toFixed(1)}x)
+                </Text>
+              </View>
+            </View>
+            <Slider
+              style={styles.slider}
+              minimumValue={0.5}
+              maximumValue={2.0}
+              step={0.1}
+              value={settings.speechRate}
+              onSlidingComplete={(value) => onUpdate({ ...settings, speechRate: Math.round(value * 10) / 10 })}
+              minimumTrackTintColor="#6c63ff"
+              maximumTrackTintColor="#333355"
+              thumbTintColor="#ffffff"
+              accessibilityLabel={`Speech speed: ${settings.speechRate.toFixed(1)}x`}
+            />
 
             <View style={styles.infoSection}>
               <Text style={styles.infoTitle}>About</Text>
@@ -132,6 +156,11 @@ const styles = StyleSheet.create({
     color: "#666688",
     fontSize: 13,
     marginTop: 2,
+  },
+  slider: {
+    width: "100%",
+    height: 40,
+    marginBottom: 8,
   },
   infoSection: {
     paddingTop: 24,
