@@ -29,6 +29,36 @@ export interface TranslateOptions {
   signal?: AbortSignal;
 }
 
+// Retry with exponential backoff for rate-limit (429) and transient server errors (5xx)
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 2,
+  signal?: AbortSignal
+): Promise<T> {
+  let lastError: Error | undefined;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      // Only retry on rate-limit or server errors, not on auth/client errors
+      const isRetryable =
+        lastError.message.includes("rate limit") ||
+        lastError.message.includes("Too many") ||
+        lastError.message.includes("429") ||
+        lastError.message.includes("500") ||
+        lastError.message.includes("502") ||
+        lastError.message.includes("503");
+      if (!isRetryable || attempt === maxRetries) throw lastError;
+      // Exponential backoff: 1s, 2s
+      const delay = Math.pow(2, attempt) * 1000;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw lastError!;
+}
+
 function createTimeoutSignal(signal?: AbortSignal): { controller: AbortController; timeoutId: ReturnType<typeof setTimeout> } {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -293,23 +323,36 @@ export async function translateText(
     return { translatedText: cached };
   }
 
+  const trimmed = text.trim();
+  const doTranslate = async (): Promise<TranslationResult> => {
+    switch (provider) {
+      case "apple":
+        return translateApple(trimmed, sourceLang, targetLang, signal);
+      case "mlkit":
+        return translateMLKit(trimmed, sourceLang, targetLang, signal);
+      case "deepl":
+        return translateDeepL(trimmed, sourceLang, targetLang, apiKey, signal);
+      case "google":
+        return translateGoogle(trimmed, sourceLang, targetLang, apiKey, signal);
+      default:
+        return translateMyMemory(trimmed, sourceLang, targetLang, signal);
+    }
+  };
+
   let result: TranslationResult;
-  switch (provider) {
-    case "apple":
-      result = await translateApple(text.trim(), sourceLang, targetLang, signal);
-      break;
-    case "mlkit":
-      result = await translateMLKit(text.trim(), sourceLang, targetLang, signal);
-      break;
-    case "deepl":
-      result = await translateDeepL(text.trim(), sourceLang, targetLang, apiKey, signal);
-      break;
-    case "google":
-      result = await translateGoogle(text.trim(), sourceLang, targetLang, apiKey, signal);
-      break;
-    default:
-      result = await translateMyMemory(text.trim(), sourceLang, targetLang, signal);
-      break;
+  try {
+    result = await withRetry(doTranslate, 2, signal);
+  } catch (err: any) {
+    // Auto-fallback: if primary provider fails and isn't already MyMemory, try MyMemory
+    if (provider !== "mymemory" && provider !== "apple" && provider !== "mlkit") {
+      try {
+        result = await translateMyMemory(trimmed, sourceLang, targetLang, signal);
+      } catch {
+        throw err; // Throw original error if fallback also fails
+      }
+    } else {
+      throw err;
+    }
   }
 
   // Store in cache, evicting oldest entries if at capacity

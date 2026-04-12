@@ -20,6 +20,7 @@ import {
   UIManager,
   useWindowDimensions,
   Modal,
+  AccessibilityInfo,
 } from "react-native";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -287,6 +288,14 @@ function AppContent() {
   >([]);
   const isProcessingQueue = useRef(false);
 
+  // Respect system reduce motion preference for accessibility
+  const [reduceMotion, setReduceMotion] = useState(false);
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
+    const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
+    return () => sub.remove();
+  }, []);
+
   // Pulse animation for mic button
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const pulseOpacity = useRef(new Animated.Value(0)).current;
@@ -295,7 +304,7 @@ function AppContent() {
   const skeletonAnim = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
-    if (isListening) {
+    if (isListening && !reduceMotion) {
       const pulse = Animated.loop(
         Animated.parallel([
           Animated.sequence([
@@ -330,10 +339,10 @@ function AppContent() {
       pulseAnim.setValue(1);
       pulseOpacity.setValue(0);
     }
-  }, [isListening, pulseAnim, pulseOpacity]);
+  }, [isListening, reduceMotion, pulseAnim, pulseOpacity]);
 
   useEffect(() => {
-    if (isTranslating) {
+    if (isTranslating && !reduceMotion) {
       const shimmer = Animated.loop(
         Animated.sequence([
           Animated.timing(skeletonAnim, { toValue: 0.7, duration: 800, useNativeDriver: true }),
@@ -343,9 +352,9 @@ function AppContent() {
       shimmer.start();
       return () => shimmer.stop();
     } else {
-      skeletonAnim.setValue(0.3);
+      skeletonAnim.setValue(reduceMotion ? 0.5 : 0.3);
     }
-  }, [isTranslating, skeletonAnim]);
+  }, [isTranslating, reduceMotion, skeletonAnim]);
 
   // Load persisted history and settings on mount
   useEffect(() => {
@@ -424,7 +433,9 @@ function AppContent() {
             if (result.granted) {
               ExpoSpeechRecognitionModule.start({ lang: sourceLang.speechCode, interimResults: true, continuous: true, requiresOnDeviceRecognition: settings.offlineSpeech });
             }
-          } catch {}
+          } catch (err) {
+            console.warn("Quick action voice translate failed:", err);
+          }
           break;
         case "translate_paste":
           try {
@@ -432,7 +443,9 @@ function AppContent() {
             if (clip?.trim()) {
               setTypedText(clip.trim());
             }
-          } catch {}
+          } catch (err) {
+            console.warn("Quick action paste failed:", err);
+          }
           break;
         case "phrasebook":
           setShowPhrasebook(true);
@@ -603,7 +616,7 @@ function AppContent() {
     if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setCopiedText(text);
     setTimeout(() => setCopiedText(null), 1500);
-  }, []);
+  }, [settings.hapticsEnabled]);
 
   const lookupWordAlternatives = useCallback(async (word: string, srcLang: string, tgtLang: string) => {
     setWordAltData({ word, sourceLang: srcLang, targetLang: tgtLang, alternatives: [], loading: true });
@@ -721,9 +734,11 @@ function AppContent() {
               ),
             });
           });
-        }).catch(() => {});
+        }).catch((err: any) => console.warn("Widget update failed:", err));
       }
-    } catch {}
+    } catch (err) {
+      console.warn("Widget data save failed:", err);
+    }
   }, []);
 
   // Cleanup timeouts and speech on unmount
@@ -787,7 +802,7 @@ function AppContent() {
         }
       }, 300); // 300ms debounce - fast enough to feel live
     },
-    [sourceLang.code, targetLang.code, conversationMode, showError]
+    [sourceLang.code, targetLang.code, conversationMode, showError, settings.translationProvider, settings.apiKey, glossaryLookup, updateWidgetData]
   );
 
   // Speech recognition events
@@ -1052,7 +1067,9 @@ function AppContent() {
     }
     try {
       await Share.share({ message });
-    } catch {}
+    } catch (err) {
+      console.warn("Share failed:", err);
+    }
   }, [history]);
 
   const showExportPicker = useCallback(() => {
@@ -1265,7 +1282,7 @@ function AppContent() {
         setLiveText("");
       }
     }
-  }, [typedText, sourceLang.code, targetLang.code, showError, isOffline, addToOfflineQueue]);
+  }, [typedText, sourceLang.code, targetLang.code, showError, isOffline, addToOfflineQueue, glossaryLookup, settings.translationProvider, settings.apiKey, maybeRequestReview, updateStreak, updateWidgetData]);
 
   return (
     <>
