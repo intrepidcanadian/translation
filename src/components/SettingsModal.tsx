@@ -34,6 +34,7 @@ export interface Settings {
   translationProvider: TranslationProvider;
   apiKey: string;
   showRomanization: boolean;
+  offlineSpeech: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -46,6 +47,7 @@ export const DEFAULT_SETTINGS: Settings = {
   translationProvider: "mymemory",
   apiKey: "",
   showRomanization: true,
+  offlineSpeech: false,
 };
 
 interface Props {
@@ -174,6 +176,20 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 trackColor={dynamicStyles.switchTrack}
                 thumbColor="#ffffff"
                 accessibilityLabel="Toggle romanization display"
+              />
+            </View>
+
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Offline Speech</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Use on-device recognition (no internet needed)</Text>
+              </View>
+              <Switch
+                value={settings.offlineSpeech}
+                onValueChange={() => toggle("offlineSpeech")}
+                trackColor={dynamicStyles.switchTrack}
+                thumbColor="#ffffff"
+                accessibilityLabel="Toggle offline speech recognition"
               />
             </View>
 

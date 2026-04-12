@@ -40,6 +40,25 @@
           "microphonePermission": "Allow Live Translator to access your microphone for real-time speech translation.",
           "speechRecognitionPermission": "Allow Live Translator to use speech recognition for live translation."
         }
+      ],
+      "expo-quick-actions",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "TranslateWidget",
+              "label": "Live Translator",
+              "description": "Quick translate widget with voice and paste shortcuts",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 3,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "widgetFeatures": "reconfigurable"
+            }
+          ]
+        }
       ]
     ]
   }

@@ -14,7 +14,7 @@ export interface OfflinePhrase {
   ar: string;
 }
 
-export type PhraseCategory = "greetings" | "travel" | "emergency" | "food" | "shopping" | "basic";
+export type PhraseCategory = "greetings" | "travel" | "emergency" | "food" | "shopping" | "basic" | "numbers" | "directions" | "medical";
 
 export const PHRASE_CATEGORIES: { key: PhraseCategory; label: string; icon: string }[] = [
   { key: "basic", label: "Basic", icon: "💬" },
@@ -23,6 +23,9 @@ export const PHRASE_CATEGORIES: { key: PhraseCategory; label: string; icon: stri
   { key: "emergency", label: "Emergency", icon: "🚨" },
   { key: "food", label: "Food", icon: "🍽️" },
   { key: "shopping", label: "Shopping", icon: "🛒" },
+  { key: "numbers", label: "Numbers", icon: "🔢" },
+  { key: "directions", label: "Directions", icon: "🧭" },
+  { key: "medical", label: "Medical", icon: "🏥" },
 ];
 
 const CATEGORIZED_PHRASES: Record<PhraseCategory, OfflinePhrase[]> = {
@@ -194,6 +197,35 @@ const CATEGORIZED_PHRASES: Record<PhraseCategory, OfflinePhrase[]> = {
       it: "Posso provarlo?", pt: "Posso experimentar?", ja: "試着してもいいですか?", zh: "我可以试穿吗?", ko: "입어봐도 될까요?", ar: "هل يمكنني تجربة هذا؟",
     },
   ],
+  numbers: [
+    { en: "Zero", es: "Cero", fr: "Zéro", de: "Null", it: "Zero", pt: "Zero", ja: "零", zh: "零", ko: "영", ar: "صفر" },
+    { en: "One", es: "Uno", fr: "Un", de: "Eins", it: "Uno", pt: "Um", ja: "一", zh: "一", ko: "일", ar: "واحد" },
+    { en: "Two", es: "Dos", fr: "Deux", de: "Zwei", it: "Due", pt: "Dois", ja: "二", zh: "二", ko: "이", ar: "اثنان" },
+    { en: "Three", es: "Tres", fr: "Trois", de: "Drei", it: "Tre", pt: "Três", ja: "三", zh: "三", ko: "삼", ar: "ثلاثة" },
+    { en: "Four", es: "Cuatro", fr: "Quatre", de: "Vier", it: "Quattro", pt: "Quatro", ja: "四", zh: "四", ko: "사", ar: "أربعة" },
+    { en: "Five", es: "Cinco", fr: "Cinq", de: "Fünf", it: "Cinque", pt: "Cinco", ja: "五", zh: "五", ko: "오", ar: "خمسة" },
+    { en: "Ten", es: "Diez", fr: "Dix", de: "Zehn", it: "Dieci", pt: "Dez", ja: "十", zh: "十", ko: "십", ar: "عشرة" },
+    { en: "Hundred", es: "Cien", fr: "Cent", de: "Hundert", it: "Cento", pt: "Cem", ja: "百", zh: "百", ko: "백", ar: "مئة" },
+    { en: "Thousand", es: "Mil", fr: "Mille", de: "Tausend", it: "Mille", pt: "Mil", ja: "千", zh: "千", ko: "천", ar: "ألف" },
+  ],
+  directions: [
+    { en: "Left", es: "Izquierda", fr: "Gauche", de: "Links", it: "Sinistra", pt: "Esquerda", ja: "左", zh: "左", ko: "왼쪽", ar: "يسار" },
+    { en: "Right", es: "Derecha", fr: "Droite", de: "Rechts", it: "Destra", pt: "Direita", ja: "右", zh: "右", ko: "오른쪽", ar: "يمين" },
+    { en: "Straight ahead", es: "Todo recto", fr: "Tout droit", de: "Geradeaus", it: "Dritto", pt: "Em frente", ja: "まっすぐ", zh: "直走", ko: "직진", ar: "مستقيم" },
+    { en: "Where is the exit?", es: "¿Dónde está la salida?", fr: "Où est la sortie?", de: "Wo ist der Ausgang?", it: "Dov'è l'uscita?", pt: "Onde é a saída?", ja: "出口はどこですか?", zh: "出口在哪里?", ko: "출구가 어디예요?", ar: "أين المخرج؟" },
+    { en: "How far is it?", es: "¿Qué tan lejos está?", fr: "C'est loin?", de: "Wie weit ist es?", it: "Quanto è lontano?", pt: "Quão longe é?", ja: "どのくらい遠いですか?", zh: "有多远?", ko: "얼마나 멀어요?", ar: "كم يبعد؟" },
+    { en: "Stop here", es: "Pare aquí", fr: "Arrêtez-vous ici", de: "Halten Sie hier", it: "Si fermi qui", pt: "Pare aqui", ja: "ここで止めてください", zh: "在这里停", ko: "여기서 세워주세요", ar: "توقف هنا" },
+    { en: "Near", es: "Cerca", fr: "Près", de: "Nah", it: "Vicino", pt: "Perto", ja: "近い", zh: "近", ko: "가까운", ar: "قريب" },
+    { en: "Far", es: "Lejos", fr: "Loin", de: "Weit", it: "Lontano", pt: "Longe", ja: "遠い", zh: "远", ko: "먼", ar: "بعيد" },
+  ],
+  medical: [
+    { en: "I need a doctor", es: "Necesito un médico", fr: "J'ai besoin d'un médecin", de: "Ich brauche einen Arzt", it: "Ho bisogno di un medico", pt: "Preciso de um médico", ja: "医者が必要です", zh: "我需要医生", ko: "의사가 필요해요", ar: "أحتاج طبيب" },
+    { en: "I feel sick", es: "Me siento mal", fr: "Je me sens mal", de: "Mir ist schlecht", it: "Mi sento male", pt: "Estou me sentindo mal", ja: "気分が悪いです", zh: "我觉得不舒服", ko: "몸이 안 좋아요", ar: "أشعر بالمرض" },
+    { en: "It hurts here", es: "Me duele aquí", fr: "J'ai mal ici", de: "Es tut hier weh", it: "Mi fa male qui", pt: "Dói aqui", ja: "ここが痛いです", zh: "这里痛", ko: "여기가 아파요", ar: "يؤلمني هنا" },
+    { en: "I am allergic", es: "Soy alérgico", fr: "Je suis allergique", de: "Ich bin allergisch", it: "Sono allergico", pt: "Sou alérgico", ja: "アレルギーがあります", zh: "我过敏", ko: "알레르기가 있어요", ar: "لدي حساسية" },
+    { en: "Where is the pharmacy?", es: "¿Dónde está la farmacia?", fr: "Où est la pharmacie?", de: "Wo ist die Apotheke?", it: "Dov'è la farmacia?", pt: "Onde é a farmácia?", ja: "薬局はどこですか?", zh: "药房在哪里?", ko: "약국이 어디예요?", ar: "أين الصيدلية؟" },
+    { en: "I need medicine", es: "Necesito medicina", fr: "J'ai besoin de médicaments", de: "Ich brauche Medizin", it: "Ho bisogno di medicine", pt: "Preciso de remédio", ja: "薬が必要です", zh: "我需要药", ko: "약이 필요해요", ar: "أحتاج دواء" },
+  ],
 };
 
 // Flat list for backward compatibility with offlineTranslate
@@ -235,10 +267,49 @@ export function getPhraseOfTheDay(targetLang: string): { phrase: OfflinePhrase; 
   return { phrase, category };
 }
 
+// Common single-word translations for offline word-by-word fallback
+const COMMON_WORDS: OfflinePhrase[] = [
+  { en: "hello", es: "hola", fr: "bonjour", de: "hallo", it: "ciao", pt: "olá", ja: "こんにちは", zh: "你好", ko: "안녕하세요", ar: "مرحبا" },
+  { en: "goodbye", es: "adiós", fr: "au revoir", de: "auf wiedersehen", it: "arrivederci", pt: "adeus", ja: "さようなら", zh: "再见", ko: "안녕히 가세요", ar: "وداعا" },
+  { en: "good", es: "bueno", fr: "bon", de: "gut", it: "buono", pt: "bom", ja: "良い", zh: "好", ko: "좋은", ar: "جيد" },
+  { en: "bad", es: "malo", fr: "mauvais", de: "schlecht", it: "cattivo", pt: "mau", ja: "悪い", zh: "坏", ko: "나쁜", ar: "سيئ" },
+  { en: "big", es: "grande", fr: "grand", de: "groß", it: "grande", pt: "grande", ja: "大きい", zh: "大", ko: "큰", ar: "كبير" },
+  { en: "small", es: "pequeño", fr: "petit", de: "klein", it: "piccolo", pt: "pequeno", ja: "小さい", zh: "小", ko: "작은", ar: "صغير" },
+  { en: "water", es: "agua", fr: "eau", de: "wasser", it: "acqua", pt: "água", ja: "水", zh: "水", ko: "물", ar: "ماء" },
+  { en: "food", es: "comida", fr: "nourriture", de: "essen", it: "cibo", pt: "comida", ja: "食べ物", zh: "食物", ko: "음식", ar: "طعام" },
+  { en: "money", es: "dinero", fr: "argent", de: "geld", it: "denaro", pt: "dinheiro", ja: "お金", zh: "钱", ko: "돈", ar: "مال" },
+  { en: "time", es: "tiempo", fr: "temps", de: "zeit", it: "tempo", pt: "tempo", ja: "時間", zh: "时间", ko: "시간", ar: "وقت" },
+  { en: "today", es: "hoy", fr: "aujourd'hui", de: "heute", it: "oggi", pt: "hoje", ja: "今日", zh: "今天", ko: "오늘", ar: "اليوم" },
+  { en: "tomorrow", es: "mañana", fr: "demain", de: "morgen", it: "domani", pt: "amanhã", ja: "明日", zh: "明天", ko: "내일", ar: "غدا" },
+  { en: "yesterday", es: "ayer", fr: "hier", de: "gestern", it: "ieri", pt: "ontem", ja: "昨日", zh: "昨天", ko: "어제", ar: "أمس" },
+  { en: "hot", es: "caliente", fr: "chaud", de: "heiß", it: "caldo", pt: "quente", ja: "暑い", zh: "热", ko: "뜨거운", ar: "حار" },
+  { en: "cold", es: "frío", fr: "froid", de: "kalt", it: "freddo", pt: "frio", ja: "寒い", zh: "冷", ko: "차가운", ar: "بارد" },
+  { en: "open", es: "abierto", fr: "ouvert", de: "offen", it: "aperto", pt: "aberto", ja: "開いている", zh: "开", ko: "열린", ar: "مفتوح" },
+  { en: "closed", es: "cerrado", fr: "fermé", de: "geschlossen", it: "chiuso", pt: "fechado", ja: "閉まっている", zh: "关", ko: "닫힌", ar: "مغلق" },
+  { en: "here", es: "aquí", fr: "ici", de: "hier", it: "qui", pt: "aqui", ja: "ここ", zh: "这里", ko: "여기", ar: "هنا" },
+  { en: "there", es: "allí", fr: "là", de: "dort", it: "là", pt: "ali", ja: "そこ", zh: "那里", ko: "거기", ar: "هناك" },
+  { en: "now", es: "ahora", fr: "maintenant", de: "jetzt", it: "adesso", pt: "agora", ja: "今", zh: "现在", ko: "지금", ar: "الآن" },
+  { en: "beautiful", es: "hermoso", fr: "beau", de: "schön", it: "bello", pt: "bonito", ja: "美しい", zh: "美丽", ko: "아름다운", ar: "جميل" },
+  { en: "help", es: "ayuda", fr: "aide", de: "hilfe", it: "aiuto", pt: "ajuda", ja: "助けて", zh: "帮助", ko: "도움", ar: "مساعدة" },
+  { en: "friend", es: "amigo", fr: "ami", de: "freund", it: "amico", pt: "amigo", ja: "友達", zh: "朋友", ko: "친구", ar: "صديق" },
+  { en: "family", es: "familia", fr: "famille", de: "familie", it: "famiglia", pt: "família", ja: "家族", zh: "家庭", ko: "가족", ar: "عائلة" },
+  { en: "love", es: "amor", fr: "amour", de: "liebe", it: "amore", pt: "amor", ja: "愛", zh: "爱", ko: "사랑", ar: "حب" },
+  { en: "happy", es: "feliz", fr: "heureux", de: "glücklich", it: "felice", pt: "feliz", ja: "幸せ", zh: "快乐", ko: "행복한", ar: "سعيد" },
+  { en: "sorry", es: "lo siento", fr: "désolé", de: "entschuldigung", it: "scusa", pt: "desculpa", ja: "ごめんなさい", zh: "对不起", ko: "미안합니다", ar: "آسف" },
+  { en: "morning", es: "mañana", fr: "matin", de: "morgen", it: "mattina", pt: "manhã", ja: "朝", zh: "早上", ko: "아침", ar: "صباح" },
+  { en: "night", es: "noche", fr: "nuit", de: "nacht", it: "notte", pt: "noite", ja: "夜", zh: "晚上", ko: "밤", ar: "ليل" },
+  { en: "eat", es: "comer", fr: "manger", de: "essen", it: "mangiare", pt: "comer", ja: "食べる", zh: "吃", ko: "먹다", ar: "أكل" },
+  { en: "drink", es: "beber", fr: "boire", de: "trinken", it: "bere", pt: "beber", ja: "飲む", zh: "喝", ko: "마시다", ar: "شرب" },
+  { en: "go", es: "ir", fr: "aller", de: "gehen", it: "andare", pt: "ir", ja: "行く", zh: "去", ko: "가다", ar: "اذهب" },
+  { en: "stop", es: "parar", fr: "arrêter", de: "stopp", it: "fermare", pt: "parar", ja: "止まる", zh: "停", ko: "멈추다", ar: "توقف" },
+  { en: "wait", es: "esperar", fr: "attendre", de: "warten", it: "aspettare", pt: "esperar", ja: "待つ", zh: "等", ko: "기다리다", ar: "انتظر" },
+];
+
 /**
  * Attempt to translate text using the built-in offline phrase dictionary.
  * Returns null if no match is found (caller should fall back to online).
  * Matching is case-insensitive and ignores trailing punctuation.
+ * Tries exact phrase match first, then falls back to single-word dictionary.
  */
 export function offlineTranslate(
   text: string,
@@ -253,9 +324,9 @@ export function offlineTranslate(
 
   const normalized = text.trim().toLowerCase().replace(/[?!.,。？！、]+$/, "");
 
+  // Search categorized phrases first (exact phrase match)
   for (const phrase of ALL_PHRASES) {
     if (sourceLang === "autodetect") {
-      // Try to match any source language
       for (const lang of SUPPORTED_OFFLINE) {
         if (phrase[lang].toLowerCase().replace(/[?!.,。？！、]+$/, "") === normalized) {
           return phrase[tgtLang] || null;
@@ -265,6 +336,22 @@ export function offlineTranslate(
       const sourceValue = phrase[srcLang];
       if (sourceValue && sourceValue.toLowerCase().replace(/[?!.,。？！、]+$/, "") === normalized) {
         return phrase[tgtLang] || null;
+      }
+    }
+  }
+
+  // Fall back to common words dictionary (single word match)
+  for (const word of COMMON_WORDS) {
+    if (sourceLang === "autodetect") {
+      for (const lang of SUPPORTED_OFFLINE) {
+        if (word[lang].toLowerCase() === normalized) {
+          return word[tgtLang] || null;
+        }
+      }
+    } else {
+      const sourceValue = word[srcLang];
+      if (sourceValue && sourceValue.toLowerCase() === normalized) {
+        return word[tgtLang] || null;
       }
     }
   }

@@ -34,6 +34,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
 import * as StoreReview from "expo-store-review";
+import * as QuickActions from "expo-quick-actions";
 import LanguagePicker from "./src/components/LanguagePicker";
 import SettingsModal, { Settings, DEFAULT_SETTINGS, FONT_SIZE_SCALES } from "./src/components/SettingsModal";
 import {
@@ -124,6 +125,33 @@ const swipeStyles = StyleSheet.create({
     fontSize: 16,
   },
 });
+
+function formatRelativeTime(timestamp?: number): string | null {
+  if (!timestamp) return null;
+  const now = Date.now();
+  const diff = now - timestamp;
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  if (seconds < 60) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+
+  const date = new Date(timestamp);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  if (timestamp >= today.getTime()) {
+    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  if (timestamp >= yesterday.getTime()) {
+    return "Yesterday " + date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  }
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
 
 export default function App() {
   const { width, height } = useWindowDimensions();
@@ -358,6 +386,58 @@ export default function App() {
       }
     });
   }, []);
+
+  // Quick Actions setup (3D Touch / long-press app icon shortcuts)
+  const quickActionRef = useRef<string | null>(null);
+  useEffect(() => {
+    QuickActions.setItems([
+      { id: "translate_voice", title: "Voice Translate", subtitle: "Start speech translation", icon: Platform.OS === "ios" ? "symbol:mic.fill" : undefined },
+      { id: "translate_paste", title: "Paste & Translate", subtitle: "Translate from clipboard", icon: Platform.OS === "ios" ? "symbol:doc.on.clipboard" : undefined },
+      { id: "phrasebook", title: "Phrasebook", subtitle: "Browse common phrases", icon: Platform.OS === "ios" ? "symbol:book.fill" : undefined },
+    ]);
+
+    const sub = QuickActions.addListener((action) => {
+      quickActionRef.current = action.id;
+    });
+    // Check if app was launched via quick action
+    if (QuickActions.initial) {
+      quickActionRef.current = QuickActions.initial.id;
+    }
+    return () => { sub?.remove?.(); };
+  }, []);
+
+  // Handle quick action after app is ready
+  useEffect(() => {
+    if (!quickActionRef.current) return;
+    const actionId = quickActionRef.current;
+    quickActionRef.current = null;
+
+    const timer = setTimeout(async () => {
+      switch (actionId) {
+        case "translate_voice":
+          // Start listening
+          try {
+            const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+            if (result.granted) {
+              ExpoSpeechRecognitionModule.start({ lang: sourceLang.speechCode, interimResults: true, continuous: true, requiresOnDeviceRecognition: settings.offlineSpeech });
+            }
+          } catch {}
+          break;
+        case "translate_paste":
+          try {
+            const clip = await Clipboard.getStringAsync();
+            if (clip?.trim()) {
+              setTypedText(clip.trim());
+            }
+          } catch {}
+          break;
+        case "phrasebook":
+          setShowPhrasebook(true);
+          break;
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [sourceLang.speechCode]);
 
   const updateStreak = useCallback(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -608,6 +688,29 @@ export default function App() {
     AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-100)));
   }, [history]);
 
+  // Save last translation to AsyncStorage for the home screen widget
+  const updateWidgetData = useCallback(async (original: string, translated: string, from: string, to: string) => {
+    try {
+      await AsyncStorage.setItem(
+        "widget_last_translation",
+        JSON.stringify({ lastOriginal: original, lastTranslated: translated, sourceLang: from.toUpperCase(), targetLang: to.toUpperCase() })
+      );
+      // Request widget update on Android
+      if (Platform.OS === "android") {
+        import("react-native-android-widget").then(({ requestWidgetUpdate }) => {
+          import("./src/widgets/TranslateWidget").then(({ TranslateWidget }) => {
+            requestWidgetUpdate({
+              widgetName: "TranslateWidget",
+              renderWidget: () => (
+                <TranslateWidget lastOriginal={original} lastTranslated={translated} sourceLang={from.toUpperCase()} targetLang={to.toUpperCase()} />
+              ),
+            });
+          });
+        }).catch(() => {});
+      }
+    } catch {}
+  }, []);
+
   // Cleanup timeouts and speech on unmount
   useEffect(() => {
     return () => {
@@ -655,6 +758,7 @@ export default function App() {
             lastTranslatedRef.current = text.trim();
             lastConfidenceRef.current = result.confidence;
             lastDetectedLangRef.current = (result as any).detectedLanguage;
+            updateWidgetData(text.trim(), result.translatedText, fromCode, toCode);
           }
         } catch (err) {
           if (controller.signal.aborted) return; // Ignore cancelled requests
@@ -766,11 +870,18 @@ export default function App() {
       ? targetLang.speechCode
       : (sourceLang.code === "autodetect" ? "en-US" : sourceLang.speechCode);
 
+    // When auto-detect is active, add alternative languages for better voice detection
+    const altLangs = sourceLang.code === "autodetect"
+      ? LANGUAGES.filter((l) => l.speechCode !== speechLang).slice(0, 5).map((l) => l.speechCode)
+      : undefined;
+
     ExpoSpeechRecognitionModule.start({
       lang: speechLang,
       interimResults: true, // Key for live translation!
       continuous: true, // Keep listening
       maxAlternatives: 1,
+      requiresOnDeviceRecognition: settings.offlineSpeech,
+      ...(altLangs ? { addsPunctuation: true } : {}),
     });
   };
 
@@ -1100,6 +1211,7 @@ export default function App() {
         setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, detectedLang: (result as any).detectedLanguage, timestamp: Date.now() }]);
         maybeRequestReview();
         updateStreak();
+        updateWidgetData(text, result.translatedText, sourceLang.code, targetLang.code);
       }
     } catch (err) {
       if (!controller.signal.aborted) {
@@ -2035,6 +2147,12 @@ export default function App() {
                       {item.original.trim().split(/\s+/).filter(Boolean).length} → {item.translated.trim().split(/\s+/).filter(Boolean).length} words
                       {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
                     </Text>
+                    {(() => {
+                      const timeStr = formatRelativeTime(item.timestamp);
+                      return timeStr ? (
+                        <Text style={[styles.timestampText, { color: colors.dimText }]}>{timeStr}</Text>
+                      ) : null;
+                    })()}
                     <TouchableOpacity
                       style={styles.speakButton}
                       onPress={() => speakText(item.translated, speakLang)}
@@ -2132,6 +2250,12 @@ export default function App() {
                         {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
                       </Text>
                     )}
+                    {(() => {
+                      const timeStr = formatRelativeTime(item.timestamp);
+                      return timeStr ? (
+                        <Text style={[styles.timestampText, { color: colors.dimText }]}>{timeStr}</Text>
+                      ) : null;
+                    })()}
                     {item.error ? (
                       <TouchableOpacity
                         style={styles.retryButton}
@@ -2201,6 +2325,7 @@ export default function App() {
                   <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
                   <Text style={styles.liveLabel}>
                     {isListening ? "● LIVE" : "PROCESSING"}
+                    {sourceLang.code === "autodetect" && lastDetectedLangRef.current ? ` · ${LANGUAGES.find((l) => l.code === lastDetectedLangRef.current)?.name || lastDetectedLangRef.current}` : ""}
                   </Text>
                   <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
                 </View>
@@ -3081,6 +3206,11 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "500",
     marginRight: "auto",
+  },
+  timestampText: {
+    fontSize: 10,
+    fontWeight: "400",
+    marginRight: 4,
   },
   pendingBadge: {
     fontSize: 11,
