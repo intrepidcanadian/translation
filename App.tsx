@@ -198,6 +198,10 @@ export default function App() {
   const TRANSLATION_COUNT_KEY = "translation_count";
   const RATING_THRESHOLD = 20;
   const GLOSSARY_KEY = "user_glossary";
+  const STREAK_KEY = "usage_streak";
+
+  // Usage streak tracking
+  const [streak, setStreak] = useState<{ current: number; lastDate: string }>({ current: 0, lastDate: "" });
 
   // User glossary entries
   const [glossary, setGlossary] = useState<
@@ -333,6 +337,26 @@ export default function App() {
           setGlossary(JSON.parse(stored));
         } catch {}
       }
+    });
+    AsyncStorage.getItem(STREAK_KEY).then((stored) => {
+      if (stored) {
+        try {
+          setStreak(JSON.parse(stored));
+        } catch {}
+      }
+    });
+  }, []);
+
+  const updateStreak = useCallback(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    setStreak((prev) => {
+      if (prev.lastDate === today) return prev; // Already tracked today
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const newStreak = prev.lastDate === yesterday
+        ? { current: prev.current + 1, lastDate: today }
+        : { current: 1, lastDate: today };
+      AsyncStorage.setItem(STREAK_KEY, JSON.stringify(newStreak));
+      return newStreak;
     });
   }, []);
 
@@ -639,6 +663,7 @@ export default function App() {
         { original: finalText.trim(), translated: translatedText.trim(), speaker, confidence: lastConfidenceRef.current, detectedLang: lastDetectedLangRef.current, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code },
       ]);
       maybeRequestReview();
+      updateStreak();
       // Auto-play the translation if enabled
       if (settings.autoPlayTTS) {
         const ttsLang = (conversationMode && speaker === "B")
@@ -1051,6 +1076,7 @@ export default function App() {
       if (!controller.signal.aborted) {
         setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, detectedLang: (result as any).detectedLanguage }]);
         maybeRequestReview();
+        updateStreak();
       }
     } catch (err) {
       if (!controller.signal.aborted) {
@@ -1322,6 +1348,17 @@ export default function App() {
                             <Text style={[styles.statLabel, { color: colors.mutedText }]}>Words Out</Text>
                           </View>
                         </View>
+
+                        {streak.current > 0 && (
+                          <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
+                            <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Daily Streak</Text>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                              <Text style={{ fontSize: 32 }}>🔥</Text>
+                              <Text style={[styles.statNumber, { color: colors.primary, fontSize: 28 }]}>{streak.current}</Text>
+                              <Text style={[{ color: colors.mutedText, fontSize: 14 }]}>{streak.current === 1 ? "day" : "days"} in a row</Text>
+                            </View>
+                          </View>
+                        )}
 
                         {avgConfidence != null && (
                           <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
