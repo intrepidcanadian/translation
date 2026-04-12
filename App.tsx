@@ -44,6 +44,7 @@ import {
 } from "./src/services/translation";
 import { getColors } from "./src/theme";
 import { PHRASE_CATEGORIES, getPhrasesForCategory, getPhraseOfTheDay, type PhraseCategory, type OfflinePhrase } from "./src/services/offlinePhrases";
+import { romanize, needsRomanization, getRomanizationName } from "./src/services/romanization";
 
 function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
   const translateX = useRef(new Animated.Value(0)).current;
@@ -1534,9 +1535,25 @@ export default function App() {
                   <TouchableOpacity onPress={() => copyToClipboard(item.original)}>
                     <Text style={[styles.chatOriginal, { color: colors.secondaryText }, dynamicFontSizes.chatText]}>{item.original}</Text>
                   </TouchableOpacity>
+                  {settings.showRomanization && item.sourceLangCode && (() => {
+                    const rom = romanize(item.original, item.sourceLangCode!);
+                    return rom ? (
+                      <Text style={[styles.romanizationText, { color: colors.mutedText }]}>
+                        {getRomanizationName(item.sourceLangCode!)} · {rom}
+                      </Text>
+                    ) : null;
+                  })()}
                   <TouchableOpacity onPress={() => copyToClipboard(item.translated)}>
                     <Text style={[styles.chatTranslated, { color: colors.translatedText }, dynamicFontSizes.chatText]}>{item.translated}</Text>
                   </TouchableOpacity>
+                  {settings.showRomanization && item.targetLangCode && (() => {
+                    const rom = romanize(item.translated, item.targetLangCode!);
+                    return rom ? (
+                      <Text style={[styles.romanizationText, { color: colors.mutedText }]}>
+                        {getRomanizationName(item.targetLangCode!)} · {rom}
+                      </Text>
+                    ) : null;
+                  })()}
                   {copiedText === item.original || copiedText === item.translated ? (
                     <Text style={styles.copiedBadge}>Copied!</Text>
                   ) : null}
@@ -1577,6 +1594,14 @@ export default function App() {
                   accessibilityLabel={`Original: ${item.original}. Tap to copy.`}
                 >
                   <Text style={[styles.originalText, { color: colors.secondaryText }, dynamicFontSizes.original]}>{item.original}</Text>
+                  {settings.showRomanization && item.sourceLangCode && (() => {
+                    const rom = romanize(item.original, item.sourceLangCode!);
+                    return rom ? (
+                      <Text style={[styles.romanizationText, { color: colors.mutedText }]}>
+                        {getRomanizationName(item.sourceLangCode!)} · {rom}
+                      </Text>
+                    ) : null;
+                  })()}
                   {copiedText === item.original && (
                     <Text style={styles.copiedBadge}>Copied!</Text>
                   )}
@@ -1601,6 +1626,14 @@ export default function App() {
                     <Text style={[styles.translatedTextHistory, { color: item.error ? colors.errorText : item.pending ? colors.dimText : colors.translatedText }, dynamicFontSizes.translated, (item.pending || item.error) && { fontStyle: "italic" }]}>
                       {item.translated}
                     </Text>
+                    {settings.showRomanization && !item.error && !item.pending && item.targetLangCode && (() => {
+                      const rom = romanize(item.translated, item.targetLangCode!);
+                      return rom ? (
+                        <Text style={[styles.romanizationText, { color: colors.mutedText }]}>
+                          {getRomanizationName(item.targetLangCode!)} · {rom}
+                        </Text>
+                      ) : null;
+                    })()}
                     {copiedText === item.translated && (
                       <Text style={styles.copiedBadge}>Copied!</Text>
                     )}
@@ -1674,6 +1707,14 @@ export default function App() {
 
                 <View style={[styles.bubble, styles.liveBubble, { backgroundColor: colors.liveBubbleBg, borderColor: colors.border }]}>
                   <Text style={[styles.liveOriginalText, { color: colors.liveOriginalText }, dynamicFontSizes.liveOriginal]}>{liveText}</Text>
+                  {settings.showRomanization && needsRomanization(sourceLang.code) && (() => {
+                    const rom = romanize(liveText, sourceLang.code);
+                    return rom ? (
+                      <Text style={[styles.romanizationText, { color: colors.mutedText }]}>
+                        {getRomanizationName(sourceLang.code)} · {rom}
+                      </Text>
+                    ) : null;
+                  })()}
                 </View>
 
                 {translatedText ? (
@@ -1686,6 +1727,14 @@ export default function App() {
                       <Text style={[styles.liveTranslatedText, { color: colors.liveTranslatedText }, dynamicFontSizes.liveTranslated]}>
                         {translatedText}
                       </Text>
+                      {settings.showRomanization && needsRomanization(targetLang.code) && (() => {
+                        const rom = romanize(translatedText, targetLang.code);
+                        return rom ? (
+                          <Text style={[styles.romanizationText, styles.romanizationTextLive, { color: colors.mutedText }]}>
+                            {getRomanizationName(targetLang.code)} · {rom}
+                          </Text>
+                        ) : null;
+                      })()}
                       {copiedText === translatedText && (
                         <Text style={styles.copiedBadge}>Copied!</Text>
                       )}
@@ -2137,6 +2186,16 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     marginTop: 6,
+  },
+  romanizationText: {
+    fontSize: 13,
+    fontStyle: "italic" as const,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  romanizationTextLive: {
+    fontSize: 15,
+    lineHeight: 22,
   },
   originalText: {
     fontSize: 16,

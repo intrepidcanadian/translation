@@ -33,6 +33,7 @@ export interface Settings {
   autoScroll: boolean;
   translationProvider: TranslationProvider;
   apiKey: string;
+  showRomanization: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -44,6 +45,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoScroll: true,
   translationProvider: "mymemory",
   apiKey: "",
+  showRomanization: true,
 };
 
 interface Props {
@@ -158,6 +160,20 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 trackColor={dynamicStyles.switchTrack}
                 thumbColor="#ffffff"
                 accessibilityLabel="Toggle auto-scroll"
+              />
+            </View>
+
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Romanization</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Show Pinyin, Romaji, etc. for non-Latin scripts</Text>
+              </View>
+              <Switch
+                value={settings.showRomanization}
+                onValueChange={() => toggle("showRomanization")}
+                trackColor={dynamicStyles.switchTrack}
+                thumbColor="#ffffff"
+                accessibilityLabel="Toggle romanization display"
               />
             </View>
 
