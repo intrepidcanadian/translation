@@ -46,6 +46,15 @@ export interface ThemeColors {
   offlineText: string;
   offlineBorder: string;
 
+  // Semantic
+  successText: string;
+  successBg: string;
+  warningText: string;
+  warningBg: string;
+  destructiveBg: string;
+  destructiveText: string;
+  favoriteColor: string;
+
   // Status bar
   statusBar: "light-content" | "dark-content";
 }
@@ -89,6 +98,14 @@ export const darkColors: ThemeColors = {
   offlineText: "#ffbb33",
   offlineBorder: "#665500",
 
+  successText: "#4ade80",
+  successBg: "#1a3d2a",
+  warningText: "#ffbb33",
+  warningBg: "#2a2a1a",
+  destructiveBg: "#ff4757",
+  destructiveText: "#ffffff",
+  favoriteColor: "#ffd700",
+
   statusBar: "light-content",
 };
 
@@ -130,6 +147,14 @@ export const lightColors: ThemeColors = {
   offlineBg: "#fff8e0",
   offlineText: "#996600",
   offlineBorder: "#eebb44",
+
+  successText: "#16a34a",
+  successBg: "#e8f5e9",
+  warningText: "#996600",
+  warningBg: "#fff8e0",
+  destructiveBg: "#ef4444",
+  destructiveText: "#ffffff",
+  favoriteColor: "#e6a800",
 
   statusBar: "dark-content",
 };

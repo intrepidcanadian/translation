@@ -1,5 +1,6 @@
 import ExpoModulesCore
 import NaturalLanguage
+import WidgetKit
 
 // Conditionally import Translation framework (iOS 17.4+)
 #if canImport(Translation)
@@ -153,6 +154,18 @@ public class AppleTranslationModule: Module {
       }
 
       return entities
+    }
+
+    // Save data to App Group UserDefaults for iOS widget
+    AsyncFunction("saveWidgetData") { (data: [String: String]) in
+      if let defaults = UserDefaults(suiteName: "group.com.tonylau.livetranslator") {
+        for (key, value) in data {
+          defaults.set(value, forKey: key)
+        }
+        if #available(iOS 14.0, *) {
+          WidgetCenter.shared.reloadAllTimelines()
+        }
+      }
     }
 
     // Analyze document text: detect language, extract entities, identify key patterns

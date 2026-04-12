@@ -68,7 +68,7 @@ function ChatBubble({
           <AlignedRomanization text={item.translated} langCode={item.targetLangCode} textColor={colors.translatedText} romanColor={colors.mutedText} fontSize={14 * fontSizeScale} />
         )}
         {copiedText === item.original || copiedText === item.translated ? (
-          <Text style={styles.copiedBadge}>Copied!</Text>
+          <Text style={[styles.copiedBadge, { color: colors.successText }]}>Copied!</Text>
         ) : null}
         <View style={styles.bubbleActions}>
           <Text style={[styles.wordCountBubble, { color: colors.dimText }]}>
@@ -97,7 +97,7 @@ function ChatBubble({
             accessibilityRole="button"
             accessibilityLabel={item.favorited ? "Remove from favorites" : "Add to favorites"}
           >
-            <Text style={[styles.favoriteIcon, { color: colors.dimText }, item.favorited && styles.favoriteIconActive]}>
+            <Text style={[styles.favoriteIcon, { color: colors.dimText }, item.favorited && { color: colors.favoriteColor }]}>
               {item.favorited ? "★" : "☆"}
             </Text>
           </TouchableOpacity>

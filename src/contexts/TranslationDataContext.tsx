@@ -248,6 +248,15 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
             });
           });
         }).catch((err: any) => console.warn("Widget update failed:", err));
+      } else if (Platform.OS === "ios") {
+        import("../../modules/apple-translation").then((AppleTranslation) => {
+          AppleTranslation.saveWidgetData({
+            lastOriginal: original,
+            lastTranslated: translated,
+            sourceLang: from.toUpperCase(),
+            targetLang: to.toUpperCase(),
+          });
+        }).catch((err: any) => console.warn("iOS widget update failed:", err));
       }
     } catch (err) {
       console.warn("Widget data save failed:", err);

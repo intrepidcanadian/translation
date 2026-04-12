@@ -23,6 +23,7 @@ interface AppleTranslationModuleType {
   detectLanguage(text: string): Promise<string | null>;
   extractEntities(text: string): Promise<{ persons: string[]; organizations: string[]; places: string[] }>;
   analyzeDocument(text: string): Promise<DocumentAnalysis>;
+  saveWidgetData(data: Record<string, string>): Promise<void>;
 }
 
 const isIOS = Platform.OS === "ios";
@@ -114,4 +115,9 @@ export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
     };
   }
   return getModule().analyzeDocument(text);
+}
+
+export async function saveWidgetData(data: Record<string, string>): Promise<void> {
+  if (!isIOS) return;
+  return getModule().saveWidgetData(data);
 }

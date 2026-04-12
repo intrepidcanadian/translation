@@ -1,5 +1,6 @@
 import React, { Component, type ErrorInfo, type ReactNode } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { getColors } from "../theme";
 
 interface Props {
   children: ReactNode;
@@ -27,20 +28,21 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
+      const colors = getColors("dark");
       return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.bubbleBg }]}>
           <Text style={styles.icon}>⚠️</Text>
-          <Text style={styles.title}>Something went wrong</Text>
-          <Text style={styles.message}>
+          <Text style={[styles.title, { color: colors.primaryText }]}>Something went wrong</Text>
+          <Text style={[styles.message, { color: colors.mutedText }]}>
             {this.state.error?.message || "An unexpected error occurred"}
           </Text>
           <TouchableOpacity
-            style={styles.button}
+            style={[styles.button, { backgroundColor: colors.primary }]}
             onPress={this.handleRetry}
             accessibilityRole="button"
             accessibilityLabel="Retry and reload the app"
           >
-            <Text style={styles.buttonText}>Try Again</Text>
+            <Text style={[styles.buttonText, { color: colors.destructiveText }]}>Try Again</Text>
           </TouchableOpacity>
         </View>
       );

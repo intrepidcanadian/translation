@@ -2,18 +2,26 @@ import React, { useRef, useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
+  Image,
   TouchableOpacity,
   StyleSheet,
   Dimensions,
   Platform,
   ActivityIndicator,
+  Animated,
+  Alert,
+  Share,
 } from "react-native";
 import {
   Camera,
   useCameraDevice,
   useCameraPermission,
+  type PhotoFile,
 } from "react-native-vision-camera";
 import { Camera as OCRCamera } from "react-native-vision-camera-ocr-plus";
+import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
+import * as Clipboard from "expo-clipboard";
+import * as Speech from "expo-speech";
 import { translateText, translateAppleBatch, type TranslateOptions } from "../services/translation";
 
 interface DetectedBlock {
@@ -21,6 +29,14 @@ interface DetectedBlock {
   originalText: string;
   translatedText: string;
   frame: { top: number; left: number; width: number; height: number };
+}
+
+interface CapturedBlock {
+  id: string;
+  originalText: string;
+  translatedText: string;
+  imageFrame: { top: number; left: number; width: number; height: number };
+  screenFrame: { top: number; left: number; width: number; height: number };
 }
 
 interface OCRFrame {
@@ -61,6 +77,17 @@ function getOCRLanguage(langCode: string): "latin" | "chinese" | "japanese" | "k
   }
 }
 
+// Map language codes to ML Kit text recognition scripts
+function getMLKitScript(langCode: string): TextRecognitionScript {
+  switch (langCode) {
+    case "zh": return TextRecognitionScript.CHINESE;
+    case "ja": return TextRecognitionScript.JAPANESE;
+    case "ko": return TextRecognitionScript.KOREAN;
+    case "hi": return TextRecognitionScript.DEVANAGARI;
+    default: return TextRecognitionScript.LATIN;
+  }
+}
+
 // Translation cache to avoid re-translating the same text
 const ocrTranslationCache = new Map<string, string>();
 
@@ -74,9 +101,21 @@ export default function CameraTranslator({
 }: CameraTranslatorProps) {
   const device = useCameraDevice("back");
   const { hasPermission, requestPermission } = useCameraPermission();
+  const captureRef = useRef<Camera>(null);
+
+  // Live OCR state
   const [detectedBlocks, setDetectedBlocks] = useState<DetectedBlock[]>([]);
   const [isTranslating, setIsTranslating] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [overlayMode, setOverlayMode] = useState<"bubble" | "replace">("replace");
+  const blockOpacities = useRef(new Map<string, Animated.Value>()).current;
+
+  // Photo capture state
+  const [isCaptured, setIsCaptured] = useState(false);
+  const [capturedUri, setCapturedUri] = useState<string | null>(null);
+  const [capturedBlocks, setCapturedBlocks] = useState<CapturedBlock[]>([]);
+  const [isProcessingCapture, setIsProcessingCapture] = useState(false);
+
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
@@ -121,7 +160,6 @@ export default function CameraTranslator({
     lines: Array<{ text: string; frame: { top: number; left: number; width: number; height: number } }>
   ) => {
     if (isTranslatingRef.current || !isMountedRef.current) {
-      // Queue for next run
       translateQueueRef.current = lines;
       return;
     }
@@ -139,10 +177,8 @@ export default function CameraTranslator({
     };
 
     try {
-      // Separate cached vs uncached
       const cachedMap = new Map<string, string>();
       const uncachedTexts: string[] = [];
-      const uncachedIndices: number[] = [];
 
       for (let i = 0; i < lines.length; i++) {
         const cacheKey = `${sourceLangCode}|${targetLangCode}|${lines[i].text}`;
@@ -150,11 +186,9 @@ export default function CameraTranslator({
           cachedMap.set(lines[i].text, ocrTranslationCache.get(cacheKey)!);
         } else {
           uncachedTexts.push(lines[i].text);
-          uncachedIndices.push(i);
         }
       }
 
-      // Batch translate uncached
       let translatedTexts: string[] = [];
       if (uncachedTexts.length > 0 && !controller.signal.aborted) {
         try {
@@ -172,7 +206,6 @@ export default function CameraTranslator({
             }
           }
 
-          // Cache results
           for (let i = 0; i < uncachedTexts.length && i < translatedTexts.length; i++) {
             const cacheKey = `${sourceLangCode}|${targetLangCode}|${uncachedTexts[i]}`;
             ocrTranslationCache.set(cacheKey, translatedTexts[i]);
@@ -186,7 +219,6 @@ export default function CameraTranslator({
         }
       }
 
-      // Build final blocks
       if (isMountedRef.current && !controller.signal.aborted) {
         const blocks: DetectedBlock[] = [];
         let uncachedIdx = 0;
@@ -204,6 +236,10 @@ export default function CameraTranslator({
         }
 
         setDetectedBlocks(blocks);
+        const activeIds = new Set(blocks.map((b) => b.id));
+        for (const key of blockOpacities.keys()) {
+          if (!activeIds.has(key)) blockOpacities.delete(key);
+        }
       }
     } catch (err: any) {
       if (isMountedRef.current && err?.name !== "AbortError") {
@@ -213,7 +249,6 @@ export default function CameraTranslator({
       isTranslatingRef.current = false;
       if (isMountedRef.current) setIsTranslating(false);
 
-      // Process queued OCR results
       if (translateQueueRef.current && isMountedRef.current) {
         const queued = translateQueueRef.current;
         translateQueueRef.current = null;
@@ -224,7 +259,7 @@ export default function CameraTranslator({
 
   // Handle real-time OCR results from frame processor
   const handleOCRResult = useCallback((data: any) => {
-    if (isPaused || !isMountedRef.current) return;
+    if (isPaused || isCaptured || !isMountedRef.current) return;
 
     try {
       const blocks: OCRBlock[] = data?.result?.blocks || data?.blocks || [];
@@ -236,7 +271,6 @@ export default function CameraTranslator({
         return;
       }
 
-      // Extract lines with frames
       const lines: Array<{ text: string; frame: { top: number; left: number; width: number; height: number } }> = [];
       for (const block of blocks) {
         if (block.lines) {
@@ -253,7 +287,6 @@ export default function CameraTranslator({
             });
           }
         } else if (block.text?.trim() && block.frame) {
-          // Fallback: use block-level if no lines
           lines.push({
             text: block.text.trim(),
             frame: {
@@ -268,17 +301,167 @@ export default function CameraTranslator({
 
       if (lines.length === 0) return;
 
-      // Check if text actually changed (avoid re-translating same content)
       const currentText = lines.map((l) => l.text).join("|");
       if (currentText === lastOCRTextRef.current) return;
       lastOCRTextRef.current = currentText;
 
       setError(null);
       translateLines(lines);
-    } catch (err: any) {
-      // Silently handle OCR parse errors — frame processors fire rapidly
+    } catch {
+      // Silently handle OCR parse errors
     }
-  }, [isPaused, translateLines]);
+  }, [isPaused, isCaptured, translateLines]);
+
+  // Photo capture handler
+  const handleCapture = useCallback(async () => {
+    if (!captureRef.current || isProcessingCapture) return;
+
+    setIsProcessingCapture(true);
+    setError(null);
+
+    try {
+      const photo: PhotoFile = await captureRef.current.takePhoto({
+        enableShutterSound: true,
+      });
+      const uri = Platform.OS === "android" ? `file://${photo.path}` : photo.path;
+
+      setCapturedUri(uri);
+      setIsCaptured(true);
+      setDetectedBlocks([]);
+      blockOpacities.clear();
+
+      // Run ML Kit OCR on the captured photo
+      const script = getMLKitScript(sourceLangCode);
+      const result = await TextRecognition.recognize(uri, script);
+
+      if (!result.blocks.length) {
+        setError("No text detected in photo. Try again.");
+        setIsProcessingCapture(false);
+        return;
+      }
+
+      // Extract lines with bounding boxes
+      const lines: Array<{ text: string; frame: { top: number; left: number; width: number; height: number } }> = [];
+      for (const block of result.blocks) {
+        for (const line of block.lines) {
+          if (!line.text?.trim() || !line.frame) continue;
+          lines.push({
+            text: line.text.trim(),
+            frame: {
+              top: line.frame.top ?? 0,
+              left: line.frame.left ?? 0,
+              width: line.frame.width ?? 0,
+              height: line.frame.height ?? 0,
+            },
+          });
+        }
+      }
+
+      if (lines.length === 0) {
+        setError("No text lines detected.");
+        setIsProcessingCapture(false);
+        return;
+      }
+
+      // Batch translate
+      const texts = lines.map((l) => l.text);
+      let translations: string[];
+      try {
+        if (translationProvider === "apple" && Platform.OS === "ios") {
+          translations = await translateAppleBatch(texts, sourceLangCode, targetLangCode);
+        } else {
+          translations = [];
+          for (const text of texts) {
+            try {
+              const res = await translateText(text, sourceLangCode, targetLangCode, { provider: translationProvider as any });
+              translations.push(res.translatedText);
+            } catch {
+              translations.push(text);
+            }
+          }
+        }
+      } catch {
+        translations = texts;
+      }
+
+      // Scale coordinates from image space to screen space
+      const imgW = photo.width;
+      const imgH = photo.height;
+      // Account for possible rotation (portrait photo on portrait screen)
+      const isRotated = imgW > imgH && screenDims.height > screenDims.width;
+      const effectiveW = isRotated ? imgH : imgW;
+      const effectiveH = isRotated ? imgW : imgH;
+      const scaleX = screenDims.width / effectiveW;
+      const scaleY = screenDims.height / effectiveH;
+
+      const blocks: CapturedBlock[] = lines.map((line, i) => ({
+        id: `cap-${i}-${line.text.slice(0, 8)}`,
+        originalText: line.text,
+        translatedText: translations[i] || line.text,
+        imageFrame: line.frame,
+        screenFrame: {
+          top: line.frame.top * scaleY,
+          left: line.frame.left * scaleX,
+          width: line.frame.width * scaleX,
+          height: line.frame.height * scaleY,
+        },
+      }));
+
+      setCapturedBlocks(blocks);
+    } catch (err: any) {
+      setError(err?.message || "Capture failed");
+      setIsCaptured(false);
+      setCapturedUri(null);
+    } finally {
+      setIsProcessingCapture(false);
+    }
+  }, [sourceLangCode, targetLangCode, translationProvider, screenDims, isProcessingCapture]);
+
+  const handleRetake = useCallback(() => {
+    setIsCaptured(false);
+    setCapturedUri(null);
+    setCapturedBlocks([]);
+    setError(null);
+    lastOCRTextRef.current = "";
+  }, []);
+
+  const handleShareCapture = useCallback(async () => {
+    if (!capturedUri) return;
+    const textSummary = capturedBlocks
+      .map((b) => `${b.originalText} → ${b.translatedText}`)
+      .join("\n");
+
+    try {
+      await Share.share({
+        message: `Photo Translation (${sourceLangCode.toUpperCase()} → ${targetLangCode.toUpperCase()}):\n\n${textSummary}`,
+        url: capturedUri,
+      });
+    } catch {
+      // User cancelled
+    }
+  }, [capturedUri, capturedBlocks, sourceLangCode, targetLangCode]);
+
+  const handleBlockTap = useCallback((block: CapturedBlock) => {
+    Alert.alert(
+      block.translatedText,
+      block.originalText,
+      [
+        {
+          text: "Copy Translation",
+          onPress: () => Clipboard.setStringAsync(block.translatedText),
+        },
+        {
+          text: "Copy Original",
+          onPress: () => Clipboard.setStringAsync(block.originalText),
+        },
+        {
+          text: "Speak",
+          onPress: () => Speech.speak(block.translatedText, { language: targetLangCode }),
+        },
+        { text: "Cancel", style: "cancel" },
+      ]
+    );
+  }, [targetLangCode]);
 
   if (!visible) return null;
 
@@ -322,90 +505,219 @@ export default function CameraTranslator({
 
   return (
     <View style={styles.container}>
-      {/* Camera with real-time OCR frame processor */}
-      <OCRCamera
-        style={StyleSheet.absoluteFill}
-        device={device}
-        isActive={visible && !isPaused}
-        mode="recognize"
-        options={{ language: getOCRLanguage(sourceLangCode) }}
-        callback={handleOCRResult}
-      />
+      {/* Standard Camera for photo capture (behind OCR camera) */}
+      {!isCaptured && (
+        <Camera
+          ref={captureRef}
+          style={StyleSheet.absoluteFill}
+          device={device}
+          isActive={visible && !isCaptured}
+          photo={true}
+        />
+      )}
 
-      {/* Translation Overlays */}
-      {detectedBlocks.map((block) => {
-        const overlayStyle = {
-          position: "absolute" as const,
-          top: block.frame.top,
-          left: block.frame.left,
-          minWidth: block.frame.width,
-          minHeight: block.frame.height,
-        };
+      {/* Live OCR camera (on top, handles real-time frame processing) */}
+      {!isCaptured && (
+        <OCRCamera
+          style={StyleSheet.absoluteFill}
+          device={device}
+          isActive={visible && !isPaused && !isCaptured}
+          mode="recognize"
+          options={{ language: getOCRLanguage(sourceLangCode) }}
+          callback={handleOCRResult}
+        />
+      )}
 
-        return (
-          <View key={block.id} style={[styles.overlay, overlayStyle]}>
-            <View style={styles.overlayBubble}>
-              <Text style={styles.overlayTranslated} numberOfLines={2}>
+      {/* Frozen photo view */}
+      {isCaptured && capturedUri && (
+        <Image
+          source={{ uri: capturedUri }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+        />
+      )}
+
+      {/* Live OCR overlays */}
+      {!isCaptured && detectedBlocks.map((block) => {
+        if (overlayMode === "replace") {
+          if (!blockOpacities.has(block.id)) {
+            const val = new Animated.Value(0);
+            blockOpacities.set(block.id, val);
+            Animated.timing(val, { toValue: 1, duration: 200, useNativeDriver: true }).start();
+          }
+          const fontSize = Math.max(10, block.frame.height * 0.65);
+          return (
+            <Animated.View
+              key={block.id}
+              style={{
+                position: "absolute",
+                top: block.frame.top,
+                left: block.frame.left,
+                width: block.frame.width,
+                minHeight: block.frame.height,
+                backgroundColor: "rgba(255,255,255,0.92)",
+                justifyContent: "center",
+                paddingHorizontal: 2,
+                opacity: blockOpacities.get(block.id),
+              }}
+            >
+              <Text
+                style={{ fontSize, color: "#1a1a2e", fontWeight: "600", lineHeight: fontSize * 1.15 }}
+                numberOfLines={2}
+                adjustsFontSizeToFit
+                minimumFontScale={0.5}
+              >
                 {block.translatedText}
               </Text>
-              <Text style={styles.overlayOriginal} numberOfLines={1}>
-                {block.originalText}
-              </Text>
+            </Animated.View>
+          );
+        }
+
+        return (
+          <View key={block.id} style={[styles.overlay, { position: "absolute", top: block.frame.top, left: block.frame.left, minWidth: block.frame.width, minHeight: block.frame.height }]}>
+            <View style={styles.overlayBubble}>
+              <Text style={styles.overlayTranslated} numberOfLines={2}>{block.translatedText}</Text>
+              <Text style={styles.overlayOriginal} numberOfLines={1}>{block.originalText}</Text>
             </View>
           </View>
         );
       })}
 
+      {/* Captured photo overlays (tappable) */}
+      {isCaptured && capturedBlocks.map((block) => {
+        const fontSize = Math.max(10, block.screenFrame.height * 0.65);
+        return (
+          <TouchableOpacity
+            key={block.id}
+            style={{
+              position: "absolute",
+              top: block.screenFrame.top,
+              left: block.screenFrame.left,
+              width: block.screenFrame.width,
+              minHeight: block.screenFrame.height,
+              backgroundColor: "rgba(255,255,255,0.92)",
+              justifyContent: "center",
+              paddingHorizontal: 2,
+            }}
+            onPress={() => handleBlockTap(block)}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={`${block.translatedText}. Tap for options.`}
+          >
+            <Text
+              style={{ fontSize, color: "#1a1a2e", fontWeight: "600", lineHeight: fontSize * 1.15 }}
+              numberOfLines={2}
+              adjustsFontSizeToFit
+              minimumFontScale={0.5}
+            >
+              {block.translatedText}
+            </Text>
+          </TouchableOpacity>
+        );
+      })}
+
+      {/* Processing overlay */}
+      {isProcessingCapture && (
+        <View style={styles.processingOverlay}>
+          <ActivityIndicator size="large" color="#a8a4ff" />
+          <Text style={styles.processingText}>Translating photo...</Text>
+        </View>
+      )}
+
       {/* Top Controls Bar */}
       <View style={styles.topBar}>
         <TouchableOpacity
           style={styles.topButton}
-          onPress={onClose}
-          accessibilityLabel="Close camera translator"
+          onPress={isCaptured ? handleRetake : onClose}
+          accessibilityLabel={isCaptured ? "Retake photo" : "Close camera translator"}
         >
-          <Text style={styles.topButtonText}>X</Text>
+          <Text style={styles.topButtonText}>{isCaptured ? "←" : "X"}</Text>
         </TouchableOpacity>
 
         <View style={styles.langIndicator}>
           <Text style={styles.langText}>
-            {sourceLangCode.toUpperCase()} {"->"} {targetLangCode.toUpperCase()}
+            {sourceLangCode.toUpperCase()} {"→"} {targetLangCode.toUpperCase()}
           </Text>
         </View>
 
-        <TouchableOpacity
-          style={[styles.topButton, isPaused && styles.topButtonActive]}
-          onPress={() => setIsPaused((p) => !p)}
-          accessibilityLabel={isPaused ? "Resume scanning" : "Pause scanning"}
-        >
-          <Text style={styles.topButtonText}>{isPaused ? ">" : "||"}</Text>
-        </TouchableOpacity>
+        {!isCaptured && (
+          <>
+            <TouchableOpacity
+              style={[styles.topButton, overlayMode === "replace" && styles.topButtonActive]}
+              onPress={() => {
+                setOverlayMode((m) => m === "bubble" ? "replace" : "bubble");
+                blockOpacities.clear();
+              }}
+              accessibilityLabel={`Switch to ${overlayMode === "bubble" ? "AR replace" : "bubble"} overlay`}
+            >
+              <Text style={styles.topButtonText}>{overlayMode === "replace" ? "AR" : "💬"}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.captureButton}
+              onPress={handleCapture}
+              disabled={isProcessingCapture}
+              accessibilityLabel="Capture photo for translation"
+            >
+              <View style={styles.captureButtonInner} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.topButton, isPaused && styles.topButtonActive]}
+              onPress={() => setIsPaused((p) => !p)}
+              accessibilityLabel={isPaused ? "Resume scanning" : "Pause scanning"}
+            >
+              <Text style={styles.topButtonText}>{isPaused ? "▶" : "||"}</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {isCaptured && (
+          <TouchableOpacity
+            style={styles.topButton}
+            onPress={handleShareCapture}
+            accessibilityLabel="Share translated photo"
+          >
+            <Text style={styles.topButtonText}>↑</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Bottom Status Bar */}
       <View style={styles.bottomBar}>
-        {isTranslating && (
-          <View style={styles.statusRow}>
-            <ActivityIndicator size="small" color="#a8a4ff" />
-            <Text style={styles.statusText}>Translating...</Text>
+        {isCaptured ? (
+          <View style={styles.capturedActions}>
+            <Text style={styles.statusText}>
+              {capturedBlocks.length} text region{capturedBlocks.length !== 1 ? "s" : ""} translated — tap any to copy or speak
+            </Text>
           </View>
-        )}
-        {isPaused && (
-          <View style={styles.statusRow}>
-            <Text style={styles.statusText}>Paused — tap play to resume</Text>
-          </View>
-        )}
-        {error && (
-          <View style={styles.statusRow}>
-            <Text style={styles.errorStatusText}>{error}</Text>
-          </View>
-        )}
-        {!isTranslating && !isPaused && !error && detectedBlocks.length > 0 && (
-          <Text style={styles.statusText}>
-            {detectedBlocks.length} text region{detectedBlocks.length !== 1 ? "s" : ""} | Real-time OCR
-          </Text>
-        )}
-        {!isTranslating && !isPaused && !error && detectedBlocks.length === 0 && (
-          <Text style={styles.statusText}>Point camera at text to translate</Text>
+        ) : (
+          <>
+            {isTranslating && (
+              <View style={styles.statusRow}>
+                <ActivityIndicator size="small" color="#a8a4ff" />
+                <Text style={styles.statusText}>Translating...</Text>
+              </View>
+            )}
+            {isPaused && !isTranslating && (
+              <View style={styles.statusRow}>
+                <Text style={styles.statusText}>Paused — tap play to resume</Text>
+              </View>
+            )}
+            {error && (
+              <View style={styles.statusRow}>
+                <Text style={styles.errorStatusText}>{error}</Text>
+              </View>
+            )}
+            {!isTranslating && !isPaused && !error && detectedBlocks.length > 0 && (
+              <Text style={styles.statusText}>
+                {detectedBlocks.length} text region{detectedBlocks.length !== 1 ? "s" : ""} | Real-time OCR
+              </Text>
+            )}
+            {!isTranslating && !isPaused && !error && detectedBlocks.length === 0 && (
+              <Text style={styles.statusText}>Point camera at text to translate</Text>
+            )}
+          </>
         )}
       </View>
     </View>
@@ -487,6 +799,21 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "700",
   },
+  captureButton: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 3,
+    borderColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  captureButtonInner: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "#fff",
+  },
   langIndicator: {
     backgroundColor: "rgba(108,99,255,0.7)",
     borderRadius: 16,
@@ -540,9 +867,26 @@ const styles = StyleSheet.create({
   statusText: {
     color: "rgba(255,255,255,0.7)",
     fontSize: 14,
+    textAlign: "center",
   },
   errorStatusText: {
     color: "#ff6b6b",
     fontSize: 14,
+  },
+  capturedActions: {
+    alignItems: "center",
+  },
+  processingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+  },
+  processingText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 12,
   },
 });

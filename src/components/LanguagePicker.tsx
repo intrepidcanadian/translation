@@ -17,7 +17,7 @@ interface Props {
   onSelect: (lang: Language) => void;
   showAutoDetect?: boolean;
   recentCodes?: string[];
-  colors?: ThemeColors;
+  colors: ThemeColors;
 }
 
 type ListItem = Language | { type: "section"; title: string };
@@ -38,7 +38,6 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
     const q = search.trim().toLowerCase();
 
     if (q) {
-      // When searching, show flat filtered list (no sections)
       return allLanguages.filter(
         (lang) =>
           lang.name.toLowerCase().includes(q) ||
@@ -46,7 +45,6 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
       );
     }
 
-    // Build recent languages list from codes, excluding auto-detect
     const recentLangs = recentCodes
       .map((code) => allLanguages.find((l) => l.code === code))
       .filter((l): l is Language => l != null && l.code !== "autodetect");
@@ -69,29 +67,27 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
     setSearch("");
   };
 
-  const c = colors;
-
   return (
     <View style={styles.container}>
-      <Text style={[styles.label, c && { color: c.mutedText }]}>{label}</Text>
+      <Text style={[styles.label, { color: colors.mutedText }]}>{label}</Text>
       <TouchableOpacity
-        style={[styles.button, c && { backgroundColor: c.cardBg }]}
+        style={[styles.button, { backgroundColor: colors.cardBg }]}
         onPress={() => setVisible(true)}
         accessibilityRole="button"
         accessibilityLabel={`${label} language: ${selected.name}. Tap to change.`}
       >
-        <Text style={[styles.buttonText, c && { color: c.primaryText }]}>{selected.name}</Text>
-        <Text style={[styles.arrow, c && { color: c.primary }]} importantForAccessibility="no">▼</Text>
+        <Text style={[styles.buttonText, { color: colors.primaryText }]}>{selected.name}</Text>
+        <Text style={[styles.arrow, { color: colors.primary }]} importantForAccessibility="no">▼</Text>
       </TouchableOpacity>
 
       <Modal visible={visible} animationType="slide" transparent>
-        <View style={[styles.modalOverlay, c && { backgroundColor: c.overlayBg }]}>
-          <View style={[styles.modalContent, c && { backgroundColor: c.modalBg }]}>
-            <Text style={[styles.modalTitle, c && { color: c.titleText }]}>Select Language</Text>
+        <View style={[styles.modalOverlay, { backgroundColor: colors.overlayBg }]}>
+          <View style={[styles.modalContent, { backgroundColor: colors.modalBg }]}>
+            <Text style={[styles.modalTitle, { color: colors.titleText }]}>Select Language</Text>
             <TextInput
-              style={[styles.searchInput, c && { backgroundColor: c.cardBg, color: c.primaryText }]}
+              style={[styles.searchInput, { backgroundColor: colors.cardBg, color: colors.primaryText }]}
               placeholder="Search languages..."
-              placeholderTextColor={c ? c.placeholderText : "#555577"}
+              placeholderTextColor={colors.placeholderText}
               value={search}
               onChangeText={setSearch}
               autoCorrect={false}
@@ -105,23 +101,23 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
               }
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
-                <Text style={[styles.noResults, c && { color: c.dimText }]}>No languages found</Text>
+                <Text style={[styles.noResults, { color: colors.dimText }]}>No languages found</Text>
               }
               renderItem={({ item }) => {
                 if (isSectionHeader(item)) {
                   return (
-                    <View style={[styles.sectionHeader, c && { backgroundColor: c.sectionBg }]}>
-                      <Text style={[styles.sectionHeaderText, c && { color: c.primary }]}>{item.title}</Text>
+                    <View style={[styles.sectionHeader, { backgroundColor: colors.sectionBg }]}>
+                      <Text style={[styles.sectionHeaderText, { color: colors.primary }]}>{item.title}</Text>
                     </View>
                   );
                 }
+                const isSelected = item.code === selected.code;
                 return (
                   <TouchableOpacity
                     style={[
                       styles.langItem,
-                      c && { borderBottomColor: c.borderLight },
-                      item.code === selected.code && styles.langItemSelected,
-                      item.code === selected.code && c && { backgroundColor: c.cardBg },
+                      { borderBottomColor: colors.borderLight },
+                      isSelected && { backgroundColor: colors.cardBg },
                     ]}
                     onPress={() => {
                       onSelect(item);
@@ -129,30 +125,29 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
                     }}
                     accessibilityRole="button"
                     accessibilityLabel={`${item.name}`}
-                    accessibilityState={{ selected: item.code === selected.code }}
+                    accessibilityState={{ selected: isSelected }}
                   >
                     <Text
                       style={[
                         styles.langText,
-                        c && { color: c.secondaryText },
-                        item.code === selected.code && styles.langTextSelected,
-                        item.code === selected.code && c && { color: c.primary },
+                        { color: colors.secondaryText },
+                        isSelected && { color: colors.primary, fontWeight: "700" },
                       ]}
                     >
                       {item.name}
                     </Text>
-                    <Text style={[styles.langCode, c && { color: c.dimText }]}>{item.code.toUpperCase()}</Text>
+                    <Text style={[styles.langCode, { color: colors.dimText }]}>{item.code.toUpperCase()}</Text>
                   </TouchableOpacity>
                 );
               }}
             />
             <TouchableOpacity
-              style={[styles.closeButton, c && { borderTopColor: c.borderLight }]}
+              style={[styles.closeButton, { borderTopColor: colors.borderLight }]}
               onPress={closeModal}
               accessibilityRole="button"
               accessibilityLabel="Cancel language selection"
             >
-              <Text style={[styles.closeText, c && { color: c.primary }]}>Cancel</Text>
+              <Text style={[styles.closeText, { color: colors.primary }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -166,7 +161,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   label: {
-    color: "#8888aa",
     fontSize: 11,
     fontWeight: "600",
     textTransform: "uppercase",
@@ -174,7 +168,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   button: {
-    backgroundColor: "#252547",
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 16,
@@ -183,41 +176,34 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   buttonText: {
-    color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
   },
   arrow: {
-    color: "#6c63ff",
     fontSize: 12,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: "#1a1a2e",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: "70%",
     paddingTop: 20,
   },
   modalTitle: {
-    color: "#ffffff",
     fontSize: 20,
     fontWeight: "700",
     textAlign: "center",
     marginBottom: 12,
   },
   searchInput: {
-    backgroundColor: "#252547",
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 16,
     marginHorizontal: 16,
     marginBottom: 12,
-    color: "#ffffff",
     fontSize: 16,
   },
   langItem: {
@@ -227,38 +213,25 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 24,
     borderBottomWidth: 1,
-    borderBottomColor: "#252547",
-  },
-  langItemSelected: {
-    backgroundColor: "#252547",
   },
   langText: {
-    color: "#ccccdd",
     fontSize: 17,
   },
-  langTextSelected: {
-    color: "#6c63ff",
-    fontWeight: "700",
-  },
   langCode: {
-    color: "#555577",
     fontSize: 13,
     fontWeight: "600",
   },
   sectionHeader: {
     paddingVertical: 8,
     paddingHorizontal: 24,
-    backgroundColor: "#151530",
   },
   sectionHeaderText: {
-    color: "#6c63ff",
     fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase",
     letterSpacing: 1,
   },
   noResults: {
-    color: "#555577",
     fontSize: 16,
     textAlign: "center",
     paddingVertical: 24,
@@ -267,10 +240,8 @@ const styles = StyleSheet.create({
     padding: 18,
     alignItems: "center",
     borderTopWidth: 1,
-    borderTopColor: "#252547",
   },
   closeText: {
-    color: "#6c63ff",
     fontSize: 17,
     fontWeight: "600",
   },

@@ -40,6 +40,7 @@ import SwipeableRow from "../components/SwipeableRow";
 import TranslationBubble from "../components/TranslationBubble";
 import ChatBubble from "../components/ChatBubble";
 import SplitConversation from "../components/SplitConversation";
+import ConversationPlayback from "../components/ConversationPlayback";
 import {
   translateText,
   getWordAlternatives,
@@ -84,6 +85,7 @@ export default function TranslateScreen() {
 
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [showSplitScreen, setShowSplitScreen] = useState(false);
+  const [showPlayback, setShowPlayback] = useState(false);
   const listRef = useRef<FlatList>(null);
   const translationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -747,6 +749,16 @@ export default function TranslateScreen() {
               >
                 <Text style={[styles.modeToggleText, { color: colors.mutedText }, conversationMode && { color: colors.destructiveText }]}>Chat</Text>
               </TouchableOpacity>
+              {conversationMode && history.some((h) => h.speaker) && (
+                <TouchableOpacity
+                  style={[styles.modeToggle, { backgroundColor: colors.cardBg, right: 60 }]}
+                  onPress={() => setShowPlayback(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="View conversation playback"
+                >
+                  <Text style={[styles.modeToggleText, { color: colors.primary }]}>▶ Play</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Modals */}
@@ -1175,6 +1187,7 @@ export default function TranslateScreen() {
         </KeyboardAvoidingView>
       </SafeAreaView>
       <SplitConversation visible={showSplitScreen} onClose={() => setShowSplitScreen(false)} />
+      <ConversationPlayback visible={showPlayback} onClose={() => setShowPlayback(false)} />
     </>
   );
 }

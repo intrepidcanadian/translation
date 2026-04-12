@@ -16,7 +16,7 @@ interface WordAlternativesModalProps {
 
 export default function WordAlternativesModal({ visible, data, onClose, onCopy, copiedText, colors }: WordAlternativesModalProps) {
   return (
-    <Modal visible={visible} animationType="fade" transparent>
+    <Modal visible={visible} animationType="slide" transparent>
       <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
         <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
           {data && (
@@ -133,9 +133,13 @@ const styles = StyleSheet.create({
   },
   altQualityBadge: {
     borderRadius: 8,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     marginLeft: 10,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
   },
   altQualityText: {
     fontSize: 12,

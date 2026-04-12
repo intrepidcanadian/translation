@@ -112,7 +112,7 @@ function TranslationBubble({
             <AlignedRomanization text={item.translated} langCode={item.targetLangCode} textColor={colors.translatedText} romanColor={colors.mutedText} />
           )}
           {copiedText === item.translated && (
-            <Text style={styles.copiedBadge}>Copied!</Text>
+            <Text style={[styles.copiedBadge, { color: colors.successText }]}>Copied!</Text>
           )}
         </TouchableOpacity>
         <View style={styles.bubbleActions}>
@@ -132,7 +132,7 @@ function TranslationBubble({
               accessibilityRole="button"
               accessibilityLabel="Retry translation"
             >
-              <Text style={styles.retryIcon}>↻</Text>
+              <Text style={[styles.retryIcon, { color: colors.primary }]}>↻</Text>
               <Text style={[styles.retryText, { color: colors.primary }]}>Retry</Text>
             </TouchableOpacity>
           ) : (
@@ -153,7 +153,7 @@ function TranslationBubble({
             accessibilityRole="button"
             accessibilityLabel={item.favorited ? "Remove from favorites" : "Add to favorites"}
           >
-            <Text style={[styles.favoriteIcon, { color: colors.dimText }, item.favorited && styles.favoriteIconActive]}>
+            <Text style={[styles.favoriteIcon, { color: colors.dimText }, item.favorited && { color: colors.favoriteColor }]}>
               {item.favorited ? "★" : "☆"}
             </Text>
           </TouchableOpacity>

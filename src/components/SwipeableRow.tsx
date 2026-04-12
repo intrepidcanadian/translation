@@ -1,12 +1,14 @@
 import React, { useRef } from "react";
 import { View, Text, Animated, PanResponder, StyleSheet } from "react-native";
+import type { ThemeColors } from "../theme";
 
 interface SwipeableRowProps {
   onDelete: () => void;
   children: React.ReactNode;
+  colors?: ThemeColors;
 }
 
-export default function SwipeableRow({ onDelete, children }: SwipeableRowProps) {
+export default function SwipeableRow({ onDelete, children, colors }: SwipeableRowProps) {
   const translateX = useRef(new Animated.Value(0)).current;
   const THRESHOLD = -80;
 
@@ -39,8 +41,8 @@ export default function SwipeableRow({ onDelete, children }: SwipeableRowProps) 
 
   return (
     <View style={styles.container}>
-      <View style={styles.deleteBackground}>
-        <Text style={styles.deleteText}>Delete</Text>
+      <View style={[styles.deleteBackground, colors && { backgroundColor: colors.destructiveBg }]}>
+        <Text style={[styles.deleteText, colors && { color: colors.destructiveText }]}>Delete</Text>
         <Text style={styles.deleteIcon}>🗑</Text>
       </View>
       <Animated.View

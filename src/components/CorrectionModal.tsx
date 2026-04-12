@@ -32,9 +32,9 @@ export default function CorrectionModal({ visible, data, onClose, onSubmit, colo
   };
 
   return (
-    <Modal visible={visible} animationType="fade" transparent>
+    <Modal visible={visible} animationType="slide" transparent>
       <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-        <View style={[styles.compareContent, { backgroundColor: colors.modalBg, maxHeight: "50%" }]}>
+        <View style={[styles.compareContent, { backgroundColor: colors.modalBg, maxHeight: "70%" }]}>
           <Text style={[styles.compareTitle, { color: colors.titleText }]}>Suggest Correction</Text>
           <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
             <Text style={[{ color: colors.dimText, fontSize: 13, marginBottom: 12 }]}>

@@ -112,7 +112,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                   style={[
                     styles.fontSizeOption,
                     dynamicStyles.themeOption,
-                    settings.theme === option && styles.fontSizeOptionActive,
+                    settings.theme === option && { backgroundColor: colors.primary },
                   ]}
                   onPress={() => onUpdate({ ...settings, theme: option })}
                   accessibilityRole="button"
@@ -123,7 +123,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                     style={[
                       styles.fontSizeLabel,
                       dynamicStyles.themeLabel,
-                      settings.theme === option && styles.fontSizeLabelActive,
+                      settings.theme === option && { color: colors.destructiveText },
                     ]}
                   >
                     {option === "dark" ? "Dark" : "Light"}
@@ -141,7 +141,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 value={settings.hapticsEnabled}
                 onValueChange={() => toggle("hapticsEnabled")}
                 trackColor={dynamicStyles.switchTrack}
-                thumbColor="#ffffff"
+                thumbColor={colors.destructiveText}
                 accessibilityLabel="Toggle haptic feedback"
               />
             </View>
@@ -155,7 +155,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 value={settings.autoPlayTTS}
                 onValueChange={() => toggle("autoPlayTTS")}
                 trackColor={dynamicStyles.switchTrack}
-                thumbColor="#ffffff"
+                thumbColor={colors.destructiveText}
                 accessibilityLabel="Toggle auto-play translation speech"
               />
             </View>
@@ -169,7 +169,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 value={settings.autoScroll}
                 onValueChange={() => toggle("autoScroll")}
                 trackColor={dynamicStyles.switchTrack}
-                thumbColor="#ffffff"
+                thumbColor={colors.destructiveText}
                 accessibilityLabel="Toggle auto-scroll"
               />
             </View>
@@ -183,7 +183,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 value={settings.showRomanization}
                 onValueChange={() => toggle("showRomanization")}
                 trackColor={dynamicStyles.switchTrack}
-                thumbColor="#ffffff"
+                thumbColor={colors.destructiveText}
                 accessibilityLabel="Toggle romanization display"
               />
             </View>
@@ -197,7 +197,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 value={settings.offlineSpeech}
                 onValueChange={() => toggle("offlineSpeech")}
                 trackColor={dynamicStyles.switchTrack}
-                thumbColor="#ffffff"
+                thumbColor={colors.destructiveText}
                 accessibilityLabel="Toggle offline speech recognition"
               />
             </View>
@@ -215,7 +215,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                   style={[
                     styles.fontSizeOption,
                     dynamicStyles.fontSizeOption,
-                    settings.silenceTimeout === option && styles.fontSizeOptionActive,
+                    settings.silenceTimeout === option && { backgroundColor: colors.primary },
                   ]}
                   onPress={() => onUpdate({ ...settings, silenceTimeout: option })}
                   accessibilityRole="button"
@@ -226,7 +226,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                     style={[
                       styles.fontSizeLabel,
                       dynamicStyles.fontSizeLabel,
-                      settings.silenceTimeout === option && styles.fontSizeLabelActive,
+                      settings.silenceTimeout === option && { color: colors.destructiveText },
                     ]}
                   >
                     {option === 0 ? "Off" : `${option}s`}
@@ -252,7 +252,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
               onSlidingComplete={(value) => onUpdate({ ...settings, speechRate: Math.round(value * 10) / 10 })}
               minimumTrackTintColor={colors.primary}
               maximumTrackTintColor={dynamicStyles.sliderMax}
-              thumbTintColor="#ffffff"
+              thumbTintColor={colors.destructiveText}
               accessibilityLabel={`Speech speed: ${settings.speechRate.toFixed(1)}x`}
             />
 
@@ -269,7 +269,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                   style={[
                     styles.fontSizeOption,
                     dynamicStyles.fontSizeOption,
-                    settings.fontSize === option && styles.fontSizeOptionActive,
+                    settings.fontSize === option && { backgroundColor: colors.primary },
                   ]}
                   onPress={() => onUpdate({ ...settings, fontSize: option })}
                   accessibilityRole="button"
@@ -280,7 +280,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                     style={[
                       styles.fontSizeLabel,
                       dynamicStyles.fontSizeLabel,
-                      settings.fontSize === option && styles.fontSizeLabelActive,
+                      settings.fontSize === option && { color: colors.destructiveText },
                     ]}
                   >
                     {option === "small" ? "S" : option === "medium" ? "M" : option === "large" ? "L" : "XL"}
@@ -302,7 +302,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                   style={[
                     styles.fontSizeOption,
                     dynamicStyles.fontSizeOption,
-                    settings.translationProvider === "apple" && styles.fontSizeOptionActive,
+                    settings.translationProvider === "apple" && { backgroundColor: colors.primary },
                   ]}
                   onPress={() => onUpdate({ ...settings, translationProvider: "apple" })}
                   accessibilityRole="button"
@@ -313,7 +313,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                     style={[
                       styles.fontSizeLabel,
                       dynamicStyles.fontSizeLabel,
-                      settings.translationProvider === "apple" && styles.fontSizeLabelActive,
+                      settings.translationProvider === "apple" && { color: colors.destructiveText },
                     ]}
                   >
                     Apple
@@ -324,7 +324,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 style={[
                   styles.fontSizeOption,
                   dynamicStyles.fontSizeOption,
-                  settings.translationProvider === "mlkit" && styles.fontSizeOptionActive,
+                  settings.translationProvider === "mlkit" && { backgroundColor: colors.primary },
                 ]}
                 onPress={() => onUpdate({ ...settings, translationProvider: "mlkit" })}
                 accessibilityRole="button"
@@ -335,7 +335,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                   style={[
                     styles.fontSizeLabel,
                     dynamicStyles.fontSizeLabel,
-                    settings.translationProvider === "mlkit" && styles.fontSizeLabelActive,
+                    settings.translationProvider === "mlkit" && { color: colors.destructiveText },
                   ]}
                 >
                   ML Kit
@@ -345,7 +345,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 style={[
                   styles.fontSizeOption,
                   dynamicStyles.fontSizeOption,
-                  settings.translationProvider === "mymemory" && styles.fontSizeOptionActive,
+                  settings.translationProvider === "mymemory" && { backgroundColor: colors.primary },
                 ]}
                 onPress={() => onUpdate({ ...settings, translationProvider: "mymemory" })}
                 accessibilityRole="button"
@@ -356,7 +356,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                   style={[
                     styles.fontSizeLabel,
                     dynamicStyles.fontSizeLabel,
-                    settings.translationProvider === "mymemory" && styles.fontSizeLabelActive,
+                    settings.translationProvider === "mymemory" && { color: colors.destructiveText },
                   ]}
                 >
                   Cloud
@@ -478,14 +478,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   fontSizeOptionActive: {
-    backgroundColor: "#6c63ff",
+    // backgroundColor set via inline style with colors.primary
   },
   fontSizeLabel: {
     fontSize: 15,
     fontWeight: "700",
   },
   fontSizeLabelActive: {
-    color: "#ffffff",
+    // color set via inline style with colors.destructiveText
   },
   providerHint: {
     fontSize: 12,

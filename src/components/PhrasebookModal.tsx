@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Modal,
   View,
@@ -6,13 +6,16 @@ import {
   FlatList,
   TouchableOpacity,
   StyleSheet,
+  ActivityIndicator,
 } from "react-native";
 import { impactLight } from "../services/haptics";
 import {
   PHRASE_CATEGORIES,
   getPhrasesForCategory,
   type PhraseCategory,
+  type OfflinePhrase,
 } from "../services/offlinePhrases";
+import { getLocationContext, getNearbyPhrases, type LocationContext } from "../services/locationPhrases";
 
 interface PhrasebookModalProps {
   visible: boolean;
@@ -25,6 +28,8 @@ interface PhrasebookModalProps {
   colors: any;
 }
 
+const NEARBY_CATEGORY = { key: "nearby" as const, label: "Nearby", icon: "📍" };
+
 export default function PhrasebookModal({
   visible,
   onClose,
@@ -34,23 +39,77 @@ export default function PhrasebookModal({
   onSpeak,
   colors,
 }: PhrasebookModalProps) {
-  const [phraseCategory, setPhraseCategory] = useState<PhraseCategory>("greetings");
+  const [phraseCategory, setPhraseCategory] = useState<PhraseCategory | "nearby">("greetings");
+  const [locationCtx, setLocationCtx] = useState<LocationContext | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+
+  // Fetch location context when modal opens
+  useEffect(() => {
+    if (visible && !locationCtx) {
+      setLocationLoading(true);
+      getLocationContext()
+        .then(setLocationCtx)
+        .catch(() => {})
+        .finally(() => setLocationLoading(false));
+    }
+  }, [visible]);
+
+  // Build category list with optional "Nearby" and reordering
+  const categories = useMemo(() => {
+    const base = [...PHRASE_CATEGORIES];
+    if (locationCtx?.isAbroad && locationCtx.categoryOrder) {
+      // Reorder based on location priority
+      base.sort((a, b) => {
+        const ai = locationCtx.categoryOrder.indexOf(a.key);
+        const bi = locationCtx.categoryOrder.indexOf(b.key);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      });
+      return [NEARBY_CATEGORY, ...base];
+    }
+    return base;
+  }, [locationCtx]);
+
+  // Get phrases for current category
+  const phrases: OfflinePhrase[] = useMemo(() => {
+    if (phraseCategory === "nearby" && locationCtx?.countryCode) {
+      const nearbyMap = getNearbyPhrases(locationCtx.countryCode);
+      return Object.values(nearbyMap).flat();
+    }
+    return getPhrasesForCategory(phraseCategory as PhraseCategory);
+  }, [phraseCategory, locationCtx]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
         <View style={[styles.phrasebookContent, { backgroundColor: colors.modalBg }]}>
           <Text style={[styles.compareTitle, { color: colors.titleText }]}>Phrasebook</Text>
+
+          {/* Location banner */}
+          {locationLoading && (
+            <View style={[styles.locationBanner, { backgroundColor: colors.cardBg }]}>
+              <ActivityIndicator size="small" color={colors.primary} />
+              <Text style={[styles.locationText, { color: colors.dimText }]}>Detecting location...</Text>
+            </View>
+          )}
+          {locationCtx?.isAbroad && !locationLoading && (
+            <View style={[styles.locationBanner, { backgroundColor: colors.primary + "15" }]}>
+              <Text style={styles.locationIcon}>📍</Text>
+              <Text style={[styles.locationText, { color: colors.primary }]}>
+                You're in {locationCtx.countryName} — showing relevant phrases
+              </Text>
+            </View>
+          )}
+
           <FlatList
             horizontal
             showsHorizontalScrollIndicator={false}
-            data={PHRASE_CATEGORIES}
+            data={categories}
             keyExtractor={(item) => item.key}
             style={styles.phraseCategoryRow}
             renderItem={({ item }) => (
               <TouchableOpacity
                 style={[styles.phraseCategoryPill, { backgroundColor: phraseCategory === item.key ? colors.primary : colors.cardBg, borderColor: phraseCategory === item.key ? colors.primary : colors.border }]}
-                onPress={() => setPhraseCategory(item.key)}
+                onPress={() => setPhraseCategory(item.key as PhraseCategory | "nearby")}
                 accessibilityRole="button"
                 accessibilityLabel={`${item.label} phrases`}
                 accessibilityState={{ selected: phraseCategory === item.key }}
@@ -63,7 +122,7 @@ export default function PhrasebookModal({
             )}
           />
           <FlatList
-            data={getPhrasesForCategory(phraseCategory)}
+            data={phrases}
             keyExtractor={(_, i) => `phrase-${phraseCategory}-${i}`}
             style={styles.phraseList}
             renderItem={({ item: phrase }) => {
@@ -133,6 +192,23 @@ const styles = StyleSheet.create({
     maxHeight: "80%",
     paddingTop: 20,
     paddingHorizontal: 20,
+  },
+  locationBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  locationIcon: {
+    fontSize: 14,
+  },
+  locationText: {
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
   },
   phraseCategoryRow: {
     flexGrow: 0,

@@ -50,6 +50,12 @@
       ],
       "expo-quick-actions",
       [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Live Translator may use your location to suggest relevant phrases for nearby languages."
+        }
+      ],
+      [
         "react-native-android-widget",
         {
           "widgets": [
@@ -85,7 +91,8 @@
           }
         }
       ],
-      "./modules/apple-translation/expo-module.config.json"
+      "./modules/apple-translation/expo-module.config.json",
+      "./plugins/ios-widget-plugin"
     ],
     "extra": {
       "eas": {
