@@ -42,6 +42,7 @@ import {
   AUTO_DETECT_LANGUAGE,
 } from "./src/services/translation";
 import { getColors } from "./src/theme";
+import { PHRASE_CATEGORIES, getPhrasesForCategory, type PhraseCategory, type OfflinePhrase } from "./src/services/offlinePhrases";
 
 function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
   const translateX = useRef(new Animated.Value(0)).current;
@@ -171,6 +172,8 @@ export default function App() {
   const [deletedItem, setDeletedItem] = useState<{ item: typeof history[number]; index: number } | null>(null);
   const undoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showPhrasebook, setShowPhrasebook] = useState(false);
+  const [phraseCategory, setPhraseCategory] = useState<PhraseCategory>("basic");
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [recentLangCodes, setRecentLangCodes] = useState<string[]>([]);
   const HISTORY_KEY = "translation_history";
@@ -943,14 +946,24 @@ export default function App() {
       <View style={[styles.container, isLandscape && styles.containerLandscape]}>
         {/* Header */}
         <View style={[styles.headerRow, isLandscape && styles.headerRowLandscape]}>
-          <TouchableOpacity
-            style={styles.settingsButton}
-            onPress={() => setShowSettings(true)}
-            accessibilityRole="button"
-            accessibilityLabel="Open settings"
-          >
-            <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>⚙</Text>
-          </TouchableOpacity>
+          <View style={styles.headerLeftButtons}>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => setShowSettings(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Open settings"
+            >
+              <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>⚙</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => setShowPhrasebook(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Open phrasebook"
+            >
+              <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>📖</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={[styles.title, isLandscape && styles.titleLandscape, { color: colors.titleText }]}>Live Translator</Text>
           <TouchableOpacity
             style={[styles.modeToggle, { backgroundColor: colors.cardBg }, conversationMode && styles.modeToggleActive]}
@@ -1005,6 +1018,79 @@ export default function App() {
                 accessibilityLabel="Close comparison"
               >
                 <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" }]}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Phrasebook modal */}
+        <Modal visible={showPhrasebook} animationType="slide" transparent>
+          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+            <View style={[styles.phrasebookContent, { backgroundColor: colors.modalBg }]}>
+              <Text style={[styles.compareTitle, { color: colors.titleText }]}>Phrasebook</Text>
+              <FlatList
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                data={PHRASE_CATEGORIES}
+                keyExtractor={(item) => item.key}
+                style={styles.phraseCategoryRow}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={[styles.phraseCategoryPill, { backgroundColor: phraseCategory === item.key ? colors.primary : colors.cardBg, borderColor: phraseCategory === item.key ? colors.primary : colors.border }]}
+                    onPress={() => setPhraseCategory(item.key)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${item.label} phrases`}
+                    accessibilityState={{ selected: phraseCategory === item.key }}
+                  >
+                    <Text style={styles.phraseCategoryIcon}>{item.icon}</Text>
+                    <Text style={[styles.phraseCategoryText, { color: phraseCategory === item.key ? "#ffffff" : colors.mutedText }]}>
+                      {item.label}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              />
+              <FlatList
+                data={getPhrasesForCategory(phraseCategory)}
+                keyExtractor={(_, i) => `phrase-${phraseCategory}-${i}`}
+                style={styles.phraseList}
+                renderItem={({ item: phrase }) => {
+                  const srcCode = sourceLang.code === "autodetect" ? "en" : sourceLang.code;
+                  const srcText = (phrase as any)[srcCode] || phrase.en;
+                  const tgtText = (phrase as any)[targetLang.code] || "";
+                  return (
+                    <TouchableOpacity
+                      style={[styles.phraseItem, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}
+                      onPress={() => {
+                        if (tgtText) {
+                          copyToClipboard(tgtText);
+                          if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        }
+                      }}
+                      onLongPress={() => {
+                        if (tgtText) {
+                          speakText(tgtText, targetLang.speechCode);
+                        }
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${srcText} translates to ${tgtText}. Tap to copy, long press to speak.`}
+                    >
+                      <Text style={[styles.phraseSrcText, { color: colors.secondaryText }]}>{srcText}</Text>
+                      {tgtText ? (
+                        <Text style={[styles.phraseTgtText, { color: colors.translatedText }]}>{tgtText}</Text>
+                      ) : (
+                        <Text style={[styles.phraseTgtText, { color: colors.dimText, fontStyle: "italic" }]}>Not available</Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                }}
+              />
+              <TouchableOpacity
+                style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
+                onPress={() => setShowPhrasebook(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close phrasebook"
+              >
+                <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1612,9 +1698,13 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textAlign: "center",
   },
-  settingsButton: {
-    position: "absolute",
+  headerLeftButtons: {
+    position: "absolute" as const,
     left: 0,
+    flexDirection: "row" as const,
+    gap: 4,
+  },
+  headerIconButton: {
     padding: 4,
   },
   settingsIcon: {
@@ -2175,6 +2265,54 @@ const styles = StyleSheet.create({
   compareIcon: {
     fontSize: 16,
     fontWeight: "700",
+  },
+  // Phrasebook modal
+  phrasebookContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "80%",
+    paddingTop: 20,
+    paddingHorizontal: 20,
+  },
+  phraseCategoryRow: {
+    flexGrow: 0,
+    marginBottom: 12,
+  },
+  phraseCategoryPill: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginRight: 8,
+    borderWidth: 1,
+    gap: 6,
+  },
+  phraseCategoryIcon: {
+    fontSize: 14,
+  },
+  phraseCategoryText: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+  },
+  phraseList: {
+    flex: 1,
+  },
+  phraseItem: {
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  phraseSrcText: {
+    fontSize: 15,
+    lineHeight: 21,
+    marginBottom: 4,
+  },
+  phraseTgtText: {
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: "600" as const,
   },
   // Landscape overrides
   containerLandscape: {
