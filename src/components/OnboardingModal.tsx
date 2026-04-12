@@ -1,0 +1,157 @@
+import React, { useState } from "react";
+import {
+  Modal,
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native";
+import * as Haptics from "expo-haptics";
+
+interface OnboardingModalProps {
+  visible: boolean;
+  onComplete: () => void;
+  hapticsEnabled: boolean;
+  colors: any;
+}
+
+const steps = [
+  { icon: "🎙️", title: "Voice Translation", desc: "Tap the mic button and speak naturally. Your words are translated in real time as you talk." },
+  { icon: "💬", title: "Conversation Mode", desc: "Toggle Chat mode for face-to-face conversations. Two mic buttons let each person speak in their language." },
+  { icon: "📖", title: "Phrasebook", desc: "Browse common phrases by category for instant offline translations. Tap to copy, long-press to hear." },
+  { icon: "⌨️", title: "Type to Translate", desc: "Prefer typing? Use the text input at the bottom to translate written text, with multi-line support." },
+  { icon: "⭐", title: "Favorites & History", desc: "Star translations to bookmark them. Swipe left to delete. Search your full history anytime." },
+  { icon: "📷", title: "Camera Translate", desc: "Point your camera at any text — signs, menus, documents — and see translations overlaid in real time." },
+  { icon: "📄", title: "Smart Scanner", desc: "6 modes: Document, Receipt, Business Card, Medicine, Menu, and Textbook. Each extracts mode-specific info. Save scans as Markdown notes." },
+  { icon: "⚙️", title: "Customize Everything", desc: "Adjust font size, speech speed, theme, haptics, and even switch translation providers in Settings." },
+];
+
+export default function OnboardingModal({ visible, onComplete, hapticsEnabled, colors }: OnboardingModalProps) {
+  const [step, setStep] = useState(0);
+
+  const current = steps[step];
+  const isLast = step === steps.length - 1;
+
+  const handleSkip = () => {
+    setStep(0);
+    onComplete();
+  };
+
+  const handleNext = () => {
+    if (isLast) {
+      setStep(0);
+      onComplete();
+      if (hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else {
+      setStep((s) => s + 1);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="fade" transparent>
+      <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+        <View style={[styles.onboardingContent, { backgroundColor: colors.modalBg }]}>
+          <View style={styles.onboardingDots}>
+            {steps.map((_, i) => (
+              <View
+                key={i}
+                style={[
+                  styles.onboardingDot,
+                  { backgroundColor: i === step ? colors.primary : colors.border },
+                ]}
+              />
+            ))}
+          </View>
+          <Text style={styles.onboardingIcon}>{current.icon}</Text>
+          <Text style={[styles.onboardingTitle, { color: colors.titleText }]}>{current.title}</Text>
+          <Text style={[styles.onboardingDesc, { color: colors.secondaryText }]}>{current.desc}</Text>
+          <View style={styles.onboardingButtons}>
+            <TouchableOpacity
+              style={styles.onboardingSkip}
+              onPress={handleSkip}
+              accessibilityRole="button"
+              accessibilityLabel="Skip tutorial"
+            >
+              <Text style={[styles.onboardingSkipText, { color: colors.dimText }]}>Skip</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.onboardingNext, { backgroundColor: colors.primary }]}
+              onPress={handleNext}
+              accessibilityRole="button"
+              accessibilityLabel={isLast ? "Get started" : "Next tip"}
+            >
+              <Text style={styles.onboardingNextText}>{isLast ? "Get Started" : "Next"}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const styles = StyleSheet.create({
+  compareOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  onboardingContent: {
+    borderRadius: 24,
+    paddingVertical: 32,
+    paddingHorizontal: 28,
+    marginHorizontal: 24,
+    alignItems: "center" as const,
+  },
+  onboardingDots: {
+    flexDirection: "row" as const,
+    gap: 8,
+    marginBottom: 24,
+  },
+  onboardingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  onboardingIcon: {
+    fontSize: 56,
+    marginBottom: 16,
+  },
+  onboardingTitle: {
+    fontSize: 24,
+    fontWeight: "700" as const,
+    marginBottom: 12,
+    textAlign: "center" as const,
+  },
+  onboardingDesc: {
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center" as const,
+    paddingHorizontal: 8,
+    marginBottom: 32,
+  },
+  onboardingButtons: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 16,
+    width: "100%" as const,
+  },
+  onboardingSkip: {
+    flex: 1,
+    paddingVertical: 14,
+    alignItems: "center" as const,
+  },
+  onboardingSkipText: {
+    fontSize: 16,
+    fontWeight: "500" as const,
+  },
+  onboardingNext: {
+    flex: 2,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: "center" as const,
+  },
+  onboardingNextText: {
+    color: "#ffffff",
+    fontSize: 17,
+    fontWeight: "700" as const,
+  },
+});

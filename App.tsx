@@ -47,13 +47,20 @@ import {
   type WordAlternative,
 } from "./src/services/translation";
 import { getColors } from "./src/theme";
-import { PHRASE_CATEGORIES, getPhrasesForCategory, getPhraseOfTheDay, type PhraseCategory, type OfflinePhrase } from "./src/services/offlinePhrases";
+import { PHRASE_CATEGORIES, getPhraseOfTheDay, type OfflinePhrase } from "./src/services/offlinePhrases";
 import { romanize, needsRomanization, getRomanizationName } from "./src/services/romanization";
 import CameraTranslator from "./src/components/CameraTranslator";
 import DocumentScanner from "./src/components/DocumentScanner";
 import NotesViewer from "./src/components/NotesViewer";
 import AlignedRomanization from "./src/components/AlignedRomanization";
 import ErrorBoundary from "./src/components/ErrorBoundary";
+import GlossaryModal from "./src/components/GlossaryModal";
+import ComparisonModal from "./src/components/ComparisonModal";
+import WordAlternativesModal from "./src/components/WordAlternativesModal";
+import CorrectionModal from "./src/components/CorrectionModal";
+import PhrasebookModal from "./src/components/PhrasebookModal";
+import StatsModal from "./src/components/StatsModal";
+import OnboardingModal from "./src/components/OnboardingModal";
 import type { ScannerModeKey } from "./src/services/scannerModes";
 
 function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
@@ -217,7 +224,7 @@ function AppContent() {
 
   // Translation feedback
   const [correctionPrompt, setCorrectionPrompt] = useState<{ index: number; original: string; translated: string } | null>(null);
-  const [correctionText, setCorrectionText] = useState("");
+  // correctionText now managed internally by CorrectionModal
 
   // Word alternatives modal
   const [wordAltData, setWordAltData] = useState<{
@@ -238,11 +245,11 @@ function AppContent() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPhrasebook, setShowPhrasebook] = useState(false);
   const [showStats, setShowStats] = useState(false);
-  const [phraseCategory, setPhraseCategory] = useState<PhraseCategory>("basic");
+  // phraseCategory now managed internally by PhrasebookModal
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [recentLangCodes, setRecentLangCodes] = useState<string[]>([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState(0);
+  // onboardingStep now managed internally by OnboardingModal
   const HISTORY_KEY = "translation_history";
   const SETTINGS_KEY = "app_settings";
   const RECENT_LANGS_KEY = "recent_languages";
@@ -268,8 +275,6 @@ function AppContent() {
   const [docScannerMode, setDocScannerMode] = useState<ScannerModeKey>("document");
   const [showNotes, setShowNotes] = useState(false);
   const [notesRefreshKey, setNotesRefreshKey] = useState(0);
-  const [glossarySource, setGlossarySource] = useState("");
-  const [glossaryTarget, setGlossaryTarget] = useState("");
 
   // Saved language pair shortcuts
   const [savedPairs, setSavedPairs] = useState<
@@ -367,7 +372,7 @@ function AppContent() {
       .then((stored) => {
         if (!stored) {
           setShowOnboarding(true);
-          setOnboardingStep(0);
+          // OnboardingModal resets its own step internally
         }
       })
       .catch((err) => console.warn("Failed to load onboarding state:", err));
@@ -540,9 +545,7 @@ function AppContent() {
     return entry ? entry.target : null;
   }, [glossary]);
 
-  const addGlossaryEntry = useCallback(() => {
-    const src = glossarySource.trim();
-    const tgt = glossaryTarget.trim();
+  const addGlossaryEntry = useCallback((src: string, tgt: string) => {
     if (!src || !tgt) return;
     if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setGlossary((prev) => {
@@ -554,9 +557,12 @@ function AppContent() {
       AsyncStorage.setItem(GLOSSARY_KEY, JSON.stringify(updated));
       return updated;
     });
-    setGlossarySource("");
-    setGlossaryTarget("");
-  }, [glossarySource, glossaryTarget, sourceLang.code, targetLang.code, settings.hapticsEnabled]);
+  }, [sourceLang.code, targetLang.code, settings.hapticsEnabled]);
+
+  const importGlossaryEntries = useCallback((entries: Array<{ source: string; target: string; sourceLang: string; targetLang: string }>) => {
+    setGlossary(entries);
+    AsyncStorage.setItem(GLOSSARY_KEY, JSON.stringify(entries));
+  }, []);
 
   const removeGlossaryEntry = useCallback((index: number) => {
     if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -567,11 +573,10 @@ function AppContent() {
     });
   }, [settings.hapticsEnabled]);
 
-  const submitCorrection = useCallback(() => {
-    if (!correctionPrompt || !correctionText.trim()) return;
+  const submitCorrection = useCallback((correctedText: string) => {
+    if (!correctionPrompt || !correctedText.trim()) return;
     const { index, original } = correctionPrompt;
-    const correction = correctionText.trim();
-    // Update history with corrected translation
+    const correction = correctedText.trim();
     setHistory((prev) => {
       const updated = [...prev];
       if (updated[index]) {
@@ -579,7 +584,6 @@ function AppContent() {
       }
       return updated;
     });
-    // Save to glossary for future use
     setGlossary((prev) => {
       const srcLang = sourceLang.code;
       const tgtLang = targetLang.code;
@@ -592,8 +596,7 @@ function AppContent() {
     });
     if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setCorrectionPrompt(null);
-    setCorrectionText("");
-  }, [correctionPrompt, correctionText, sourceLang.code, targetLang.code, settings.hapticsEnabled]);
+  }, [correctionPrompt, sourceLang.code, targetLang.code, settings.hapticsEnabled]);
 
   const copyToClipboard = useCallback(async (text: string) => {
     await Clipboard.setStringAsync(text);
@@ -1355,651 +1358,78 @@ function AppContent() {
           onUpdate={updateSettings}
         />
 
-        {/* Translation comparison modal */}
-        <Modal visible={!!compareData} animationType="slide" transparent>
-          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-            <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
-              <Text style={[styles.compareTitle, { color: colors.titleText }]}>Compare Translations</Text>
-              {compareData && (
-                <>
-                  <View style={[styles.compareOriginal, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
-                    <Text style={[styles.compareLabel, { color: colors.dimText }]}>ORIGINAL</Text>
-                    <Text style={[{ color: colors.primaryText, fontSize: 15 }]}>{compareData.original}</Text>
-                  </View>
-                  {compareData.results.map((r) => (
-                    <View key={r.provider} style={[styles.compareResult, { backgroundColor: colors.translatedBubbleBg, borderColor: colors.border }]}>
-                      <Text style={[styles.compareLabel, { color: colors.primary }]}>{r.provider.toUpperCase()}</Text>
-                      {r.loading ? (
-                        <Text style={[{ color: colors.dimText, fontStyle: "italic", fontSize: 15 }]}>Loading...</Text>
-                      ) : (
-                        <TouchableOpacity onPress={() => copyToClipboard(r.text)}>
-                          <Text style={[{ color: colors.translatedText, fontSize: 15 }]}>{r.text}</Text>
-                          {copiedText === r.text && <Text style={styles.copiedBadge}>Copied!</Text>}
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  ))}
-                </>
-              )}
-              <TouchableOpacity
-                style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
-                onPress={() => setCompareData(null)}
-                accessibilityRole="button"
-                accessibilityLabel="Close comparison"
-              >
-                <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" }]}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
+        <ComparisonModal
+          visible={!!compareData}
+          data={compareData}
+          onClose={() => setCompareData(null)}
+          onCopy={copyToClipboard}
+          copiedText={copiedText}
+          colors={colors}
+        />
 
-        {/* Phrasebook modal */}
-        <Modal visible={showPhrasebook} animationType="slide" transparent>
-          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-            <View style={[styles.phrasebookContent, { backgroundColor: colors.modalBg }]}>
-              <Text style={[styles.compareTitle, { color: colors.titleText }]}>Phrasebook</Text>
-              <FlatList
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                data={PHRASE_CATEGORIES}
-                keyExtractor={(item) => item.key}
-                style={styles.phraseCategoryRow}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={[styles.phraseCategoryPill, { backgroundColor: phraseCategory === item.key ? colors.primary : colors.cardBg, borderColor: phraseCategory === item.key ? colors.primary : colors.border }]}
-                    onPress={() => setPhraseCategory(item.key)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${item.label} phrases`}
-                    accessibilityState={{ selected: phraseCategory === item.key }}
-                  >
-                    <Text style={styles.phraseCategoryIcon}>{item.icon}</Text>
-                    <Text style={[styles.phraseCategoryText, { color: phraseCategory === item.key ? "#ffffff" : colors.mutedText }]}>
-                      {item.label}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              />
-              <FlatList
-                data={getPhrasesForCategory(phraseCategory)}
-                keyExtractor={(_, i) => `phrase-${phraseCategory}-${i}`}
-                style={styles.phraseList}
-                renderItem={({ item: phrase }) => {
-                  const srcCode = sourceLang.code === "autodetect" ? "en" : sourceLang.code;
-                  const srcText = (phrase as any)[srcCode] || phrase.en;
-                  const tgtText = (phrase as any)[targetLang.code] || "";
-                  return (
-                    <TouchableOpacity
-                      style={[styles.phraseItem, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}
-                      onPress={() => {
-                        if (tgtText) {
-                          copyToClipboard(tgtText);
-                          if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                        }
-                      }}
-                      onLongPress={() => {
-                        if (tgtText) {
-                          speakText(tgtText, targetLang.speechCode);
-                        }
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${srcText} translates to ${tgtText}. Tap to copy, long press to speak.`}
-                    >
-                      <Text style={[styles.phraseSrcText, { color: colors.secondaryText }]}>{srcText}</Text>
-                      {tgtText ? (
-                        <Text style={[styles.phraseTgtText, { color: colors.translatedText }]}>{tgtText}</Text>
-                      ) : (
-                        <Text style={[styles.phraseTgtText, { color: colors.dimText, fontStyle: "italic" }]}>Not available</Text>
-                      )}
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-              <TouchableOpacity
-                style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
-                onPress={() => setShowPhrasebook(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Close phrasebook"
-              >
-                <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
+        <PhrasebookModal
+          visible={showPhrasebook}
+          onClose={() => setShowPhrasebook(false)}
+          sourceLangCode={sourceLang.code === "autodetect" ? "en" : sourceLang.code}
+          targetLangCode={targetLang.code}
+          onCopy={copyToClipboard}
+          onSpeak={(text) => speakText(text, targetLang.speechCode)}
+          hapticsEnabled={settings.hapticsEnabled}
+          colors={colors}
+        />
 
-        {/* Statistics modal */}
-        <Modal visible={showStats} animationType="slide" transparent>
-          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-            <View style={[styles.statsContent, { backgroundColor: colors.modalBg }]}>
-              <Text style={[styles.compareTitle, { color: colors.titleText }]}>Translation Statistics</Text>
-              {(() => {
-                const validHistory = history.filter((h) => !h.pending && !h.error);
-                const totalTranslations = validHistory.length;
-                const totalFavorites = validHistory.filter((h) => h.favorited).length;
-                const totalSourceWords = validHistory.reduce(
-                  (sum, h) => sum + h.original.trim().split(/\s+/).filter(Boolean).length, 0
-                );
-                const totalTranslatedWords = validHistory.reduce(
-                  (sum, h) => sum + h.translated.trim().split(/\s+/).filter(Boolean).length, 0
-                );
-                const confidenceItems = validHistory.filter((h) => h.confidence != null);
-                const avgConfidence = confidenceItems.length > 0
-                  ? confidenceItems.reduce((sum, h) => sum + (h.confidence ?? 0), 0) / confidenceItems.length
-                  : null;
+        <StatsModal
+          visible={showStats}
+          onClose={() => setShowStats(false)}
+          history={history}
+          streak={streak}
+          colors={colors}
+        />
 
-                // Most used language pairs
-                const pairCounts: Record<string, number> = {};
-                for (const h of validHistory) {
-                  if (h.sourceLangCode && h.targetLangCode) {
-                    const key = `${h.sourceLangCode}→${h.targetLangCode}`;
-                    pairCounts[key] = (pairCounts[key] || 0) + 1;
-                  }
-                }
-                const topPairs = Object.entries(pairCounts)
-                  .sort((a, b) => b[1] - a[1])
-                  .slice(0, 5)
-                  .map(([pair, count]) => {
-                    const [src, tgt] = pair.split("→");
-                    const srcName = LANGUAGES.find((l) => l.code === src)?.name || src;
-                    const tgtName = LANGUAGES.find((l) => l.code === tgt)?.name || tgt;
-                    return { label: `${srcName} → ${tgtName}`, count };
-                  });
+        <WordAlternativesModal
+          visible={wordAltData !== null}
+          data={wordAltData}
+          onClose={() => setWordAltData(null)}
+          onCopy={copyToClipboard}
+          copiedText={copiedText}
+          colors={colors}
+        />
 
-                // Most used target languages
-                const targetCounts: Record<string, number> = {};
-                for (const h of validHistory) {
-                  if (h.targetLangCode) {
-                    targetCounts[h.targetLangCode] = (targetCounts[h.targetLangCode] || 0) + 1;
-                  }
-                }
-                const topTargets = Object.entries(targetCounts)
-                  .sort((a, b) => b[1] - a[1])
-                  .slice(0, 3)
-                  .map(([code, count]) => ({
-                    label: LANGUAGES.find((l) => l.code === code)?.name || code,
-                    count,
-                  }));
-
-                return (
-                  <FlatList
-                    data={[{ key: "stats" }]}
-                    renderItem={() => (
-                      <View>
-                        {/* Summary cards */}
-                        <View style={styles.statsGrid}>
-                          <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
-                            <Text style={[styles.statNumber, { color: colors.primary }]}>{totalTranslations}</Text>
-                            <Text style={[styles.statLabel, { color: colors.mutedText }]}>Translations</Text>
-                          </View>
-                          <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
-                            <Text style={[styles.statNumber, { color: colors.primary }]}>{totalFavorites}</Text>
-                            <Text style={[styles.statLabel, { color: colors.mutedText }]}>Favorites</Text>
-                          </View>
-                          <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
-                            <Text style={[styles.statNumber, { color: colors.primary }]}>{totalSourceWords}</Text>
-                            <Text style={[styles.statLabel, { color: colors.mutedText }]}>Words In</Text>
-                          </View>
-                          <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
-                            <Text style={[styles.statNumber, { color: colors.primary }]}>{totalTranslatedWords}</Text>
-                            <Text style={[styles.statLabel, { color: colors.mutedText }]}>Words Out</Text>
-                          </View>
-                        </View>
-
-                        {streak.current > 0 && (
-                          <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
-                            <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Daily Streak</Text>
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                              <Text style={{ fontSize: 32 }}>🔥</Text>
-                              <Text style={[styles.statNumber, { color: colors.primary, fontSize: 28 }]}>{streak.current}</Text>
-                              <Text style={[{ color: colors.mutedText, fontSize: 14 }]}>{streak.current === 1 ? "day" : "days"} in a row</Text>
-                            </View>
-                          </View>
-                        )}
-
-                        {/* Activity calendar - last 28 days */}
-                        {totalTranslations > 0 && (() => {
-                          const today = new Date();
-                          today.setHours(0, 0, 0, 0);
-                          const days: { date: Date; count: number; label: string }[] = [];
-                          for (let i = 27; i >= 0; i--) {
-                            const d = new Date(today);
-                            d.setDate(d.getDate() - i);
-                            const dayStart = d.getTime();
-                            const dayEnd = dayStart + 86400000;
-                            const count = validHistory.filter((h) => h.timestamp && h.timestamp >= dayStart && h.timestamp < dayEnd).length;
-                            days.push({ date: d, count, label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) });
-                          }
-                          const maxCount = Math.max(...days.map((d) => d.count), 1);
-                          const weekDays = ["S", "M", "T", "W", "T", "F", "S"];
-
-                          return (
-                            <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
-                              <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Activity (Last 4 Weeks)</Text>
-                              <View style={styles.calendarGrid}>
-                                {weekDays.map((wd, wi) => (
-                                  <Text key={`wd-${wi}`} style={[styles.calendarDayLabel, { color: colors.dimText }]}>{wd}</Text>
-                                ))}
-                                {/* Pad first week to align with day of week */}
-                                {Array.from({ length: days[0].date.getDay() }).map((_, pi) => (
-                                  <View key={`pad-${pi}`} style={styles.calendarCell} />
-                                ))}
-                                {days.map((day, di) => {
-                                  const intensity = day.count === 0 ? 0 : Math.max(0.2, day.count / maxCount);
-                                  return (
-                                    <View
-                                      key={di}
-                                      style={[
-                                        styles.calendarCell,
-                                        {
-                                          backgroundColor: day.count === 0
-                                            ? colors.borderLight
-                                            : colors.primary,
-                                          opacity: day.count === 0 ? 0.4 : 0.3 + intensity * 0.7,
-                                        },
-                                      ]}
-                                      accessibilityLabel={`${day.label}: ${day.count} translation${day.count !== 1 ? "s" : ""}`}
-                                    />
-                                  );
-                                })}
-                              </View>
-                              <View style={styles.calendarLegend}>
-                                <Text style={[{ color: colors.dimText, fontSize: 11 }]}>Less</Text>
-                                {[0, 0.25, 0.5, 0.75, 1].map((level, li) => (
-                                  <View
-                                    key={li}
-                                    style={[
-                                      styles.calendarLegendCell,
-                                      {
-                                        backgroundColor: level === 0 ? colors.borderLight : colors.primary,
-                                        opacity: level === 0 ? 0.4 : 0.3 + level * 0.7,
-                                      },
-                                    ]}
-                                  />
-                                ))}
-                                <Text style={[{ color: colors.dimText, fontSize: 11 }]}>More</Text>
-                              </View>
-                            </View>
-                          );
-                        })()}
-
-                        {avgConfidence != null && (
-                          <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
-                            <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Avg. Confidence</Text>
-                            <View style={styles.confidenceBarOuter}>
-                              <View style={[styles.confidenceBarInner, { width: `${Math.round(avgConfidence * 100)}%`, backgroundColor: colors.primary }]} />
-                            </View>
-                            <Text style={[styles.confidencePercent, { color: colors.primary }]}>{Math.round(avgConfidence * 100)}%</Text>
-                          </View>
-                        )}
-
-                        {topPairs.length > 0 && (
-                          <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
-                            <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Top Language Pairs</Text>
-                            {topPairs.map((p, i) => (
-                              <View key={i} style={styles.statsRow}>
-                                <Text style={[styles.statsRowLabel, { color: colors.primaryText }]}>{p.label}</Text>
-                                <View style={[styles.statsCountBadge, { backgroundColor: colors.primary + "22" }]}>
-                                  <Text style={[styles.statsCountText, { color: colors.primary }]}>{p.count}</Text>
-                                </View>
-                              </View>
-                            ))}
-                          </View>
-                        )}
-
-                        {topTargets.length > 0 && (
-                          <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
-                            <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Most Translated To</Text>
-                            {topTargets.map((t, i) => (
-                              <View key={i} style={styles.statsRow}>
-                                <Text style={[styles.statsRowLabel, { color: colors.primaryText }]}>{t.label}</Text>
-                                <View style={[styles.statsCountBadge, { backgroundColor: colors.primary + "22" }]}>
-                                  <Text style={[styles.statsCountText, { color: colors.primary }]}>{t.count}</Text>
-                                </View>
-                              </View>
-                            ))}
-                          </View>
-                        )}
-
-                        {totalTranslations === 0 && (
-                          <View style={styles.statsEmptyState}>
-                            <Text style={[{ color: colors.mutedText, fontSize: 40, marginBottom: 12 }]}>📭</Text>
-                            <Text style={[{ color: colors.mutedText, fontSize: 15, textAlign: "center" as const }]}>
-                              No translations yet.{"\n"}Start translating to see your stats!
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    )}
-                    keyExtractor={(item) => item.key}
-                  />
-                );
-              })()}
-              <TouchableOpacity
-                style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
-                onPress={() => setShowStats(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Close statistics"
-              >
-                <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Word alternatives modal */}
-        <Modal visible={wordAltData !== null} animationType="fade" transparent>
-          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-            <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
-              {wordAltData && (
-                <>
-                  <Text style={[styles.compareTitle, { color: colors.titleText }]}>Word Lookup</Text>
-                  <View style={[styles.compareOriginal, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
-                    <Text style={[styles.compareLabel, { color: colors.dimText }]}>WORD</Text>
-                    <Text style={[{ color: colors.primaryText, fontSize: 20, fontWeight: "700" as const }]}>{wordAltData.word}</Text>
-                  </View>
-                  {wordAltData.loading ? (
-                    <View style={{ paddingVertical: 30, alignItems: "center" as const }}>
-                      <Text style={[{ color: colors.dimText, fontStyle: "italic" as const, fontSize: 15 }]}>Looking up alternatives...</Text>
-                    </View>
-                  ) : wordAltData.alternatives.length === 0 ? (
-                    <View style={{ paddingVertical: 30, alignItems: "center" as const }}>
-                      <Text style={[{ color: colors.dimText, fontSize: 15 }]}>No alternatives found</Text>
-                    </View>
-                  ) : (
-                    <FlatList
-                      data={wordAltData.alternatives}
-                      keyExtractor={(_, i) => String(i)}
-                      style={{ maxHeight: 300 }}
-                      renderItem={({ item: alt }) => (
-                        <TouchableOpacity
-                          style={[styles.altRow, { borderBottomColor: colors.borderLight }]}
-                          onPress={() => copyToClipboard(alt.translation)}
-                        >
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.altTranslation, { color: colors.translatedText }]}>{alt.translation}</Text>
-                            <Text style={[styles.altSource, { color: colors.dimText }]}>{alt.source}</Text>
-                          </View>
-                          {alt.quality > 0 && (
-                            <View style={[styles.altQualityBadge, { backgroundColor: colors.primary + "22" }]}>
-                              <Text style={[styles.altQualityText, { color: colors.primary }]}>{alt.quality}%</Text>
-                            </View>
-                          )}
-                        </TouchableOpacity>
-                      )}
-                    />
-                  )}
-                  {copiedText && <Text style={[styles.copiedBadge, { textAlign: "center" as const }]}>Copied!</Text>}
-                </>
-              )}
-              <TouchableOpacity
-                style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
-                onPress={() => setWordAltData(null)}
-                accessibilityRole="button"
-                accessibilityLabel="Close word lookup"
-              >
-                <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Correction prompt modal */}
-        <Modal visible={correctionPrompt !== null} animationType="fade" transparent>
-          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-            <View style={[styles.compareContent, { backgroundColor: colors.modalBg, maxHeight: "50%" }]}>
-              <Text style={[styles.compareTitle, { color: colors.titleText }]}>Suggest Correction</Text>
-              <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
-                <Text style={[{ color: colors.dimText, fontSize: 13, marginBottom: 12 }]}>
-                  Original: "{correctionPrompt?.original}"
-                </Text>
-                <Text style={[{ color: colors.dimText, fontSize: 13, marginBottom: 12 }]}>
-                  Current: "{correctionPrompt?.translated}"
-                </Text>
-                <TextInput
-                  style={[styles.glossaryInput, { backgroundColor: colors.cardBg, color: colors.primaryText, borderColor: colors.border }]}
-                  placeholder="Enter better translation..."
-                  placeholderTextColor={colors.placeholderText}
-                  value={correctionText}
-                  onChangeText={setCorrectionText}
-                  autoFocus
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  accessibilityLabel="Correction input"
-                />
-                <TouchableOpacity
-                  style={[styles.glossaryAddButton, { backgroundColor: correctionText.trim() ? colors.primary : colors.border }]}
-                  onPress={submitCorrection}
-                  disabled={!correctionText.trim()}
-                  accessibilityRole="button"
-                  accessibilityLabel="Submit correction"
-                >
-                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Save & Add to Glossary</Text>
-                </TouchableOpacity>
-              </View>
-              <TouchableOpacity
-                style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
-                onPress={() => { setCorrectionPrompt(null); setCorrectionText(""); }}
-                accessibilityRole="button"
-                accessibilityLabel="Cancel correction"
-              >
-                <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Cancel</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
+        <CorrectionModal
+          visible={correctionPrompt !== null}
+          data={correctionPrompt}
+          onClose={() => setCorrectionPrompt(null)}
+          onSubmit={(correctedText) => {
+            submitCorrection(correctedText);
+          }}
+          colors={colors}
+        />
 
         {/* Glossary modal */}
-        <Modal visible={showGlossary} animationType="slide" transparent>
-          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-            <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
-              <Text style={[styles.compareTitle, { color: colors.titleText }]}>My Glossary</Text>
-              <Text style={[{ color: colors.dimText, fontSize: 13, textAlign: "center" as const, marginBottom: 12, paddingHorizontal: 20 }]}>
-                Custom translations override API results. Entries apply to the current language pair ({sourceLang.name} → {targetLang.name}).
-              </Text>
+        <GlossaryModal
+          visible={showGlossary}
+          onClose={() => setShowGlossary(false)}
+          glossary={glossary}
+          onAdd={addGlossaryEntry}
+          onRemove={removeGlossaryEntry}
+          onImport={importGlossaryEntries}
+          sourceLangName={sourceLang.name}
+          targetLangName={targetLang.name}
+          sourceLangCode={sourceLang.code}
+          targetLangCode={targetLang.code}
+          hapticsEnabled={settings.hapticsEnabled}
+          colors={colors}
+        />
 
-              <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
-                <TextInput
-                  style={[styles.apiKeyInput, { backgroundColor: colors.cardBg, color: colors.primaryText, borderColor: colors.border, marginBottom: 8 }]}
-                  placeholder={`Source phrase (${sourceLang.name})`}
-                  placeholderTextColor={colors.placeholderText}
-                  value={glossarySource}
-                  onChangeText={setGlossarySource}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  accessibilityLabel="Glossary source phrase"
-                />
-                <TextInput
-                  style={[styles.apiKeyInput, { backgroundColor: colors.cardBg, color: colors.primaryText, borderColor: colors.border, marginBottom: 8 }]}
-                  placeholder={`Translation (${targetLang.name})`}
-                  placeholderTextColor={colors.placeholderText}
-                  value={glossaryTarget}
-                  onChangeText={setGlossaryTarget}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  accessibilityLabel="Glossary target translation"
-                />
-                <TouchableOpacity
-                  style={[styles.glossaryAddButton, { backgroundColor: glossarySource.trim() && glossaryTarget.trim() ? colors.primary : colors.border }]}
-                  onPress={addGlossaryEntry}
-                  disabled={!glossarySource.trim() || !glossaryTarget.trim()}
-                  accessibilityRole="button"
-                  accessibilityLabel="Add glossary entry"
-                >
-                  <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Add Entry</Text>
-                </TouchableOpacity>
-              </View>
-
-              <FlatList
-                data={glossary.filter((g) => g.sourceLang === sourceLang.code && g.targetLang === targetLang.code)}
-                keyExtractor={(_, i) => String(i)}
-                style={{ maxHeight: 250, paddingHorizontal: 16 }}
-                ListEmptyComponent={
-                  <Text style={[{ color: colors.mutedText, fontSize: 14, textAlign: "center" as const, paddingVertical: 20 }]}>
-                    No entries for this language pair yet.
-                  </Text>
-                }
-                renderItem={({ item }) => {
-                  const realIndex = glossary.findIndex((g) => g === item);
-                  return (
-                    <View style={[styles.glossaryEntry, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[{ color: colors.secondaryText, fontSize: 14 }]}>{item.source}</Text>
-                        <Text style={[{ color: colors.translatedText, fontSize: 14, fontWeight: "600" }]}>{item.target}</Text>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => removeGlossaryEntry(realIndex)}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Remove glossary entry: ${item.source}`}
-                      >
-                        <Text style={{ color: colors.errorText, fontSize: 18 }}>✕</Text>
-                      </TouchableOpacity>
-                    </View>
-                  );
-                }}
-              />
-
-              {glossary.length > 0 && (
-                <View style={{ paddingHorizontal: 16, marginTop: 8, gap: 8 }}>
-                  <Text style={[{ color: colors.dimText, fontSize: 12, textAlign: "center" as const }]}>
-                    {glossary.length} total {glossary.length === 1 ? "entry" : "entries"} across all language pairs
-                  </Text>
-                  <View style={{ flexDirection: "row" as const, justifyContent: "center" as const, gap: 12 }}>
-                    <TouchableOpacity
-                      style={[styles.glossaryIOButton, { backgroundColor: colors.cardBg }]}
-                      onPress={async () => {
-                        const csv = "source,target,sourceLang,targetLang\n" +
-                          glossary.map((g) => `"${g.source.replace(/"/g, '""')}","${g.target.replace(/"/g, '""')}","${g.sourceLang}","${g.targetLang}"`).join("\n");
-                        try { await Share.share({ message: csv }); } catch {}
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Export glossary as CSV"
-                    >
-                      <Text style={[{ color: colors.primary, fontSize: 13, fontWeight: "600" as const }]}>Export CSV</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.glossaryIOButton, { backgroundColor: colors.cardBg }]}
-                      onPress={async () => {
-                        try {
-                          const clip = await Clipboard.getStringAsync();
-                          if (!clip || !clip.includes(",")) {
-                            Alert.alert("Import", "Copy a CSV to clipboard first.\nFormat: source,target,sourceLang,targetLang");
-                            return;
-                          }
-                          const lines = clip.split("\n").filter((l) => l.trim());
-                          const start = lines[0]?.toLowerCase().startsWith("source") ? 1 : 0;
-                          let imported = 0;
-                          const newEntries = [...glossary];
-                          for (let i = start; i < lines.length; i++) {
-                            const match = lines[i].match(/^"?([^"]*)"?\s*,\s*"?([^"]*)"?\s*,\s*"?([^"]*)"?\s*,\s*"?([^"]*)"?$/);
-                            if (match) {
-                              const [, src, tgt, sLang, tLang] = match;
-                              if (src && tgt && sLang && tLang) {
-                                const exists = newEntries.some((g) => g.source.toLowerCase() === src.toLowerCase() && g.sourceLang === sLang && g.targetLang === tLang);
-                                if (!exists) {
-                                  newEntries.push({ source: src, target: tgt, sourceLang: sLang, targetLang: tLang });
-                                  imported++;
-                                }
-                              }
-                            }
-                          }
-                          if (imported > 0) {
-                            setGlossary(newEntries);
-                            AsyncStorage.setItem(GLOSSARY_KEY, JSON.stringify(newEntries));
-                            if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                          }
-                          Alert.alert("Import", imported > 0 ? `Imported ${imported} new ${imported === 1 ? "entry" : "entries"}.` : "No new entries found in clipboard.");
-                        } catch {
-                          Alert.alert("Import", "Failed to read clipboard.");
-                        }
-                      }}
-                      accessibilityRole="button"
-                      accessibilityLabel="Import glossary from clipboard CSV"
-                    >
-                      <Text style={[{ color: colors.primary, fontSize: 13, fontWeight: "600" as const }]}>Import from Clipboard</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-
-              <TouchableOpacity
-                style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
-                onPress={() => setShowGlossary(false)}
-                accessibilityRole="button"
-                accessibilityLabel="Close glossary"
-              >
-                <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Onboarding tutorial modal */}
-        <Modal visible={showOnboarding} animationType="fade" transparent>
-          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-            <View style={[styles.onboardingContent, { backgroundColor: colors.modalBg }]}>
-              {(() => {
-                const steps = [
-                  { icon: "🎙️", title: "Voice Translation", desc: "Tap the mic button and speak naturally. Your words are translated in real time as you talk." },
-                  { icon: "💬", title: "Conversation Mode", desc: "Toggle Chat mode for face-to-face conversations. Two mic buttons let each person speak in their language." },
-                  { icon: "📖", title: "Phrasebook", desc: "Browse common phrases by category for instant offline translations. Tap to copy, long-press to hear." },
-                  { icon: "⌨️", title: "Type to Translate", desc: "Prefer typing? Use the text input at the bottom to translate written text, with multi-line support." },
-                  { icon: "⭐", title: "Favorites & History", desc: "Star translations to bookmark them. Swipe left to delete. Search your full history anytime." },
-                  { icon: "📷", title: "Camera Translate", desc: "Point your camera at any text — signs, menus, documents — and see translations overlaid in real time." },
-                  { icon: "📄", title: "Smart Scanner", desc: "6 modes: Document, Receipt, Business Card, Medicine, Menu, and Textbook. Each extracts mode-specific info. Save scans as Markdown notes." },
-                  { icon: "⚙️", title: "Customize Everything", desc: "Adjust font size, speech speed, theme, haptics, and even switch translation providers in Settings." },
-                ];
-                const step = steps[onboardingStep];
-                const isLast = onboardingStep === steps.length - 1;
-                return (
-                  <>
-                    <View style={styles.onboardingDots}>
-                      {steps.map((_, i) => (
-                        <View
-                          key={i}
-                          style={[
-                            styles.onboardingDot,
-                            { backgroundColor: i === onboardingStep ? colors.primary : colors.border },
-                          ]}
-                        />
-                      ))}
-                    </View>
-                    <Text style={styles.onboardingIcon}>{step.icon}</Text>
-                    <Text style={[styles.onboardingTitle, { color: colors.titleText }]}>{step.title}</Text>
-                    <Text style={[styles.onboardingDesc, { color: colors.secondaryText }]}>{step.desc}</Text>
-                    <View style={styles.onboardingButtons}>
-                      <TouchableOpacity
-                        style={styles.onboardingSkip}
-                        onPress={() => {
-                          setShowOnboarding(false);
-                          AsyncStorage.setItem(ONBOARDING_KEY, "true");
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel="Skip tutorial"
-                      >
-                        <Text style={[styles.onboardingSkipText, { color: colors.dimText }]}>Skip</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.onboardingNext, { backgroundColor: colors.primary }]}
-                        onPress={() => {
-                          if (isLast) {
-                            setShowOnboarding(false);
-                            AsyncStorage.setItem(ONBOARDING_KEY, "true");
-                            if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                          } else {
-                            setOnboardingStep((s) => s + 1);
-                          }
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel={isLast ? "Get started" : "Next tip"}
-                      >
-                        <Text style={styles.onboardingNextText}>{isLast ? "Get Started" : "Next"}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </>
-                );
-              })()}
-            </View>
-          </View>
-        </Modal>
+        <OnboardingModal
+          visible={showOnboarding}
+          onComplete={() => {
+            setShowOnboarding(false);
+            AsyncStorage.setItem(ONBOARDING_KEY, "true");
+          }}
+          hapticsEnabled={settings.hapticsEnabled}
+          colors={colors}
+        />
 
         {/* Language selectors */}
         <View style={styles.langRow}>
@@ -2368,7 +1798,6 @@ function AppContent() {
                         style={styles.speakButton}
                         onPress={() => {
                           setCorrectionPrompt({ index: realIndex, original: item.original, translated: item.translated });
-                          setCorrectionText("");
                         }}
                         accessibilityRole="button"
                         accessibilityLabel="Suggest a better translation"
@@ -2913,31 +2342,6 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline" as const,
     textDecorationStyle: "dotted" as const,
   },
-  altRow: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    paddingVertical: 12,
-    paddingHorizontal: 4,
-    borderBottomWidth: 1,
-  },
-  altTranslation: {
-    fontSize: 16,
-    fontWeight: "500" as const,
-  },
-  altSource: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  altQualityBadge: {
-    borderRadius: 8,
-    paddingVertical: 3,
-    paddingHorizontal: 8,
-    marginLeft: 10,
-  },
-  altQualityText: {
-    fontSize: 12,
-    fontWeight: "700" as const,
-  },
   romanizationText: {
     fontSize: 13,
     fontStyle: "italic" as const,
@@ -3350,269 +2754,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
-  // Comparison modal
-  compareOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  compareContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "70%",
-    paddingTop: 20,
-    paddingHorizontal: 20,
-  },
-  compareTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  compareOriginal: {
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-  compareResult: {
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-  },
-  compareLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1,
-    marginBottom: 6,
-  },
-  compareClose: {
-    padding: 18,
-    alignItems: "center",
-    borderTopWidth: 1,
-    marginHorizontal: -20,
-  },
   compareIcon: {
     fontSize: 16,
     fontWeight: "700",
-  },
-  // Phrasebook modal
-  statsContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "80%",
-    paddingTop: 20,
-    paddingHorizontal: 20,
-  },
-  statsGrid: {
-    flexDirection: "row" as const,
-    flexWrap: "wrap" as const,
-    gap: 10,
-    marginBottom: 16,
-  },
-  statCard: {
-    borderRadius: 14,
-    padding: 14,
-    alignItems: "center" as const,
-    width: "47%" as any,
-    flexGrow: 1,
-  },
-  statNumber: {
-    fontSize: 28,
-    fontWeight: "800" as const,
-  },
-  statLabel: {
-    fontSize: 12,
-    fontWeight: "600" as const,
-    marginTop: 4,
-  },
-  statsSection: {
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 12,
-  },
-  statsSectionTitle: {
-    fontSize: 13,
-    fontWeight: "700" as const,
-    textTransform: "uppercase" as const,
-    letterSpacing: 0.5,
-    marginBottom: 10,
-  },
-  statsRow: {
-    flexDirection: "row" as const,
-    justifyContent: "space-between" as const,
-    alignItems: "center" as const,
-    paddingVertical: 6,
-  },
-  statsRowLabel: {
-    fontSize: 14,
-    flex: 1,
-  },
-  statsCountBadge: {
-    borderRadius: 10,
-    paddingVertical: 3,
-    paddingHorizontal: 10,
-  },
-  statsCountText: {
-    fontSize: 13,
-    fontWeight: "700" as const,
-  },
-  confidenceBarOuter: {
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: "rgba(108,99,255,0.15)",
-    overflow: "hidden" as const,
-    marginBottom: 6,
-  },
-  confidenceBarInner: {
-    height: 8,
-    borderRadius: 4,
-  },
-  confidencePercent: {
-    fontSize: 14,
-    fontWeight: "700" as const,
-    textAlign: "right" as const,
-  },
-  calendarGrid: {
-    flexDirection: "row" as const,
-    flexWrap: "wrap" as const,
-    gap: 3,
-  },
-  calendarDayLabel: {
-    width: 28,
-    height: 14,
-    fontSize: 10,
-    fontWeight: "600" as const,
-    textAlign: "center" as const,
-  },
-  calendarCell: {
-    width: 28,
-    height: 28,
-    borderRadius: 5,
-  },
-  calendarLegend: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    justifyContent: "flex-end" as const,
-    gap: 4,
-    marginTop: 8,
-  },
-  calendarLegendCell: {
-    width: 14,
-    height: 14,
-    borderRadius: 3,
-  },
-  statsEmptyState: {
-    alignItems: "center" as const,
-    paddingVertical: 40,
-  },
-  phrasebookContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "80%",
-    paddingTop: 20,
-    paddingHorizontal: 20,
-  },
-  phraseCategoryRow: {
-    flexGrow: 0,
-    marginBottom: 12,
-  },
-  phraseCategoryPill: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    borderRadius: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    marginRight: 8,
-    borderWidth: 1,
-    gap: 6,
-  },
-  phraseCategoryIcon: {
-    fontSize: 14,
-  },
-  phraseCategoryText: {
-    fontSize: 13,
-    fontWeight: "700" as const,
-  },
-  phraseList: {
-    flex: 1,
-  },
-  phraseItem: {
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-  },
-  phraseSrcText: {
-    fontSize: 15,
-    lineHeight: 21,
-    marginBottom: 4,
-  },
-  phraseTgtText: {
-    fontSize: 16,
-    lineHeight: 22,
-    fontWeight: "600" as const,
-  },
-  // Onboarding tutorial
-  onboardingContent: {
-    borderRadius: 24,
-    paddingVertical: 32,
-    paddingHorizontal: 28,
-    marginHorizontal: 24,
-    alignItems: "center" as const,
-  },
-  onboardingDots: {
-    flexDirection: "row" as const,
-    gap: 8,
-    marginBottom: 24,
-  },
-  onboardingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  onboardingIcon: {
-    fontSize: 56,
-    marginBottom: 16,
-  },
-  onboardingTitle: {
-    fontSize: 24,
-    fontWeight: "700" as const,
-    marginBottom: 12,
-    textAlign: "center" as const,
-  },
-  onboardingDesc: {
-    fontSize: 16,
-    lineHeight: 24,
-    textAlign: "center" as const,
-    paddingHorizontal: 8,
-    marginBottom: 32,
-  },
-  onboardingButtons: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    gap: 16,
-    width: "100%" as const,
-  },
-  onboardingSkip: {
-    flex: 1,
-    paddingVertical: 14,
-    alignItems: "center" as const,
-  },
-  onboardingSkipText: {
-    fontSize: 16,
-    fontWeight: "500" as const,
-  },
-  onboardingNext: {
-    flex: 2,
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: "center" as const,
-  },
-  onboardingNextText: {
-    color: "#ffffff",
-    fontSize: 17,
-    fontWeight: "700" as const,
   },
   // Landscape overrides
   containerLandscape: {
@@ -3642,40 +2786,5 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-  },
-  apiKeyInput: {
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    fontSize: 14,
-    borderWidth: 1,
-  },
-  glossaryAddButton: {
-    borderRadius: 12,
-    paddingVertical: 12,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-  },
-  glossaryInput: {
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    fontSize: 14,
-    borderWidth: 1,
-    marginBottom: 8,
-  },
-  glossaryIOButton: {
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-  },
-  glossaryEntry: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    padding: 12,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 8,
-    gap: 10,
   },
 });
