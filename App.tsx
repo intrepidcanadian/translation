@@ -1656,7 +1656,7 @@ export default function App() {
             <View>
               <View style={styles.textInputRow}>
                 <TextInput
-                  style={[styles.textInput, { backgroundColor: colors.bubbleBg, color: colors.primaryText, borderColor: colors.border }]}
+                  style={[styles.textInput, { backgroundColor: colors.bubbleBg, color: colors.primaryText, borderColor: colors.border, maxHeight: 120 }]}
                   placeholder="Or type to translate..."
                   placeholderTextColor={colors.placeholderText}
                   value={typedText}
@@ -1666,6 +1666,8 @@ export default function App() {
                   editable={!isTranslating}
                   accessibilityLabel="Type text to translate"
                   maxLength={500}
+                  multiline
+                  textAlignVertical="top"
                 />
                 {typedText.trim() ? (
                   <TouchableOpacity
@@ -2054,7 +2056,7 @@ const styles = StyleSheet.create({
   },
   textInputRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
     marginTop: 12,
     gap: 8,
     width: "100%",
@@ -2062,10 +2064,12 @@ const styles = StyleSheet.create({
   textInput: {
     flex: 1,
     borderRadius: 20,
-    paddingVertical: 10,
+    paddingTop: 10,
+    paddingBottom: 10,
     paddingHorizontal: 16,
     fontSize: 15,
     borderWidth: 1,
+    minHeight: 40,
   },
   sendButton: {
     width: 40,
