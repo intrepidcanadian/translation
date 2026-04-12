@@ -221,6 +221,65 @@ export function clearTranslationCache() {
   translationCache.clear();
 }
 
+export interface WordAlternative {
+  translation: string;
+  quality: number; // 0-100
+  source: string; // e.g. "MyMemory"
+}
+
+/**
+ * Get alternative translations for a word/phrase using MyMemory's matches array.
+ * Returns multiple translation options ranked by quality.
+ */
+export async function getWordAlternatives(
+  word: string,
+  sourceLang: string,
+  targetLang: string,
+  signal?: AbortSignal
+): Promise<WordAlternative[]> {
+  if (!word.trim()) return [];
+
+  const langPair = `${sourceLang}|${targetLang}`;
+  const url = `${MYMEMORY_API}?q=${encodeURIComponent(word.trim())}&langpair=${encodeURIComponent(langPair)}`;
+
+  const response = await fetchWithTimeout(url, {}, signal);
+  if (!response.ok) return [];
+
+  const data = await response.json();
+  const seen = new Set<string>();
+  const alternatives: WordAlternative[] = [];
+
+  // Primary result
+  if (data.responseData?.translatedText) {
+    const text = data.responseData.translatedText.trim();
+    if (text) {
+      seen.add(text.toLowerCase());
+      alternatives.push({
+        translation: text,
+        quality: Math.round((data.responseData.match || 0) * 100),
+        source: "Primary",
+      });
+    }
+  }
+
+  // Additional matches from the API
+  if (Array.isArray(data.matches)) {
+    for (const match of data.matches) {
+      const text = (match.translation || "").trim();
+      if (!text || seen.has(text.toLowerCase())) continue;
+      seen.add(text.toLowerCase());
+      alternatives.push({
+        translation: text,
+        quality: Math.round((match.quality || match.match || 0) * (match.quality ? 1 : 100)),
+        source: match["created-by"] || "Community",
+      });
+      if (alternatives.length >= 8) break;
+    }
+  }
+
+  return alternatives;
+}
+
 export interface Language {
   code: string;
   name: string;

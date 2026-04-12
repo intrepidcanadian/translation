@@ -38,9 +38,11 @@ import LanguagePicker from "./src/components/LanguagePicker";
 import SettingsModal, { Settings, DEFAULT_SETTINGS, FONT_SIZE_SCALES } from "./src/components/SettingsModal";
 import {
   translateText,
+  getWordAlternatives,
   Language,
   LANGUAGES,
   AUTO_DETECT_LANGUAGE,
+  type WordAlternative,
 } from "./src/services/translation";
 import { getColors } from "./src/theme";
 import { PHRASE_CATEGORIES, getPhrasesForCategory, getPhraseOfTheDay, type PhraseCategory, type OfflinePhrase } from "./src/services/offlinePhrases";
@@ -146,7 +148,7 @@ export default function App() {
 
   // History of completed translations
   const [history, setHistory] = useState<
-    Array<{ original: string; translated: string; speaker?: "A" | "B"; favorited?: boolean; pending?: boolean; error?: boolean; sourceLangCode?: string; targetLangCode?: string; confidence?: number; detectedLang?: string }>
+    Array<{ original: string; translated: string; speaker?: "A" | "B"; favorited?: boolean; pending?: boolean; error?: boolean; sourceLangCode?: string; targetLangCode?: string; confidence?: number; detectedLang?: string; timestamp?: number }>
   >([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
@@ -173,6 +175,15 @@ export default function App() {
   // Translation feedback
   const [correctionPrompt, setCorrectionPrompt] = useState<{ index: number; original: string; translated: string } | null>(null);
   const [correctionText, setCorrectionText] = useState("");
+
+  // Word alternatives modal
+  const [wordAltData, setWordAltData] = useState<{
+    word: string;
+    sourceLang: string;
+    targetLang: string;
+    alternatives: WordAlternative[];
+    loading: boolean;
+  } | null>(null);
 
   // Multi-select state
   const [selectMode, setSelectMode] = useState(false);
@@ -499,6 +510,17 @@ export default function App() {
     setTimeout(() => setCopiedText(null), 1500);
   }, []);
 
+  const lookupWordAlternatives = useCallback(async (word: string, srcLang: string, tgtLang: string) => {
+    setWordAltData({ word, sourceLang: srcLang, targetLang: tgtLang, alternatives: [], loading: true });
+    if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const alts = await getWordAlternatives(word, srcLang, tgtLang);
+      setWordAltData((prev) => prev ? { ...prev, alternatives: alts, loading: false } : null);
+    } catch {
+      setWordAltData((prev) => prev ? { ...prev, loading: false } : null);
+    }
+  }, [settings.hapticsEnabled]);
+
   const compareTranslation = useCallback(async (original: string, currentTranslation: string) => {
     // Show modal immediately with current translation
     const providers: Array<{ key: string; label: string }> = [
@@ -661,7 +683,7 @@ export default function App() {
       const speaker = conversationMode ? activeSpeakerRef.current : undefined;
       setHistory((prev) => [
         ...prev,
-        { original: finalText.trim(), translated: translatedText.trim(), speaker, confidence: lastConfidenceRef.current, detectedLang: lastDetectedLangRef.current, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code },
+        { original: finalText.trim(), translated: translatedText.trim(), speaker, confidence: lastConfidenceRef.current, detectedLang: lastDetectedLangRef.current, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() },
       ]);
       maybeRequestReview();
       updateStreak();
@@ -995,7 +1017,7 @@ export default function App() {
       AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(updated));
       return updated;
     });
-    setHistory((prev) => [...prev, { original: text, translated: "Queued — will translate when online", pending: true, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code }]);
+    setHistory((prev) => [...prev, { original: text, translated: "Queued — will translate when online", pending: true, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() }]);
     if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
   }, [settings.hapticsEnabled]);
 
@@ -1025,7 +1047,7 @@ export default function App() {
             updated[pendingIdx] = { original: item.text, translated: result.translatedText };
             return updated;
           }
-          return [...prev, { original: item.text, translated: result.translatedText }];
+          return [...prev, { original: item.text, translated: result.translatedText, timestamp: Date.now() }];
         });
         remaining.splice(remaining.indexOf(item), 1);
         processed++;
@@ -1075,7 +1097,7 @@ export default function App() {
         ? { translatedText: glossaryMatch, confidence: 1.0 }
         : await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey });
       if (!controller.signal.aborted) {
-        setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, detectedLang: (result as any).detectedLanguage }]);
+        setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, detectedLang: (result as any).detectedLanguage, timestamp: Date.now() }]);
         maybeRequestReview();
         updateStreak();
       }
@@ -1090,6 +1112,7 @@ export default function App() {
           error: true,
           sourceLangCode: sourceLang.code,
           targetLangCode: targetLang.code,
+          timestamp: Date.now(),
         }]);
       }
     } finally {
@@ -1361,6 +1384,72 @@ export default function App() {
                           </View>
                         )}
 
+                        {/* Activity calendar - last 28 days */}
+                        {totalTranslations > 0 && (() => {
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const days: { date: Date; count: number; label: string }[] = [];
+                          for (let i = 27; i >= 0; i--) {
+                            const d = new Date(today);
+                            d.setDate(d.getDate() - i);
+                            const dayStart = d.getTime();
+                            const dayEnd = dayStart + 86400000;
+                            const count = validHistory.filter((h) => h.timestamp && h.timestamp >= dayStart && h.timestamp < dayEnd).length;
+                            days.push({ date: d, count, label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) });
+                          }
+                          const maxCount = Math.max(...days.map((d) => d.count), 1);
+                          const weekDays = ["S", "M", "T", "W", "T", "F", "S"];
+
+                          return (
+                            <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
+                              <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Activity (Last 4 Weeks)</Text>
+                              <View style={styles.calendarGrid}>
+                                {weekDays.map((wd, wi) => (
+                                  <Text key={`wd-${wi}`} style={[styles.calendarDayLabel, { color: colors.dimText }]}>{wd}</Text>
+                                ))}
+                                {/* Pad first week to align with day of week */}
+                                {Array.from({ length: days[0].date.getDay() }).map((_, pi) => (
+                                  <View key={`pad-${pi}`} style={styles.calendarCell} />
+                                ))}
+                                {days.map((day, di) => {
+                                  const intensity = day.count === 0 ? 0 : Math.max(0.2, day.count / maxCount);
+                                  return (
+                                    <View
+                                      key={di}
+                                      style={[
+                                        styles.calendarCell,
+                                        {
+                                          backgroundColor: day.count === 0
+                                            ? colors.borderLight
+                                            : colors.primary,
+                                          opacity: day.count === 0 ? 0.4 : 0.3 + intensity * 0.7,
+                                        },
+                                      ]}
+                                      accessibilityLabel={`${day.label}: ${day.count} translation${day.count !== 1 ? "s" : ""}`}
+                                    />
+                                  );
+                                })}
+                              </View>
+                              <View style={styles.calendarLegend}>
+                                <Text style={[{ color: colors.dimText, fontSize: 11 }]}>Less</Text>
+                                {[0, 0.25, 0.5, 0.75, 1].map((level, li) => (
+                                  <View
+                                    key={li}
+                                    style={[
+                                      styles.calendarLegendCell,
+                                      {
+                                        backgroundColor: level === 0 ? colors.borderLight : colors.primary,
+                                        opacity: level === 0 ? 0.4 : 0.3 + level * 0.7,
+                                      },
+                                    ]}
+                                  />
+                                ))}
+                                <Text style={[{ color: colors.dimText, fontSize: 11 }]}>More</Text>
+                              </View>
+                            </View>
+                          );
+                        })()}
+
                         {avgConfidence != null && (
                           <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
                             <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Avg. Confidence</Text>
@@ -1418,6 +1507,63 @@ export default function App() {
                 onPress={() => setShowStats(false)}
                 accessibilityRole="button"
                 accessibilityLabel="Close statistics"
+              >
+                <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Word alternatives modal */}
+        <Modal visible={wordAltData !== null} animationType="fade" transparent>
+          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+            <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
+              {wordAltData && (
+                <>
+                  <Text style={[styles.compareTitle, { color: colors.titleText }]}>Word Lookup</Text>
+                  <View style={[styles.compareOriginal, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
+                    <Text style={[styles.compareLabel, { color: colors.dimText }]}>WORD</Text>
+                    <Text style={[{ color: colors.primaryText, fontSize: 20, fontWeight: "700" as const }]}>{wordAltData.word}</Text>
+                  </View>
+                  {wordAltData.loading ? (
+                    <View style={{ paddingVertical: 30, alignItems: "center" as const }}>
+                      <Text style={[{ color: colors.dimText, fontStyle: "italic" as const, fontSize: 15 }]}>Looking up alternatives...</Text>
+                    </View>
+                  ) : wordAltData.alternatives.length === 0 ? (
+                    <View style={{ paddingVertical: 30, alignItems: "center" as const }}>
+                      <Text style={[{ color: colors.dimText, fontSize: 15 }]}>No alternatives found</Text>
+                    </View>
+                  ) : (
+                    <FlatList
+                      data={wordAltData.alternatives}
+                      keyExtractor={(_, i) => String(i)}
+                      style={{ maxHeight: 300 }}
+                      renderItem={({ item: alt }) => (
+                        <TouchableOpacity
+                          style={[styles.altRow, { borderBottomColor: colors.borderLight }]}
+                          onPress={() => copyToClipboard(alt.translation)}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.altTranslation, { color: colors.translatedText }]}>{alt.translation}</Text>
+                            <Text style={[styles.altSource, { color: colors.dimText }]}>{alt.source}</Text>
+                          </View>
+                          {alt.quality > 0 && (
+                            <View style={[styles.altQualityBadge, { backgroundColor: colors.primary + "22" }]}>
+                              <Text style={[styles.altQualityText, { color: colors.primary }]}>{alt.quality}%</Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      )}
+                    />
+                  )}
+                  {copiedText && <Text style={[styles.copiedBadge, { textAlign: "center" as const }]}>Copied!</Text>}
+                </>
+              )}
+              <TouchableOpacity
+                style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
+                onPress={() => setWordAltData(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Close word lookup"
               >
                 <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
               </TouchableOpacity>
@@ -1541,9 +1687,66 @@ export default function App() {
               />
 
               {glossary.length > 0 && (
-                <Text style={[{ color: colors.dimText, fontSize: 12, textAlign: "center" as const, marginTop: 8 }]}>
-                  {glossary.length} total {glossary.length === 1 ? "entry" : "entries"} across all language pairs
-                </Text>
+                <View style={{ paddingHorizontal: 16, marginTop: 8, gap: 8 }}>
+                  <Text style={[{ color: colors.dimText, fontSize: 12, textAlign: "center" as const }]}>
+                    {glossary.length} total {glossary.length === 1 ? "entry" : "entries"} across all language pairs
+                  </Text>
+                  <View style={{ flexDirection: "row" as const, justifyContent: "center" as const, gap: 12 }}>
+                    <TouchableOpacity
+                      style={[styles.glossaryIOButton, { backgroundColor: colors.cardBg }]}
+                      onPress={async () => {
+                        const csv = "source,target,sourceLang,targetLang\n" +
+                          glossary.map((g) => `"${g.source.replace(/"/g, '""')}","${g.target.replace(/"/g, '""')}","${g.sourceLang}","${g.targetLang}"`).join("\n");
+                        try { await Share.share({ message: csv }); } catch {}
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Export glossary as CSV"
+                    >
+                      <Text style={[{ color: colors.primary, fontSize: 13, fontWeight: "600" as const }]}>Export CSV</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.glossaryIOButton, { backgroundColor: colors.cardBg }]}
+                      onPress={async () => {
+                        try {
+                          const clip = await Clipboard.getStringAsync();
+                          if (!clip || !clip.includes(",")) {
+                            Alert.alert("Import", "Copy a CSV to clipboard first.\nFormat: source,target,sourceLang,targetLang");
+                            return;
+                          }
+                          const lines = clip.split("\n").filter((l) => l.trim());
+                          const start = lines[0]?.toLowerCase().startsWith("source") ? 1 : 0;
+                          let imported = 0;
+                          const newEntries = [...glossary];
+                          for (let i = start; i < lines.length; i++) {
+                            const match = lines[i].match(/^"?([^"]*)"?\s*,\s*"?([^"]*)"?\s*,\s*"?([^"]*)"?\s*,\s*"?([^"]*)"?$/);
+                            if (match) {
+                              const [, src, tgt, sLang, tLang] = match;
+                              if (src && tgt && sLang && tLang) {
+                                const exists = newEntries.some((g) => g.source.toLowerCase() === src.toLowerCase() && g.sourceLang === sLang && g.targetLang === tLang);
+                                if (!exists) {
+                                  newEntries.push({ source: src, target: tgt, sourceLang: sLang, targetLang: tLang });
+                                  imported++;
+                                }
+                              }
+                            }
+                          }
+                          if (imported > 0) {
+                            setGlossary(newEntries);
+                            AsyncStorage.setItem(GLOSSARY_KEY, JSON.stringify(newEntries));
+                            if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                          }
+                          Alert.alert("Import", imported > 0 ? `Imported ${imported} new ${imported === 1 ? "entry" : "entries"}.` : "No new entries found in clipboard.");
+                        } catch {
+                          Alert.alert("Import", "Failed to read clipboard.");
+                        }
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Import glossary from clipboard CSV"
+                    >
+                      <Text style={[{ color: colors.primary, fontSize: 13, fontWeight: "600" as const }]}>Import from Clipboard</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               )}
 
               <TouchableOpacity
@@ -1883,7 +2086,7 @@ export default function App() {
                   <TouchableOpacity
                     onPress={() => !item.pending && !item.error && copyToClipboard(item.translated)}
                     accessibilityRole="button"
-                    accessibilityLabel={item.error ? `Translation failed: ${item.translated}` : item.pending ? `Queued for translation when online` : `Translation: ${item.translated}. Tap to copy.`}
+                    accessibilityLabel={item.error ? `Translation failed: ${item.translated}` : item.pending ? `Queued for translation when online` : `Translation: ${item.translated}. Tap to copy. Long-press a word for alternatives.`}
                     disabled={item.pending || item.error}
                   >
                     {item.pending && (
@@ -1897,7 +2100,23 @@ export default function App() {
                       </Text>
                     )}
                     <Text style={[styles.translatedTextHistory, { color: item.error ? colors.errorText : item.pending ? colors.dimText : colors.translatedText }, dynamicFontSizes.translated, (item.pending || item.error) && { fontStyle: "italic" }]}>
-                      {item.translated}
+                      {!item.error && !item.pending && item.sourceLangCode && item.targetLangCode
+                        ? item.translated.split(/(\s+)/).map((segment: string, si: number) =>
+                            /\s+/.test(segment) ? segment : (
+                              <Text
+                                key={si}
+                                onLongPress={() => {
+                                  const cleaned = segment.replace(/[^\p{L}\p{N}]/gu, "");
+                                  if (cleaned) lookupWordAlternatives(cleaned, item.targetLangCode!, item.sourceLangCode!);
+                                }}
+                                style={styles.tappableWord}
+                              >
+                                {segment}
+                              </Text>
+                            )
+                          )
+                        : item.translated
+                      }
                     </Text>
                     {settings.showRomanization && !item.error && !item.pending && item.targetLangCode && (
                       <AlignedRomanization text={item.translated} langCode={item.targetLangCode} textColor={colors.translatedText} romanColor={colors.mutedText} />
@@ -2458,6 +2677,35 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     marginTop: 6,
   },
+  tappableWord: {
+    textDecorationLine: "underline" as const,
+    textDecorationStyle: "dotted" as const,
+  },
+  altRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+  },
+  altTranslation: {
+    fontSize: 16,
+    fontWeight: "500" as const,
+  },
+  altSource: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  altQualityBadge: {
+    borderRadius: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    marginLeft: 10,
+  },
+  altQualityText: {
+    fontSize: 12,
+    fontWeight: "700" as const,
+  },
   romanizationText: {
     fontSize: 13,
     fontStyle: "italic" as const,
@@ -2988,6 +3236,35 @@ const styles = StyleSheet.create({
     fontWeight: "700" as const,
     textAlign: "right" as const,
   },
+  calendarGrid: {
+    flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
+    gap: 3,
+  },
+  calendarDayLabel: {
+    width: 28,
+    height: 14,
+    fontSize: 10,
+    fontWeight: "600" as const,
+    textAlign: "center" as const,
+  },
+  calendarCell: {
+    width: 28,
+    height: 28,
+    borderRadius: 5,
+  },
+  calendarLegend: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    justifyContent: "flex-end" as const,
+    gap: 4,
+    marginTop: 8,
+  },
+  calendarLegendCell: {
+    width: 14,
+    height: 14,
+    borderRadius: 3,
+  },
   statsEmptyState: {
     alignItems: "center" as const,
     paddingVertical: 40,
@@ -3149,6 +3426,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     borderWidth: 1,
     marginBottom: 8,
+  },
+  glossaryIOButton: {
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
   },
   glossaryEntry: {
     flexDirection: "row" as const,
