@@ -1,14 +1,11 @@
-// Translation service supporting multiple providers
-// MyMemory (free, no key), DeepL, Google Cloud Translation, Apple On-Device, ML Kit On-Device
+// Translation service — on-device first (Apple Neural Engine, ML Kit), MyMemory cloud as fallback
 
 import { Platform } from "react-native";
 import { offlineTranslate } from "./offlinePhrases";
 
-export type TranslationProvider = "mymemory" | "deepl" | "google" | "apple" | "mlkit";
+export type TranslationProvider = "mymemory" | "apple" | "mlkit";
 
 const MYMEMORY_API = "https://api.mymemory.translated.net/get";
-const DEEPL_API = "https://api-free.deepl.com/v2/translate";
-const GOOGLE_API = "https://translation.googleapis.com/language/translate/v2";
 
 const CACHE_MAX_SIZE = 200;
 const translationCache = new Map<string, string>();
@@ -25,7 +22,6 @@ export interface TranslationResult {
 
 export interface TranslateOptions {
   provider?: TranslationProvider;
-  apiKey?: string;
   signal?: AbortSignal;
 }
 
@@ -126,66 +122,6 @@ async function translateMyMemory(text: string, sourceLang: string, targetLang: s
     translatedText: data.responseData.translatedText,
     detectedLanguage: data.responseData.detectedLanguage,
     confidence: typeof match === "number" ? match : undefined,
-  };
-}
-
-// DeepL language code mapping (DeepL uses uppercase and some variants)
-function toDeepLLang(code: string, isTarget: boolean): string {
-  const map: Record<string, string> = { en: isTarget ? "EN-US" : "EN", pt: isTarget ? "PT-BR" : "PT", zh: "ZH" };
-  return (map[code] || code).toUpperCase();
-}
-
-async function translateDeepL(text: string, sourceLang: string, targetLang: string, apiKey: string, signal?: AbortSignal): Promise<TranslationResult> {
-  if (!apiKey) throw new Error("DeepL API key required. Add it in Settings.");
-
-  const body = new URLSearchParams({
-    text,
-    target_lang: toDeepLLang(targetLang, true),
-    ...(sourceLang !== "autodetect" ? { source_lang: toDeepLLang(sourceLang, false) } : {}),
-  });
-
-  const response = await fetchWithTimeout(DEEPL_API, {
-    method: "POST",
-    headers: {
-      "Authorization": `DeepL-Auth-Key ${apiKey}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: body.toString(),
-  }, signal);
-
-  if (response.status === 403) throw new Error("Invalid DeepL API key. Check Settings.");
-  if (response.status === 456) throw new Error("DeepL quota exceeded.");
-  if (!response.ok) throw new Error(`DeepL error (${response.status}). Try again.`);
-
-  const data = await response.json();
-  const translation = data.translations?.[0];
-  return {
-    translatedText: translation?.text || "",
-    detectedLanguage: translation?.detected_source_language?.toLowerCase(),
-  };
-}
-
-async function translateGoogle(text: string, sourceLang: string, targetLang: string, apiKey: string, signal?: AbortSignal): Promise<TranslationResult> {
-  if (!apiKey) throw new Error("Google Cloud API key required. Add it in Settings.");
-
-  const params = new URLSearchParams({
-    q: text,
-    target: targetLang,
-    format: "text",
-    key: apiKey,
-    ...(sourceLang !== "autodetect" ? { source: sourceLang } : {}),
-  });
-
-  const response = await fetchWithTimeout(`${GOOGLE_API}?${params}`, {}, signal);
-
-  if (response.status === 403) throw new Error("Invalid Google API key. Check Settings.");
-  if (!response.ok) throw new Error(`Google Translate error (${response.status}). Try again.`);
-
-  const data = await response.json();
-  const translation = data.data?.translations?.[0];
-  return {
-    translatedText: translation?.translatedText || "",
-    detectedLanguage: translation?.detectedSourceLanguage,
   };
 }
 
@@ -299,15 +235,13 @@ export async function translateText(
 
   // Parse options - backward compatible with plain AbortSignal
   let signal: AbortSignal | undefined;
-  let provider: TranslationProvider = "mymemory";
-  let apiKey = "";
+  let provider: TranslationProvider = "apple";
 
   if (signalOrOptions instanceof AbortSignal) {
     signal = signalOrOptions;
   } else if (signalOrOptions) {
     signal = signalOrOptions.signal;
-    provider = signalOrOptions.provider || "mymemory";
-    apiKey = signalOrOptions.apiKey || "";
+    provider = signalOrOptions.provider || "apple";
   }
 
   // Try offline phrase dictionary first (instant, no network needed)
@@ -330,10 +264,6 @@ export async function translateText(
         return translateApple(trimmed, sourceLang, targetLang, signal);
       case "mlkit":
         return translateMLKit(trimmed, sourceLang, targetLang, signal);
-      case "deepl":
-        return translateDeepL(trimmed, sourceLang, targetLang, apiKey, signal);
-      case "google":
-        return translateGoogle(trimmed, sourceLang, targetLang, apiKey, signal);
       default:
         return translateMyMemory(trimmed, sourceLang, targetLang, signal);
     }
@@ -343,8 +273,8 @@ export async function translateText(
   try {
     result = await withRetry(doTranslate, 2, signal);
   } catch (err: any) {
-    // Auto-fallback: if primary provider fails and isn't already MyMemory, try MyMemory
-    if (provider !== "mymemory" && provider !== "apple" && provider !== "mlkit") {
+    // Auto-fallback: if on-device provider fails, try MyMemory cloud as fallback
+    if (provider !== "mymemory") {
       try {
         result = await translateMyMemory(trimmed, sourceLang, targetLang, signal);
       } catch {

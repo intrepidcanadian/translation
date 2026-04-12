@@ -50,7 +50,6 @@ interface DocumentScannerProps {
   sourceLangCode: string;
   targetLangCode: string;
   translationProvider?: string;
-  apiKey?: string;
   hapticsEnabled?: boolean;
   colors: any;
   initialMode?: ScannerModeKey;
@@ -75,7 +74,6 @@ export default function DocumentScanner({
   sourceLangCode,
   targetLangCode,
   translationProvider,
-  apiKey,
   hapticsEnabled = true,
   colors,
   initialMode = "document",
@@ -256,8 +254,7 @@ export default function DocumentScanner({
           for (const para of paragraphs) {
             const res = await translateText(para, srcLang, targetLangCode, {
               provider: translationProvider as any,
-              apiKey,
-            });
+              });
             results.push(res.translatedText);
           }
           translated = results.join("\n");
@@ -268,7 +265,6 @@ export default function DocumentScanner({
           if (!para.trim()) { results.push(""); continue; }
           const res = await translateText(para, srcLang, targetLangCode, {
             provider: translationProvider as any,
-            apiKey,
           });
           results.push(res.translatedText);
         }
@@ -311,7 +307,7 @@ export default function DocumentScanner({
       setError(err?.message || "Analysis failed");
       setPhase("camera");
     }
-  }, [sourceLangCode, targetLangCode, translationProvider, apiKey, hapticsEnabled, selectedMode]);
+  }, [sourceLangCode, targetLangCode, translationProvider, hapticsEnabled, selectedMode]);
 
   if (!visible) return null;
 

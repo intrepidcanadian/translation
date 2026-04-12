@@ -47,7 +47,6 @@ interface CameraTranslatorProps {
   sourceLangCode: string;
   targetLangCode: string;
   translationProvider?: string;
-  apiKey?: string;
   colors: any;
 }
 
@@ -71,7 +70,6 @@ export default function CameraTranslator({
   sourceLangCode,
   targetLangCode,
   translationProvider,
-  apiKey,
   colors,
 }: CameraTranslatorProps) {
   const device = useCameraDevice("back");
@@ -137,7 +135,6 @@ export default function CameraTranslator({
 
     const translateOptions: TranslateOptions = {
       provider: translationProvider as any,
-      apiKey,
       signal: controller.signal,
     };
 
@@ -223,7 +220,7 @@ export default function CameraTranslator({
         translateLines(queued);
       }
     }
-  }, [sourceLangCode, targetLangCode, translationProvider, apiKey]);
+  }, [sourceLangCode, targetLangCode, translationProvider]);
 
   // Handle real-time OCR results from frame processor
   const handleOCRResult = useCallback((data: any) => {

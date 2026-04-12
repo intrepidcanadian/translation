@@ -370,7 +370,14 @@ function AppContent() {
     };
 
     loadJSON<typeof history>(HISTORY_KEY, (data) => setHistory(data));
-    loadJSON<Settings>(SETTINGS_KEY, (data) => setSettings((prev) => ({ ...prev, ...data })));
+    loadJSON<Settings>(SETTINGS_KEY, (data) => {
+      // Migrate removed providers (deepl/google) to apple
+      const provider = data.translationProvider;
+      if (provider === "deepl" || provider === "google") {
+        data.translationProvider = "apple";
+      }
+      setSettings((prev) => ({ ...prev, ...data }));
+    });
     loadJSON<string[]>(RECENT_LANGS_KEY, (data) => setRecentLangCodes(data));
     loadJSON<typeof offlineQueue>(OFFLINE_QUEUE_KEY, (data) => setOfflineQueue(data));
     loadJSON<typeof savedPairs>(LANG_PAIRS_KEY, (data) => setSavedPairs(data));
@@ -630,31 +637,27 @@ function AppContent() {
   }, [settings.hapticsEnabled]);
 
   const compareTranslation = useCallback(async (original: string, currentTranslation: string) => {
-    // Show modal immediately with current translation
-    const providers: Array<{ key: string; label: string }> = [
-      { key: "mymemory", label: "MyMemory" },
+    // Compare current provider with available alternatives
+    const allProviders: Array<{ key: TranslationProvider; label: string }> = [
+      { key: "apple", label: "Apple (On-Device)" },
+      { key: "mlkit", label: "ML Kit (On-Device)" },
+      { key: "mymemory", label: "MyMemory (Cloud)" },
     ];
-    if (settings.translationProvider !== "mymemory") {
-      providers.push({ key: settings.translationProvider, label: settings.translationProvider === "deepl" ? "DeepL" : "Google" });
-    }
+    const providers = allProviders.filter((p) => p.key !== settings.translationProvider);
 
     // Initialize with current provider's result and loading states for others
-    const initialResults = providers.map((p) => {
-      if (p.key === settings.translationProvider || (settings.translationProvider === "mymemory" && p.key === "mymemory")) {
-        return { provider: p.label, text: currentTranslation };
-      }
-      return { provider: p.label, text: "", loading: true };
-    });
+    const currentLabel = allProviders.find((p) => p.key === settings.translationProvider)?.label || settings.translationProvider;
+    const initialResults = [
+      { provider: currentLabel, text: currentTranslation },
+      ...providers.map((p) => ({ provider: p.label, text: "", loading: true })),
+    ];
     setCompareData({ original, results: initialResults });
 
     // Fetch from other providers in parallel
     for (const p of providers) {
-      if (p.key === settings.translationProvider) continue;
-      if (p.key === "mymemory" && settings.translationProvider === "mymemory") continue;
       try {
         const result = await translateText(original, sourceLang.code, targetLang.code, {
-          provider: p.key as any,
-          apiKey: p.key === "mymemory" ? "" : settings.apiKey,
+          provider: p.key,
         });
         setCompareData((prev) => {
           if (!prev) return prev;
@@ -677,7 +680,7 @@ function AppContent() {
         });
       }
     }
-  }, [settings, sourceLang.code, targetLang.code]);
+  }, [settings.translationProvider, sourceLang.code, targetLang.code]);
 
   const speakText = useCallback(
     async (text: string, langCode: string) => {
@@ -782,7 +785,7 @@ function AppContent() {
                 text.trim(),
                 fromCode,
                 toCode,
-                { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey }
+                { signal: controller.signal, provider: settings.translationProvider }
               );
           if (!controller.signal.aborted) {
             setTranslatedText(result.translatedText);
@@ -802,7 +805,7 @@ function AppContent() {
         }
       }, 300); // 300ms debounce - fast enough to feel live
     },
-    [sourceLang.code, targetLang.code, conversationMode, showError, settings.translationProvider, settings.apiKey, glossaryLookup, updateWidgetData]
+    [sourceLang.code, targetLang.code, conversationMode, showError, settings.translationProvider, glossaryLookup, updateWidgetData]
   );
 
   // Speech recognition events
@@ -1020,7 +1023,7 @@ function AppContent() {
 
     const controller = new AbortController();
     try {
-      const result = await translateText(item.original, item.sourceLangCode, item.targetLangCode, { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey });
+      const result = await translateText(item.original, item.sourceLangCode, item.targetLangCode, { signal: controller.signal, provider: settings.translationProvider });
       setHistory((prev) =>
         prev.map((h, i) =>
           i === index ? { ...h, translated: result.translatedText, pending: false, error: false, sourceLangCode: undefined, targetLangCode: undefined } : h
@@ -1195,7 +1198,7 @@ function AppContent() {
         continue;
       }
       try {
-        const result = await translateText(item.text, item.sourceLang, item.targetLang, { provider: settings.translationProvider, apiKey: settings.apiKey });
+        const result = await translateText(item.text, item.sourceLang, item.targetLang, { provider: settings.translationProvider });
         // Replace the pending history entry with the real translation
         setHistory((prev) => {
           const pendingIdx = prev.findIndex(
@@ -1255,7 +1258,7 @@ function AppContent() {
       const glossaryMatch = glossaryLookup(text, sourceLang.code, targetLang.code);
       const result = glossaryMatch
         ? { translatedText: glossaryMatch, confidence: 1.0 }
-        : await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey });
+        : await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider });
       if (!controller.signal.aborted) {
         setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, detectedLang: (result as any).detectedLanguage, timestamp: Date.now() }]);
         maybeRequestReview();
@@ -1282,7 +1285,7 @@ function AppContent() {
         setLiveText("");
       }
     }
-  }, [typedText, sourceLang.code, targetLang.code, showError, isOffline, addToOfflineQueue, glossaryLookup, settings.translationProvider, settings.apiKey, maybeRequestReview, updateStreak, updateWidgetData]);
+  }, [typedText, sourceLang.code, targetLang.code, showError, isOffline, addToOfflineQueue, glossaryLookup, settings.translationProvider, maybeRequestReview, updateStreak, updateWidgetData]);
 
   return (
     <>
@@ -2138,7 +2141,6 @@ function AppContent() {
           sourceLangCode={sourceLang.code === "autodetect" ? "en" : sourceLang.code}
           targetLangCode={targetLang.code}
           translationProvider={settings.translationProvider}
-          apiKey={settings.apiKey}
           colors={colors}
         />
       )}
@@ -2151,7 +2153,6 @@ function AppContent() {
           sourceLangCode={sourceLang.code === "autodetect" ? "en" : sourceLang.code}
           targetLangCode={targetLang.code}
           translationProvider={settings.translationProvider}
-          apiKey={settings.apiKey}
           hapticsEnabled={settings.hapticsEnabled}
           colors={colors}
           initialMode={docScannerMode}
