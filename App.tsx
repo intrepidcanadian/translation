@@ -145,7 +145,7 @@ export default function App() {
 
   // History of completed translations
   const [history, setHistory] = useState<
-    Array<{ original: string; translated: string; speaker?: "A" | "B"; favorited?: boolean; pending?: boolean; error?: boolean; sourceLangCode?: string; targetLangCode?: string; confidence?: number }>
+    Array<{ original: string; translated: string; speaker?: "A" | "B"; favorited?: boolean; pending?: boolean; error?: boolean; sourceLangCode?: string; targetLangCode?: string; confidence?: number; detectedLang?: string }>
   >([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
@@ -156,6 +156,7 @@ export default function App() {
   const lastTranslatedRef = useRef("");
   const finalTextRef = useRef("");
   const lastConfidenceRef = useRef<number | undefined>(undefined);
+  const lastDetectedLangRef = useRef<string | undefined>(undefined);
   const ratingPromptedRef = useRef(false);
   const translationCountRef = useRef(0);
 
@@ -574,6 +575,7 @@ export default function App() {
             setTranslatedText(result.translatedText);
             lastTranslatedRef.current = text.trim();
             lastConfidenceRef.current = result.confidence;
+            lastDetectedLangRef.current = (result as any).detectedLanguage;
           }
         } catch (err) {
           if (controller.signal.aborted) return; // Ignore cancelled requests
@@ -602,7 +604,7 @@ export default function App() {
       const speaker = conversationMode ? activeSpeakerRef.current : undefined;
       setHistory((prev) => [
         ...prev,
-        { original: finalText.trim(), translated: translatedText.trim(), speaker, confidence: lastConfidenceRef.current },
+        { original: finalText.trim(), translated: translatedText.trim(), speaker, confidence: lastConfidenceRef.current, detectedLang: lastDetectedLangRef.current, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code },
       ]);
       maybeRequestReview();
       // Auto-play the translation if enabled
@@ -619,6 +621,7 @@ export default function App() {
     lastTranslatedRef.current = "";
     finalTextRef.current = "";
     lastConfidenceRef.current = undefined;
+    lastDetectedLangRef.current = undefined;
   });
 
   useSpeechRecognitionEvent("result", (event) => {
@@ -1014,7 +1017,7 @@ export default function App() {
         ? { translatedText: glossaryMatch, confidence: 1.0 }
         : await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey });
       if (!controller.signal.aborted) {
-        setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code }]);
+        setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, detectedLang: (result as any).detectedLanguage }]);
         maybeRequestReview();
       }
     } catch (err) {
@@ -1689,6 +1692,14 @@ export default function App() {
                   <TouchableOpacity onPress={() => copyToClipboard(item.original)}>
                     <Text style={[styles.chatOriginal, { color: colors.secondaryText }, dynamicFontSizes.chatText]}>{item.original}</Text>
                   </TouchableOpacity>
+                  {item.detectedLang && (() => {
+                    const lang = LANGUAGES.find((l) => l.code === item.detectedLang);
+                    return lang ? (
+                      <Text style={[styles.detectedLangBadge, { color: colors.primary, backgroundColor: colors.primary + "18" }]}>
+                        Detected: {lang.name}
+                      </Text>
+                    ) : null;
+                  })()}
                   {settings.showRomanization && item.sourceLangCode && (() => {
                     const rom = romanize(item.original, item.sourceLangCode!);
                     return rom ? (
@@ -1748,6 +1759,14 @@ export default function App() {
                   accessibilityLabel={`Original: ${item.original}. Tap to copy.`}
                 >
                   <Text style={[styles.originalText, { color: colors.secondaryText }, dynamicFontSizes.original]}>{item.original}</Text>
+                  {item.detectedLang && (() => {
+                    const lang = LANGUAGES.find((l) => l.code === item.detectedLang);
+                    return lang ? (
+                      <Text style={[styles.detectedLangBadge, { color: colors.primary, backgroundColor: colors.primary + "18" }]}>
+                        Detected: {lang.name}
+                      </Text>
+                    ) : null;
+                  })()}
                   {settings.showRomanization && item.sourceLangCode && (() => {
                     const rom = romanize(item.original, item.sourceLangCode!);
                     return rom ? (
@@ -2354,6 +2373,16 @@ const styles = StyleSheet.create({
   originalText: {
     fontSize: 16,
     lineHeight: 22,
+  },
+  detectedLangBadge: {
+    fontSize: 11,
+    fontWeight: "600" as const,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    alignSelf: "flex-start" as const,
+    marginTop: 4,
+    overflow: "hidden" as const,
   },
   translatedTextHistory: {
     fontSize: 16,
