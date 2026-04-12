@@ -1,71 +1,78 @@
-// Translation service using MyMemory API (free, no API key required)
-// For production, consider Google Cloud Translation or DeepL
+// Translation service supporting multiple providers
+// MyMemory (free, no key), DeepL, Google Cloud Translation
+
+import { offlineTranslate } from "./offlinePhrases";
+
+export type TranslationProvider = "mymemory" | "deepl" | "google";
 
 const MYMEMORY_API = "https://api.mymemory.translated.net/get";
+const DEEPL_API = "https://api-free.deepl.com/v2/translate";
+const GOOGLE_API = "https://translation.googleapis.com/language/translate/v2";
 
 const CACHE_MAX_SIZE = 200;
 const translationCache = new Map<string, string>();
 
-function getCacheKey(text: string, sourceLang: string, targetLang: string) {
-  return `${sourceLang}|${targetLang}|${text}`;
+function getCacheKey(text: string, sourceLang: string, targetLang: string, provider: string) {
+  return `${provider}|${sourceLang}|${targetLang}|${text}`;
 }
 
 export interface TranslationResult {
   translatedText: string;
   detectedLanguage?: string;
+  confidence?: number; // 0-1 match quality from API
 }
 
-export async function translateText(
-  text: string,
-  sourceLang: string,
-  targetLang: string,
-  signal?: AbortSignal
-): Promise<TranslationResult> {
-  if (!text.trim()) {
-    return { translatedText: "" };
-  }
+export interface TranslateOptions {
+  provider?: TranslationProvider;
+  apiKey?: string;
+  signal?: AbortSignal;
+}
 
-  // Check cache first
-  const cacheKey = getCacheKey(text.trim(), sourceLang, targetLang);
-  const cached = translationCache.get(cacheKey);
-  if (cached) {
-    return { translatedText: cached };
-  }
+function createTimeoutSignal(signal?: AbortSignal): { controller: AbortController; timeoutId: ReturnType<typeof setTimeout> } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
 
-  const langPair = `${sourceLang}|${targetLang}`;
-  const url = `${MYMEMORY_API}?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langPair)}`;
-
-  // Timeout after 8 seconds to prevent hanging requests
-  const timeoutController = new AbortController();
-  const timeoutId = setTimeout(() => timeoutController.abort(), 8000);
-
-  // If a caller-provided signal exists, forward its abort to our timeout controller
   if (signal) {
     if (signal.aborted) {
       clearTimeout(timeoutId);
-      timeoutController.abort();
+      controller.abort();
     } else {
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
-        timeoutController.abort();
+        controller.abort();
       });
     }
   }
 
-  let response: Response;
+  return { controller, timeoutId };
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  signal?: AbortSignal
+): Promise<Response> {
+  const { controller, timeoutId } = createTimeoutSignal(signal);
+
   try {
-    response = await fetch(url, { signal: timeoutController.signal });
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    clearTimeout(timeoutId);
+    return response;
   } catch (err) {
     clearTimeout(timeoutId);
     if (err instanceof DOMException && err.name === "AbortError") {
-      // If the caller's signal caused the abort, re-throw as-is
       if (signal?.aborted) throw err;
-      // Otherwise it was our timeout
       throw new Error("Translation timed out. Check your connection and try again.");
     }
     throw new Error("No internet connection. Check your network and try again.");
   }
-  clearTimeout(timeoutId);
+}
+
+async function translateMyMemory(text: string, sourceLang: string, targetLang: string, signal?: AbortSignal): Promise<TranslationResult> {
+  const langPair = `${sourceLang}|${targetLang}`;
+  const url = `${MYMEMORY_API}?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langPair)}`;
+
+  const response = await fetchWithTimeout(url, {}, signal);
 
   if (response.status === 429) {
     throw new Error("Translation rate limit reached. Wait a moment and try again.");
@@ -83,19 +90,131 @@ export async function translateText(
     throw new Error(data.responseDetails || "Translation failed. Try again.");
   }
 
-  const translatedText: string = data.responseData.translatedText;
+  const match = data.responseData.match;
+  return {
+    translatedText: data.responseData.translatedText,
+    detectedLanguage: data.responseData.detectedLanguage,
+    confidence: typeof match === "number" ? match : undefined,
+  };
+}
+
+// DeepL language code mapping (DeepL uses uppercase and some variants)
+function toDeepLLang(code: string, isTarget: boolean): string {
+  const map: Record<string, string> = { en: isTarget ? "EN-US" : "EN", pt: isTarget ? "PT-BR" : "PT", zh: "ZH" };
+  return (map[code] || code).toUpperCase();
+}
+
+async function translateDeepL(text: string, sourceLang: string, targetLang: string, apiKey: string, signal?: AbortSignal): Promise<TranslationResult> {
+  if (!apiKey) throw new Error("DeepL API key required. Add it in Settings.");
+
+  const body = new URLSearchParams({
+    text,
+    target_lang: toDeepLLang(targetLang, true),
+    ...(sourceLang !== "autodetect" ? { source_lang: toDeepLLang(sourceLang, false) } : {}),
+  });
+
+  const response = await fetchWithTimeout(DEEPL_API, {
+    method: "POST",
+    headers: {
+      "Authorization": `DeepL-Auth-Key ${apiKey}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: body.toString(),
+  }, signal);
+
+  if (response.status === 403) throw new Error("Invalid DeepL API key. Check Settings.");
+  if (response.status === 456) throw new Error("DeepL quota exceeded.");
+  if (!response.ok) throw new Error(`DeepL error (${response.status}). Try again.`);
+
+  const data = await response.json();
+  const translation = data.translations?.[0];
+  return {
+    translatedText: translation?.text || "",
+    detectedLanguage: translation?.detected_source_language?.toLowerCase(),
+  };
+}
+
+async function translateGoogle(text: string, sourceLang: string, targetLang: string, apiKey: string, signal?: AbortSignal): Promise<TranslationResult> {
+  if (!apiKey) throw new Error("Google Cloud API key required. Add it in Settings.");
+
+  const params = new URLSearchParams({
+    q: text,
+    target: targetLang,
+    format: "text",
+    key: apiKey,
+    ...(sourceLang !== "autodetect" ? { source: sourceLang } : {}),
+  });
+
+  const response = await fetchWithTimeout(`${GOOGLE_API}?${params}`, {}, signal);
+
+  if (response.status === 403) throw new Error("Invalid Google API key. Check Settings.");
+  if (!response.ok) throw new Error(`Google Translate error (${response.status}). Try again.`);
+
+  const data = await response.json();
+  const translation = data.data?.translations?.[0];
+  return {
+    translatedText: translation?.translatedText || "",
+    detectedLanguage: translation?.detectedSourceLanguage,
+  };
+}
+
+export async function translateText(
+  text: string,
+  sourceLang: string,
+  targetLang: string,
+  signalOrOptions?: AbortSignal | TranslateOptions
+): Promise<TranslationResult> {
+  if (!text.trim()) {
+    return { translatedText: "" };
+  }
+
+  // Parse options - backward compatible with plain AbortSignal
+  let signal: AbortSignal | undefined;
+  let provider: TranslationProvider = "mymemory";
+  let apiKey = "";
+
+  if (signalOrOptions instanceof AbortSignal) {
+    signal = signalOrOptions;
+  } else if (signalOrOptions) {
+    signal = signalOrOptions.signal;
+    provider = signalOrOptions.provider || "mymemory";
+    apiKey = signalOrOptions.apiKey || "";
+  }
+
+  // Try offline phrase dictionary first (instant, no network needed)
+  const offlineResult = offlineTranslate(text, sourceLang, targetLang);
+  if (offlineResult) {
+    return { translatedText: offlineResult, confidence: 1.0 };
+  }
+
+  // Check cache first
+  const cacheKey = getCacheKey(text.trim(), sourceLang, targetLang, provider);
+  const cached = translationCache.get(cacheKey);
+  if (cached) {
+    return { translatedText: cached };
+  }
+
+  let result: TranslationResult;
+  switch (provider) {
+    case "deepl":
+      result = await translateDeepL(text.trim(), sourceLang, targetLang, apiKey, signal);
+      break;
+    case "google":
+      result = await translateGoogle(text.trim(), sourceLang, targetLang, apiKey, signal);
+      break;
+    default:
+      result = await translateMyMemory(text.trim(), sourceLang, targetLang, signal);
+      break;
+  }
 
   // Store in cache, evicting oldest entries if at capacity
   if (translationCache.size >= CACHE_MAX_SIZE) {
     const firstKey = translationCache.keys().next().value!;
     translationCache.delete(firstKey);
   }
-  translationCache.set(cacheKey, translatedText);
+  translationCache.set(cacheKey, result.translatedText);
 
-  return {
-    translatedText,
-    detectedLanguage: data.responseData.detectedLanguage,
-  };
+  return result;
 }
 
 export function clearTranslationCache() {

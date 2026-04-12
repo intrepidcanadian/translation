@@ -3,6 +3,7 @@ import {
   View,
   Text,
   TouchableOpacity,
+  TextInput,
   Modal,
   Switch,
   StyleSheet,
@@ -11,6 +12,8 @@ import {
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import { type ThemeMode, type ThemeColors, getColors } from "../theme";
+
+export type TranslationProvider = "mymemory" | "deepl" | "google";
 
 export type FontSizeOption = "small" | "medium" | "large" | "xlarge";
 
@@ -27,6 +30,9 @@ export interface Settings {
   speechRate: number;
   fontSize: FontSizeOption;
   theme: ThemeMode;
+  autoScroll: boolean;
+  translationProvider: TranslationProvider;
+  apiKey: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -35,6 +41,9 @@ export const DEFAULT_SETTINGS: Settings = {
   speechRate: 1.0,
   fontSize: "medium",
   theme: "dark",
+  autoScroll: true,
+  translationProvider: "mymemory",
+  apiKey: "",
 };
 
 interface Props {
@@ -140,6 +149,20 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
 
             <View style={[styles.row, dynamicStyles.rowBorder]}>
               <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Auto-Scroll</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Scroll to latest translation automatically</Text>
+              </View>
+              <Switch
+                value={settings.autoScroll}
+                onValueChange={() => toggle("autoScroll")}
+                trackColor={dynamicStyles.switchTrack}
+                thumbColor="#ffffff"
+                accessibilityLabel="Toggle auto-scroll"
+              />
+            </View>
+
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
+              <View style={styles.rowText}>
                 <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Speech Speed</Text>
                 <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>
                   {settings.speechRate <= 0.6 ? "Very Slow" : settings.speechRate <= 0.8 ? "Slow" : settings.speechRate <= 1.1 ? "Normal" : settings.speechRate <= 1.5 ? "Fast" : "Very Fast"} ({settings.speechRate.toFixed(1)}x)
@@ -192,10 +215,64 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
               ))}
             </View>
 
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Translation Provider</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Choose your translation engine</Text>
+              </View>
+            </View>
+            <View style={styles.fontSizeRow}>
+              {([
+                { key: "mymemory" as const, label: "MyMemory" },
+                { key: "deepl" as const, label: "DeepL" },
+                { key: "google" as const, label: "Google" },
+              ]).map(({ key, label }) => (
+                <TouchableOpacity
+                  key={key}
+                  style={[
+                    styles.fontSizeOption,
+                    dynamicStyles.fontSizeOption,
+                    settings.translationProvider === key && styles.fontSizeOptionActive,
+                  ]}
+                  onPress={() => onUpdate({ ...settings, translationProvider: key, apiKey: key === "mymemory" ? "" : settings.apiKey })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Translation provider: ${label}`}
+                  accessibilityState={{ selected: settings.translationProvider === key }}
+                >
+                  <Text
+                    style={[
+                      styles.fontSizeLabel,
+                      dynamicStyles.fontSizeLabel,
+                      settings.translationProvider === key && styles.fontSizeLabelActive,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            {settings.translationProvider !== "mymemory" && (
+              <View style={styles.apiKeyRow}>
+                <TextInput
+                  style={[styles.apiKeyInput, { backgroundColor: colors.cardBg, color: colors.primaryText, borderColor: colors.border }]}
+                  placeholder={`${settings.translationProvider === "deepl" ? "DeepL" : "Google Cloud"} API key`}
+                  placeholderTextColor={colors.placeholderText}
+                  value={settings.apiKey}
+                  onChangeText={(text) => onUpdate({ ...settings, apiKey: text })}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  accessibilityLabel="API key input"
+                />
+              </View>
+            )}
+
             <View style={styles.infoSection}>
               <Text style={[styles.infoTitle, dynamicStyles.infoTitle]}>About</Text>
               <Text style={[styles.infoText, dynamicStyles.infoText]}>Live Translator v1.0.0</Text>
-              <Text style={[styles.infoText, dynamicStyles.infoText]}>Translation powered by MyMemory API</Text>
+              <Text style={[styles.infoText, dynamicStyles.infoText]}>
+                Translation powered by {settings.translationProvider === "deepl" ? "DeepL" : settings.translationProvider === "google" ? "Google Cloud" : "MyMemory"} API
+              </Text>
             </View>
           </ScrollView>
 
@@ -293,6 +370,16 @@ const styles = StyleSheet.create({
   },
   fontSizeLabelActive: {
     color: "#ffffff",
+  },
+  apiKeyRow: {
+    marginBottom: 8,
+  },
+  apiKeyInput: {
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    fontSize: 14,
+    borderWidth: 1,
   },
   closeButton: {
     padding: 18,

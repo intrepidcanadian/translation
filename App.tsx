@@ -17,6 +17,8 @@ import {
   PanResponder,
   LayoutAnimation,
   UIManager,
+  useWindowDimensions,
+  Modal,
 } from "react-native";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -118,6 +120,9 @@ const swipeStyles = StyleSheet.create({
 });
 
 export default function App() {
+  const { width, height } = useWindowDimensions();
+  const isLandscape = width > height;
+
   const [isListening, setIsListening] = useState(false);
   const [sourceLang, setSourceLang] = useState<Language>(LANGUAGES[0]); // English
   const [targetLang, setTargetLang] = useState<Language>(LANGUAGES[1]); // Spanish
@@ -137,7 +142,7 @@ export default function App() {
 
   // History of completed translations
   const [history, setHistory] = useState<
-    Array<{ original: string; translated: string; speaker?: "A" | "B"; favorited?: boolean; pending?: boolean; error?: boolean; sourceLangCode?: string; targetLangCode?: string }>
+    Array<{ original: string; translated: string; speaker?: "A" | "B"; favorited?: boolean; pending?: boolean; error?: boolean; sourceLangCode?: string; targetLangCode?: string; confidence?: number }>
   >([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
@@ -147,9 +152,20 @@ export default function App() {
   const errorDismissTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTranslatedRef = useRef("");
   const finalTextRef = useRef("");
+  const lastConfidenceRef = useRef<number | undefined>(undefined);
 
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
+
+  // Translation comparison modal
+  const [compareData, setCompareData] = useState<{
+    original: string;
+    results: Array<{ provider: string; text: string; loading?: boolean }>;
+  } | null>(null);
+
+  // Multi-select state
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
 
   // Undo delete state
   const [deletedItem, setDeletedItem] = useState<{ item: typeof history[number]; index: number } | null>(null);
@@ -333,6 +349,56 @@ export default function App() {
     setTimeout(() => setCopiedText(null), 1500);
   }, []);
 
+  const compareTranslation = useCallback(async (original: string, currentTranslation: string) => {
+    // Show modal immediately with current translation
+    const providers: Array<{ key: string; label: string }> = [
+      { key: "mymemory", label: "MyMemory" },
+    ];
+    if (settings.translationProvider !== "mymemory") {
+      providers.push({ key: settings.translationProvider, label: settings.translationProvider === "deepl" ? "DeepL" : "Google" });
+    }
+
+    // Initialize with current provider's result and loading states for others
+    const initialResults = providers.map((p) => {
+      if (p.key === settings.translationProvider || (settings.translationProvider === "mymemory" && p.key === "mymemory")) {
+        return { provider: p.label, text: currentTranslation };
+      }
+      return { provider: p.label, text: "", loading: true };
+    });
+    setCompareData({ original, results: initialResults });
+
+    // Fetch from other providers in parallel
+    for (const p of providers) {
+      if (p.key === settings.translationProvider) continue;
+      if (p.key === "mymemory" && settings.translationProvider === "mymemory") continue;
+      try {
+        const result = await translateText(original, sourceLang.code, targetLang.code, {
+          provider: p.key as any,
+          apiKey: p.key === "mymemory" ? "" : settings.apiKey,
+        });
+        setCompareData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            results: prev.results.map((r) =>
+              r.provider === p.label ? { ...r, text: result.translatedText, loading: false } : r
+            ),
+          };
+        });
+      } catch {
+        setCompareData((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            results: prev.results.map((r) =>
+              r.provider === p.label ? { ...r, text: "Failed to load", loading: false } : r
+            ),
+          };
+        });
+      }
+    }
+  }, [settings, sourceLang.code, targetLang.code]);
+
   const speakText = useCallback(
     async (text: string, langCode: string) => {
       if (speakingText === text) {
@@ -406,11 +472,12 @@ export default function App() {
             text.trim(),
             fromCode,
             toCode,
-            controller.signal
+            { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey }
           );
           if (!controller.signal.aborted) {
             setTranslatedText(result.translatedText);
             lastTranslatedRef.current = text.trim();
+            lastConfidenceRef.current = result.confidence;
           }
         } catch (err) {
           if (controller.signal.aborted) return; // Ignore cancelled requests
@@ -439,7 +506,7 @@ export default function App() {
       const speaker = conversationMode ? activeSpeakerRef.current : undefined;
       setHistory((prev) => [
         ...prev,
-        { original: finalText.trim(), translated: translatedText.trim(), speaker },
+        { original: finalText.trim(), translated: translatedText.trim(), speaker, confidence: lastConfidenceRef.current },
       ]);
       // Auto-play the translation if enabled
       if (settings.autoPlayTTS) {
@@ -454,6 +521,7 @@ export default function App() {
     setTranslatedText("");
     lastTranslatedRef.current = "";
     finalTextRef.current = "";
+    lastConfidenceRef.current = undefined;
   });
 
   useSpeechRecognitionEvent("result", (event) => {
@@ -490,12 +558,12 @@ export default function App() {
     setIsListening(false);
   });
 
-  // Auto-scroll history
+  // Auto-scroll history (respects settings toggle)
   useEffect(() => {
-    if (history.length > 0 || liveText) {
+    if (settings.autoScroll && (history.length > 0 || liveText)) {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     }
-  }, [history, liveText, translatedText]);
+  }, [history, liveText, translatedText, settings.autoScroll]);
 
   const startListening = async () => {
     if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -621,7 +689,7 @@ export default function App() {
 
     const controller = new AbortController();
     try {
-      const result = await translateText(item.original, item.sourceLangCode, item.targetLangCode, controller.signal);
+      const result = await translateText(item.original, item.sourceLangCode, item.targetLangCode, { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey });
       setHistory((prev) =>
         prev.map((h, i) =>
           i === index ? { ...h, translated: result.translatedText, pending: false, error: false, sourceLangCode: undefined, targetLangCode: undefined } : h
@@ -639,17 +707,92 @@ export default function App() {
     }
   }, [history, settings.hapticsEnabled, showError]);
 
-  const shareHistory = useCallback(async () => {
+  const shareHistory = useCallback(async (format: "text" | "csv" | "json" = "text") => {
     const exportable = history.filter((item) => !item.error && !item.pending);
     if (exportable.length === 0) return;
-    const lines = exportable.map(
-      (item, i) => `${i + 1}. ${item.original}\n   → ${item.translated}`
-    );
-    const text = `Live Translator - ${history.length} translation(s)\n\n${lines.join("\n\n")}`;
+
+    let message: string;
+    if (format === "csv") {
+      const header = "Original,Translated,Favorited";
+      const rows = exportable.map(
+        (item) => `"${item.original.replace(/"/g, '""')}","${item.translated.replace(/"/g, '""')}",${item.favorited ? "yes" : "no"}`
+      );
+      message = [header, ...rows].join("\n");
+    } else if (format === "json") {
+      message = JSON.stringify(
+        exportable.map((item) => ({
+          original: item.original,
+          translated: item.translated,
+          favorited: !!item.favorited,
+        })),
+        null,
+        2
+      );
+    } else {
+      const lines = exportable.map(
+        (item, i) => `${i + 1}. ${item.original}\n   → ${item.translated}`
+      );
+      message = `Live Translator - ${exportable.length} translation(s)\n\n${lines.join("\n\n")}`;
+    }
     try {
-      await Share.share({ message: text });
+      await Share.share({ message });
     } catch {}
   }, [history]);
+
+  const showExportPicker = useCallback(() => {
+    const exportable = history.filter((item) => !item.error && !item.pending);
+    if (exportable.length === 0) return;
+    Alert.alert("Export Format", "Choose a format for your translations", [
+      { text: "Text", onPress: () => shareHistory("text") },
+      { text: "CSV", onPress: () => shareHistory("csv") },
+      { text: "JSON", onPress: () => shareHistory("json") },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  }, [history, shareHistory]);
+
+  const toggleSelectItem = useCallback((index: number) => {
+    setSelectedIndices((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIndices(new Set());
+  }, []);
+
+  const deleteSelected = useCallback(() => {
+    if (selectedIndices.size === 0) return;
+    Alert.alert(
+      "Delete Selected",
+      `Delete ${selectedIndices.size} translation${selectedIndices.size === 1 ? "" : "s"}?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+            setHistory((prev) => prev.filter((_, i) => !selectedIndices.has(i)));
+            exitSelectMode();
+          },
+        },
+      ]
+    );
+  }, [selectedIndices, settings.hapticsEnabled, exitSelectMode]);
+
+  const exportSelected = useCallback(() => {
+    if (selectedIndices.size === 0) return;
+    const items = history.filter((_, i) => selectedIndices.has(i));
+    const lines = items.map(
+      (item, i) => `${i + 1}. ${item.original}\n   → ${item.translated}`
+    );
+    const text = `Live Translator - ${items.length} translation(s)\n\n${lines.join("\n\n")}`;
+    Share.share({ message: text }).catch(() => {});
+  }, [selectedIndices, history]);
 
   const [typedText, setTypedText] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -713,7 +856,7 @@ export default function App() {
 
     for (const item of queue) {
       try {
-        const result = await translateText(item.text, item.sourceLang, item.targetLang);
+        const result = await translateText(item.text, item.sourceLang, item.targetLang, { provider: settings.translationProvider, apiKey: settings.apiKey });
         // Replace the pending history entry with the real translation
         setHistory((prev) => {
           const pendingIdx = prev.findIndex(
@@ -769,9 +912,9 @@ export default function App() {
     setIsTranslating(true);
     setLiveText(text);
     try {
-      const result = await translateText(text, sourceLang.code, targetLang.code, controller.signal);
+      const result = await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey });
       if (!controller.signal.aborted) {
-        setHistory((prev) => [...prev, { original: text, translated: result.translatedText }]);
+        setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence }]);
       }
     } catch (err) {
       if (!controller.signal.aborted) {
@@ -797,9 +940,9 @@ export default function App() {
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.safeBg }]}>
       <StatusBar barStyle={colors.statusBar} />
-      <View style={styles.container}>
+      <View style={[styles.container, isLandscape && styles.containerLandscape]}>
         {/* Header */}
-        <View style={styles.headerRow}>
+        <View style={[styles.headerRow, isLandscape && styles.headerRowLandscape]}>
           <TouchableOpacity
             style={styles.settingsButton}
             onPress={() => setShowSettings(true)}
@@ -808,7 +951,7 @@ export default function App() {
           >
             <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>⚙</Text>
           </TouchableOpacity>
-          <Text style={[styles.title, { color: colors.titleText }]}>Live Translator</Text>
+          <Text style={[styles.title, isLandscape && styles.titleLandscape, { color: colors.titleText }]}>Live Translator</Text>
           <TouchableOpacity
             style={[styles.modeToggle, { backgroundColor: colors.cardBg }, conversationMode && styles.modeToggleActive]}
             onPress={() => setConversationMode((m) => !m)}
@@ -828,6 +971,44 @@ export default function App() {
           settings={settings}
           onUpdate={updateSettings}
         />
+
+        {/* Translation comparison modal */}
+        <Modal visible={!!compareData} animationType="slide" transparent>
+          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+            <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
+              <Text style={[styles.compareTitle, { color: colors.titleText }]}>Compare Translations</Text>
+              {compareData && (
+                <>
+                  <View style={[styles.compareOriginal, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
+                    <Text style={[styles.compareLabel, { color: colors.dimText }]}>ORIGINAL</Text>
+                    <Text style={[{ color: colors.primaryText, fontSize: 15 }]}>{compareData.original}</Text>
+                  </View>
+                  {compareData.results.map((r) => (
+                    <View key={r.provider} style={[styles.compareResult, { backgroundColor: colors.translatedBubbleBg, borderColor: colors.border }]}>
+                      <Text style={[styles.compareLabel, { color: colors.primary }]}>{r.provider.toUpperCase()}</Text>
+                      {r.loading ? (
+                        <Text style={[{ color: colors.dimText, fontStyle: "italic", fontSize: 15 }]}>Loading...</Text>
+                      ) : (
+                        <TouchableOpacity onPress={() => copyToClipboard(r.text)}>
+                          <Text style={[{ color: colors.translatedText, fontSize: 15 }]}>{r.text}</Text>
+                          {copiedText === r.text && <Text style={styles.copiedBadge}>Copied!</Text>}
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))}
+                </>
+              )}
+              <TouchableOpacity
+                style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
+                onPress={() => setCompareData(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Close comparison"
+              >
+                <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" }]}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
 
         {/* Language selectors */}
         <View style={styles.langRow}>
@@ -979,6 +1160,27 @@ export default function App() {
             const realIndex = searchQuery.trim()
               ? history.findIndex((h) => h === item)
               : index;
+            if (selectMode) {
+              const isSelected = selectedIndices.has(realIndex);
+              return (
+                <TouchableOpacity
+                  onPress={() => toggleSelectItem(realIndex)}
+                  activeOpacity={0.7}
+                  style={styles.selectRow}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: isSelected }}
+                  accessibilityLabel={`Select translation: ${item.original}`}
+                >
+                  <View style={[styles.selectCheckbox, { borderColor: colors.border }, isSelected && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+                    {isSelected && <Text style={styles.selectCheckmark}>✓</Text>}
+                  </View>
+                  <View style={styles.selectContent}>
+                    <Text style={[{ color: colors.secondaryText, fontSize: 14 }]} numberOfLines={1}>{item.original}</Text>
+                    <Text style={[{ color: colors.translatedText, fontSize: 14 }]} numberOfLines={1}>{item.translated}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            }
             return (
             <SwipeableRow onDelete={() => deleteHistoryItem(realIndex)}>
             {conversationMode && item.speaker ? (
@@ -999,6 +1201,7 @@ export default function App() {
                   <View style={styles.bubbleActions}>
                     <Text style={[styles.wordCountBubble, { color: colors.dimText }]}>
                       {item.original.trim().split(/\s+/).filter(Boolean).length} → {item.translated.trim().split(/\s+/).filter(Boolean).length} words
+                      {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
                     </Text>
                     <TouchableOpacity
                       style={styles.speakButton}
@@ -1064,6 +1267,7 @@ export default function App() {
                     {!item.error && !item.pending && (
                       <Text style={[styles.wordCountBubble, { color: colors.dimText }]}>
                         {item.original.trim().split(/\s+/).filter(Boolean).length} → {item.translated.trim().split(/\s+/).filter(Boolean).length} words
+                        {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
                       </Text>
                     )}
                     {item.error ? (
@@ -1098,6 +1302,16 @@ export default function App() {
                         {item.favorited ? "★" : "☆"}
                       </Text>
                     </TouchableOpacity>
+                    {!item.error && !item.pending && (
+                      <TouchableOpacity
+                        style={styles.speakButton}
+                        onPress={() => compareTranslation(item.original, item.translated)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Compare translations from different engines"
+                      >
+                        <Text style={[styles.compareIcon, { color: colors.dimText }]}>⇔</Text>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
               </View>
@@ -1188,25 +1402,69 @@ export default function App() {
         )}
 
         {/* Bottom controls */}
-        <View style={styles.controls}>
+        <View style={[styles.controls, isLandscape && styles.controlsLandscape]}>
           {history.length > 0 && !isListening && (
             <View style={styles.historyActions}>
-              <TouchableOpacity
-                style={styles.clearButton}
-                onPress={clearHistory}
-                accessibilityRole="button"
-                accessibilityLabel="Clear translation history"
-              >
-                <Text style={[styles.clearText, { color: colors.dimText }]}>Clear</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.clearButton}
-                onPress={shareHistory}
-                accessibilityRole="button"
-                accessibilityLabel="Share translation history"
-              >
-                <Text style={[styles.shareText, { color: colors.primary }]}>Share</Text>
-              </TouchableOpacity>
+              {selectMode ? (
+                <>
+                  <TouchableOpacity
+                    style={styles.clearButton}
+                    onPress={exitSelectMode}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel selection"
+                  >
+                    <Text style={[styles.clearText, { color: colors.dimText }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <Text style={[styles.selectCountText, { color: colors.mutedText }]}>
+                    {selectedIndices.size} selected
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.clearButton}
+                    onPress={exportSelected}
+                    accessibilityRole="button"
+                    accessibilityLabel="Share selected translations"
+                    disabled={selectedIndices.size === 0}
+                  >
+                    <Text style={[styles.shareText, { color: selectedIndices.size > 0 ? colors.primary : colors.dimText }]}>Share</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.clearButton}
+                    onPress={deleteSelected}
+                    accessibilityRole="button"
+                    accessibilityLabel="Delete selected translations"
+                    disabled={selectedIndices.size === 0}
+                  >
+                    <Text style={[styles.clearText, { color: selectedIndices.size > 0 ? colors.errorText : colors.dimText }]}>Delete</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={styles.clearButton}
+                    onPress={clearHistory}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear translation history"
+                  >
+                    <Text style={[styles.clearText, { color: colors.dimText }]}>Clear</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.clearButton}
+                    onPress={() => setSelectMode(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Select multiple translations"
+                  >
+                    <Text style={[styles.shareText, { color: colors.mutedText }]}>Select</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.clearButton}
+                    onPress={showExportPicker}
+                    accessibilityRole="button"
+                    accessibilityLabel="Share translation history"
+                  >
+                    <Text style={[styles.shareText, { color: colors.primary }]}>Share</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           )}
 
@@ -1251,11 +1509,12 @@ export default function App() {
             </View>
           ) : (
             <>
-              <View style={styles.micButtonWrapper}>
+              <View style={[styles.micButtonWrapper, isLandscape && styles.micButtonWrapperLandscape]}>
                 {isListening && (
                   <Animated.View
                     style={[
                       styles.pulseRing,
+                      isLandscape && styles.pulseRingLandscape,
                       {
                         transform: [{ scale: pulseAnim }],
                         opacity: pulseOpacity,
@@ -1266,6 +1525,7 @@ export default function App() {
                 <TouchableOpacity
                   style={[
                     styles.micButton,
+                    isLandscape && styles.micButtonLandscape,
                     isListening && styles.micButtonActive,
                   ]}
                   onPress={isListening ? stopListening : startListening}
@@ -1792,6 +2052,34 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: "#ffd700",
   },
+  selectRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    gap: 12,
+  },
+  selectCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  selectCheckmark: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  selectContent: {
+    flex: 1,
+    gap: 2,
+  },
+  selectCountText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
   charCountRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1841,5 +2129,80 @@ const styles = StyleSheet.create({
   undoButtonText: {
     fontSize: 14,
     fontWeight: "700",
+  },
+  // Comparison modal
+  compareOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  compareContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "70%",
+    paddingTop: 20,
+    paddingHorizontal: 20,
+  },
+  compareTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 16,
+  },
+  compareOriginal: {
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  compareResult: {
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+  },
+  compareLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  compareClose: {
+    padding: 18,
+    alignItems: "center",
+    borderTopWidth: 1,
+    marginHorizontal: -20,
+  },
+  compareIcon: {
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  // Landscape overrides
+  containerLandscape: {
+    paddingHorizontal: 40,
+    paddingTop: 4,
+  },
+  headerRowLandscape: {
+    marginBottom: 8,
+  },
+  titleLandscape: {
+    fontSize: 20,
+  },
+  controlsLandscape: {
+    paddingBottom: 4,
+    paddingTop: 4,
+  },
+  micButtonWrapperLandscape: {
+    width: 56,
+    height: 56,
+  },
+  micButtonLandscape: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  pulseRingLandscape: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
   },
 });
