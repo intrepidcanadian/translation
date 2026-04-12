@@ -51,6 +51,7 @@ import { PHRASE_CATEGORIES, getPhrasesForCategory, getPhraseOfTheDay, type Phras
 import { romanize, needsRomanization, getRomanizationName } from "./src/services/romanization";
 import CameraTranslator from "./src/components/CameraTranslator";
 import AlignedRomanization from "./src/components/AlignedRomanization";
+import ErrorBoundary from "./src/components/ErrorBoundary";
 
 function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
   const translateX = useRef(new Animated.Value(0)).current;
@@ -156,6 +157,14 @@ function formatRelativeTime(timestamp?: number): string | null {
 }
 
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
+}
+
+function AppContent() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
 
@@ -328,67 +337,41 @@ export default function App() {
 
   // Load persisted history and settings on mount
   useEffect(() => {
-    AsyncStorage.getItem(HISTORY_KEY).then((stored) => {
-      if (stored) {
-        try {
-          setHistory(JSON.parse(stored));
-        } catch {}
-      }
-    });
-    AsyncStorage.getItem(SETTINGS_KEY).then((stored) => {
-      if (stored) {
-        try {
-          setSettings((prev) => ({ ...prev, ...JSON.parse(stored) }));
-        } catch {}
-      }
-    });
-    AsyncStorage.getItem(RECENT_LANGS_KEY).then((stored) => {
-      if (stored) {
-        try {
-          setRecentLangCodes(JSON.parse(stored));
-        } catch {}
-      }
-    });
-    AsyncStorage.getItem(OFFLINE_QUEUE_KEY).then((stored) => {
-      if (stored) {
-        try {
-          setOfflineQueue(JSON.parse(stored));
-        } catch {}
-      }
-    });
-    AsyncStorage.getItem(LANG_PAIRS_KEY).then((stored) => {
-      if (stored) {
-        try {
-          setSavedPairs(JSON.parse(stored));
-        } catch {}
-      }
-    });
-    AsyncStorage.getItem(ONBOARDING_KEY).then((stored) => {
-      if (!stored) {
-        setShowOnboarding(true);
-        setOnboardingStep(0);
-      }
-    });
-    AsyncStorage.getItem(RATING_PROMPTED_KEY).then((stored) => {
-      if (stored) ratingPromptedRef.current = true;
-    });
-    AsyncStorage.getItem(TRANSLATION_COUNT_KEY).then((stored) => {
-      if (stored) translationCountRef.current = parseInt(stored, 10) || 0;
-    });
-    AsyncStorage.getItem(GLOSSARY_KEY).then((stored) => {
-      if (stored) {
-        try {
-          setGlossary(JSON.parse(stored));
-        } catch {}
-      }
-    });
-    AsyncStorage.getItem(STREAK_KEY).then((stored) => {
-      if (stored) {
-        try {
-          setStreak(JSON.parse(stored));
-        } catch {}
-      }
-    });
+    const loadJSON = <T,>(key: string, onSuccess: (data: T) => void) => {
+      AsyncStorage.getItem(key)
+        .then((stored) => {
+          if (stored) {
+            const parsed = JSON.parse(stored) as T;
+            onSuccess(parsed);
+          }
+        })
+        .catch((err) => console.warn(`Failed to load ${key}:`, err));
+    };
+
+    loadJSON<typeof history>(HISTORY_KEY, (data) => setHistory(data));
+    loadJSON<Settings>(SETTINGS_KEY, (data) => setSettings((prev) => ({ ...prev, ...data })));
+    loadJSON<string[]>(RECENT_LANGS_KEY, (data) => setRecentLangCodes(data));
+    loadJSON<typeof offlineQueue>(OFFLINE_QUEUE_KEY, (data) => setOfflineQueue(data));
+    loadJSON<typeof savedPairs>(LANG_PAIRS_KEY, (data) => setSavedPairs(data));
+    loadJSON<typeof glossary>(GLOSSARY_KEY, (data) => setGlossary(data));
+    loadJSON<typeof streak>(STREAK_KEY, (data) => setStreak(data));
+
+    AsyncStorage.getItem(ONBOARDING_KEY)
+      .then((stored) => {
+        if (!stored) {
+          setShowOnboarding(true);
+          setOnboardingStep(0);
+        }
+      })
+      .catch((err) => console.warn("Failed to load onboarding state:", err));
+
+    AsyncStorage.getItem(RATING_PROMPTED_KEY)
+      .then((stored) => { if (stored) ratingPromptedRef.current = true; })
+      .catch((err) => console.warn("Failed to load rating state:", err));
+
+    AsyncStorage.getItem(TRANSLATION_COUNT_KEY)
+      .then((stored) => { if (stored) translationCountRef.current = parseInt(stored, 10) || 0; })
+      .catch((err) => console.warn("Failed to load translation count:", err));
   }, []);
 
   // Quick Actions setup (3D Touch / long-press app icon shortcuts)
@@ -1160,10 +1143,16 @@ export default function App() {
     if (queue.length === 0) return;
     isProcessingQueue.current = true;
 
-    const remaining = [...queue];
+    const failed: typeof offlineQueue = [];
     let processed = 0;
+    let consecutiveFailures = 0;
 
     for (const item of queue) {
+      // If we get 3 consecutive failures, network is likely down — stop processing
+      if (consecutiveFailures >= 3) {
+        failed.push(item);
+        continue;
+      }
       try {
         const result = await translateText(item.text, item.sourceLang, item.targetLang, { provider: settings.translationProvider, apiKey: settings.apiKey });
         // Replace the pending history entry with the real translation
@@ -1178,16 +1167,17 @@ export default function App() {
           }
           return [...prev, { original: item.text, translated: result.translatedText, timestamp: Date.now() }];
         });
-        remaining.splice(remaining.indexOf(item), 1);
         processed++;
+        consecutiveFailures = 0;
       } catch {
-        // Leave remaining items in queue for next attempt
-        break;
+        // Keep failed item in queue for next attempt, continue with others
+        failed.push(item);
+        consecutiveFailures++;
       }
     }
 
-    setOfflineQueue(remaining);
-    AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
+    setOfflineQueue(failed);
+    AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(failed)).catch(() => {});
     isProcessingQueue.current = false;
 
     if (processed > 0 && settings.hapticsEnabled) {
