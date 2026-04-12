@@ -997,6 +997,9 @@ export default function App() {
                     <Text style={styles.copiedBadge}>Copied!</Text>
                   ) : null}
                   <View style={styles.bubbleActions}>
+                    <Text style={[styles.wordCountBubble, { color: colors.dimText }]}>
+                      {item.original.trim().split(/\s+/).filter(Boolean).length} → {item.translated.trim().split(/\s+/).filter(Boolean).length} words
+                    </Text>
                     <TouchableOpacity
                       style={styles.speakButton}
                       onPress={() => speakText(item.translated, speakLang)}
@@ -1058,6 +1061,11 @@ export default function App() {
                     )}
                   </TouchableOpacity>
                   <View style={styles.bubbleActions}>
+                    {!item.error && !item.pending && (
+                      <Text style={[styles.wordCountBubble, { color: colors.dimText }]}>
+                        {item.original.trim().split(/\s+/).filter(Boolean).length} → {item.translated.trim().split(/\s+/).filter(Boolean).length} words
+                      </Text>
+                    )}
                     {item.error ? (
                       <TouchableOpacity
                         style={styles.retryButton}
@@ -1281,28 +1289,41 @@ export default function App() {
           )}
 
           {!isListening && (
-            <View style={styles.textInputRow}>
-              <TextInput
-                style={[styles.textInput, { backgroundColor: colors.bubbleBg, color: colors.primaryText, borderColor: colors.border }]}
-                placeholder="Or type to translate..."
-                placeholderTextColor={colors.placeholderText}
-                value={typedText}
-                onChangeText={setTypedText}
-                onSubmitEditing={submitTypedText}
-                returnKeyType="send"
-                editable={!isTranslating}
-                accessibilityLabel="Type text to translate"
-              />
-              {typedText.trim() ? (
-                <TouchableOpacity
-                  style={styles.sendButton}
-                  onPress={submitTypedText}
-                  accessibilityRole="button"
-                  accessibilityLabel="Translate typed text"
-                >
-                  <Text style={styles.sendIcon}>→</Text>
-                </TouchableOpacity>
-              ) : null}
+            <View>
+              <View style={styles.textInputRow}>
+                <TextInput
+                  style={[styles.textInput, { backgroundColor: colors.bubbleBg, color: colors.primaryText, borderColor: colors.border }]}
+                  placeholder="Or type to translate..."
+                  placeholderTextColor={colors.placeholderText}
+                  value={typedText}
+                  onChangeText={setTypedText}
+                  onSubmitEditing={submitTypedText}
+                  returnKeyType="send"
+                  editable={!isTranslating}
+                  accessibilityLabel="Type text to translate"
+                  maxLength={500}
+                />
+                {typedText.trim() ? (
+                  <TouchableOpacity
+                    style={styles.sendButton}
+                    onPress={submitTypedText}
+                    accessibilityRole="button"
+                    accessibilityLabel="Translate typed text"
+                  >
+                    <Text style={styles.sendIcon}>→</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              {typedText.length > 0 && (
+                <View style={styles.charCountRow}>
+                  <Text style={[styles.charCountText, { color: typedText.length >= 450 ? colors.errorText : colors.dimText }]}>
+                    {typedText.length}/500
+                  </Text>
+                  <Text style={[styles.wordCountText, { color: colors.dimText }]}>
+                    {typedText.trim().split(/\s+/).filter(Boolean).length} {typedText.trim().split(/\s+/).filter(Boolean).length === 1 ? "word" : "words"}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -1770,6 +1791,25 @@ const styles = StyleSheet.create({
   favFilterIcon: {
     fontSize: 18,
     color: "#ffd700",
+  },
+  charCountRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    marginTop: 4,
+  },
+  charCountText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  wordCountText: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  wordCountBubble: {
+    fontSize: 10,
+    fontWeight: "500",
+    marginRight: "auto",
   },
   pendingBadge: {
     fontSize: 11,
