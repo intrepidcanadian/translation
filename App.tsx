@@ -176,11 +176,14 @@ export default function App() {
   const [phraseCategory, setPhraseCategory] = useState<PhraseCategory>("basic");
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [recentLangCodes, setRecentLangCodes] = useState<string[]>([]);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState(0);
   const HISTORY_KEY = "translation_history";
   const SETTINGS_KEY = "app_settings";
   const RECENT_LANGS_KEY = "recent_languages";
   const OFFLINE_QUEUE_KEY = "offline_translation_queue";
   const LANG_PAIRS_KEY = "saved_language_pairs";
+  const ONBOARDING_KEY = "onboarding_completed";
 
   // Saved language pair shortcuts
   const [savedPairs, setSavedPairs] = useState<
@@ -288,6 +291,12 @@ export default function App() {
         try {
           setSavedPairs(JSON.parse(stored));
         } catch {}
+      }
+    });
+    AsyncStorage.getItem(ONBOARDING_KEY).then((stored) => {
+      if (!stored) {
+        setShowOnboarding(true);
+        setOnboardingStep(0);
       }
     });
   }, []);
@@ -1092,6 +1101,73 @@ export default function App() {
               >
                 <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
               </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Onboarding tutorial modal */}
+        <Modal visible={showOnboarding} animationType="fade" transparent>
+          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+            <View style={[styles.onboardingContent, { backgroundColor: colors.modalBg }]}>
+              {(() => {
+                const steps = [
+                  { icon: "🎙️", title: "Voice Translation", desc: "Tap the mic button and speak naturally. Your words are translated in real time as you talk." },
+                  { icon: "💬", title: "Conversation Mode", desc: "Toggle Chat mode for face-to-face conversations. Two mic buttons let each person speak in their language." },
+                  { icon: "📖", title: "Phrasebook", desc: "Browse common phrases by category for instant offline translations. Tap to copy, long-press to hear." },
+                  { icon: "⌨️", title: "Type to Translate", desc: "Prefer typing? Use the text input at the bottom to translate written text, with multi-line support." },
+                  { icon: "⭐", title: "Favorites & History", desc: "Star translations to bookmark them. Swipe left to delete. Search your full history anytime." },
+                  { icon: "⚙️", title: "Customize Everything", desc: "Adjust font size, speech speed, theme, haptics, and even switch translation providers in Settings." },
+                ];
+                const step = steps[onboardingStep];
+                const isLast = onboardingStep === steps.length - 1;
+                return (
+                  <>
+                    <View style={styles.onboardingDots}>
+                      {steps.map((_, i) => (
+                        <View
+                          key={i}
+                          style={[
+                            styles.onboardingDot,
+                            { backgroundColor: i === onboardingStep ? colors.primary : colors.border },
+                          ]}
+                        />
+                      ))}
+                    </View>
+                    <Text style={styles.onboardingIcon}>{step.icon}</Text>
+                    <Text style={[styles.onboardingTitle, { color: colors.titleText }]}>{step.title}</Text>
+                    <Text style={[styles.onboardingDesc, { color: colors.secondaryText }]}>{step.desc}</Text>
+                    <View style={styles.onboardingButtons}>
+                      <TouchableOpacity
+                        style={styles.onboardingSkip}
+                        onPress={() => {
+                          setShowOnboarding(false);
+                          AsyncStorage.setItem(ONBOARDING_KEY, "true");
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Skip tutorial"
+                      >
+                        <Text style={[styles.onboardingSkipText, { color: colors.dimText }]}>Skip</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.onboardingNext, { backgroundColor: colors.primary }]}
+                        onPress={() => {
+                          if (isLast) {
+                            setShowOnboarding(false);
+                            AsyncStorage.setItem(ONBOARDING_KEY, "true");
+                            if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                          } else {
+                            setOnboardingStep((s) => s + 1);
+                          }
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel={isLast ? "Get started" : "Next tip"}
+                      >
+                        <Text style={styles.onboardingNextText}>{isLast ? "Get Started" : "Next"}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                );
+              })()}
             </View>
           </View>
         </Modal>
@@ -2362,6 +2438,67 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
     fontWeight: "600" as const,
+  },
+  // Onboarding tutorial
+  onboardingContent: {
+    borderRadius: 24,
+    paddingVertical: 32,
+    paddingHorizontal: 28,
+    marginHorizontal: 24,
+    alignItems: "center" as const,
+  },
+  onboardingDots: {
+    flexDirection: "row" as const,
+    gap: 8,
+    marginBottom: 24,
+  },
+  onboardingDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  onboardingIcon: {
+    fontSize: 56,
+    marginBottom: 16,
+  },
+  onboardingTitle: {
+    fontSize: 24,
+    fontWeight: "700" as const,
+    marginBottom: 12,
+    textAlign: "center" as const,
+  },
+  onboardingDesc: {
+    fontSize: 16,
+    lineHeight: 24,
+    textAlign: "center" as const,
+    paddingHorizontal: 8,
+    marginBottom: 32,
+  },
+  onboardingButtons: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 16,
+    width: "100%" as const,
+  },
+  onboardingSkip: {
+    flex: 1,
+    paddingVertical: 14,
+    alignItems: "center" as const,
+  },
+  onboardingSkipText: {
+    fontSize: 16,
+    fontWeight: "500" as const,
+  },
+  onboardingNext: {
+    flex: 2,
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: "center" as const,
+  },
+  onboardingNextText: {
+    color: "#ffffff",
+    fontSize: 17,
+    fontWeight: "700" as const,
   },
   // Landscape overrides
   containerLandscape: {
