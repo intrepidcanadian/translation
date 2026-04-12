@@ -24,6 +24,8 @@ export const FONT_SIZE_SCALES: Record<FontSizeOption, number> = {
   xlarge: 1.4,
 };
 
+export type SilenceTimeoutOption = 0 | 3 | 5 | 10;
+
 export interface Settings {
   hapticsEnabled: boolean;
   autoPlayTTS: boolean;
@@ -35,6 +37,7 @@ export interface Settings {
   apiKey: string;
   showRomanization: boolean;
   offlineSpeech: boolean;
+  silenceTimeout: SilenceTimeoutOption;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -48,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   apiKey: "",
   showRomanization: true,
   offlineSpeech: false,
+  silenceTimeout: 0,
 };
 
 interface Props {
@@ -191,6 +195,39 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 thumbColor="#ffffff"
                 accessibilityLabel="Toggle offline speech recognition"
               />
+            </View>
+
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Auto-Stop After Silence</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Stop listening after silence (0 = manual stop)</Text>
+              </View>
+            </View>
+            <View style={styles.fontSizeRow}>
+              {([0, 3, 5, 10] as SilenceTimeoutOption[]).map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[
+                    styles.fontSizeOption,
+                    dynamicStyles.fontSizeOption,
+                    settings.silenceTimeout === option && styles.fontSizeOptionActive,
+                  ]}
+                  onPress={() => onUpdate({ ...settings, silenceTimeout: option })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Auto-stop after silence: ${option === 0 ? "off" : `${option} seconds`}`}
+                  accessibilityState={{ selected: settings.silenceTimeout === option }}
+                >
+                  <Text
+                    style={[
+                      styles.fontSizeLabel,
+                      dynamicStyles.fontSizeLabel,
+                      settings.silenceTimeout === option && styles.fontSizeLabelActive,
+                    ]}
+                  >
+                    {option === 0 ? "Off" : `${option}s`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
 
             <View style={[styles.row, dynamicStyles.rowBorder]}>

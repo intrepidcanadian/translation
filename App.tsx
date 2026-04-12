@@ -190,6 +190,7 @@ export default function App() {
   const lastDetectedLangRef = useRef<string | undefined>(undefined);
   const ratingPromptedRef = useRef(false);
   const translationCountRef = useRef(0);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
@@ -717,6 +718,7 @@ export default function App() {
       if (translationTimeout.current) clearTimeout(translationTimeout.current);
       if (errorDismissTimeout.current) clearTimeout(errorDismissTimeout.current);
       if (undoTimeout.current) clearTimeout(undoTimeout.current);
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       abortControllerRef.current?.abort();
       Speech.stop();
     };
@@ -781,6 +783,7 @@ export default function App() {
 
   useSpeechRecognitionEvent("end", () => {
     setIsListening(false);
+    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
 
     // Save to history when speech ends
     if (finalText.trim() && translatedText.trim()) {
@@ -811,6 +814,14 @@ export default function App() {
   useSpeechRecognitionEvent("result", (event) => {
     const transcript = event.results[0]?.transcript || "";
     const isFinal = event.isFinal;
+
+    // Reset silence auto-stop timer on every speech result
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (settings.silenceTimeout > 0) {
+      silenceTimerRef.current = setTimeout(() => {
+        ExpoSpeechRecognitionModule.stop();
+      }, settings.silenceTimeout * 1000);
+    }
 
     if (isFinal) {
       const updated = finalTextRef.current
@@ -2566,7 +2577,9 @@ export default function App() {
               {isListening && (
                 <View style={styles.listeningIndicator} accessibilityLiveRegion="polite">
                   <Text style={styles.listeningDot} importantForAccessibility="no">●</Text>
-                  <Text style={styles.listeningLabel}>Listening...</Text>
+                  <Text style={styles.listeningLabel}>
+                    Listening...{settings.silenceTimeout > 0 ? ` (auto-stop ${settings.silenceTimeout}s)` : ""}
+                  </Text>
                 </View>
               )}
             </>
