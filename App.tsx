@@ -33,6 +33,7 @@ import {
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
+import * as StoreReview from "expo-store-review";
 import LanguagePicker from "./src/components/LanguagePicker";
 import SettingsModal, { Settings, DEFAULT_SETTINGS, FONT_SIZE_SCALES } from "./src/components/SettingsModal";
 import {
@@ -154,6 +155,8 @@ export default function App() {
   const lastTranslatedRef = useRef("");
   const finalTextRef = useRef("");
   const lastConfidenceRef = useRef<number | undefined>(undefined);
+  const ratingPromptedRef = useRef(false);
+  const translationCountRef = useRef(0);
 
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
@@ -185,6 +188,9 @@ export default function App() {
   const OFFLINE_QUEUE_KEY = "offline_translation_queue";
   const LANG_PAIRS_KEY = "saved_language_pairs";
   const ONBOARDING_KEY = "onboarding_completed";
+  const RATING_PROMPTED_KEY = "rating_prompted";
+  const TRANSLATION_COUNT_KEY = "translation_count";
+  const RATING_THRESHOLD = 20;
 
   // Saved language pair shortcuts
   const [savedPairs, setSavedPairs] = useState<
@@ -300,6 +306,12 @@ export default function App() {
         setOnboardingStep(0);
       }
     });
+    AsyncStorage.getItem(RATING_PROMPTED_KEY).then((stored) => {
+      if (stored) ratingPromptedRef.current = true;
+    });
+    AsyncStorage.getItem(TRANSLATION_COUNT_KEY).then((stored) => {
+      if (stored) translationCountRef.current = parseInt(stored, 10) || 0;
+    });
   }, []);
 
   const trackRecentLang = useCallback((code: string) => {
@@ -353,6 +365,21 @@ export default function App() {
   const updateSettings = useCallback((newSettings: Settings) => {
     setSettings(newSettings);
     AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+  }, []);
+
+  const maybeRequestReview = useCallback(async () => {
+    if (ratingPromptedRef.current) return;
+    translationCountRef.current += 1;
+    AsyncStorage.setItem(TRANSLATION_COUNT_KEY, String(translationCountRef.current));
+    if (translationCountRef.current >= RATING_THRESHOLD) {
+      ratingPromptedRef.current = true;
+      AsyncStorage.setItem(RATING_PROMPTED_KEY, "1");
+      const isAvailable = await StoreReview.isAvailableAsync();
+      if (isAvailable) {
+        // Small delay so it doesn't interrupt the translation flow
+        setTimeout(() => StoreReview.requestReview(), 1500);
+      }
+    }
   }, []);
 
   const copyToClipboard = useCallback(async (text: string) => {
@@ -521,6 +548,7 @@ export default function App() {
         ...prev,
         { original: finalText.trim(), translated: translatedText.trim(), speaker, confidence: lastConfidenceRef.current },
       ]);
+      maybeRequestReview();
       // Auto-play the translation if enabled
       if (settings.autoPlayTTS) {
         const ttsLang = (conversationMode && speaker === "B")
@@ -928,6 +956,7 @@ export default function App() {
       const result = await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider, apiKey: settings.apiKey });
       if (!controller.signal.aborted) {
         setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence }]);
+        maybeRequestReview();
       }
     } catch (err) {
       if (!controller.signal.aborted) {

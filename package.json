@@ -18,8 +18,11 @@
     "expo-speech": "~14.0.8",
     "expo-speech-recognition": "^3.1.2",
     "expo-status-bar": "~3.0.9",
+    "expo-store-review": "~9.0.9",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5",
+    "react-native-web": "^0.21.0"
   },
   "devDependencies": {
     "@types/react": "~19.1.0",
