@@ -38,6 +38,7 @@ import {
   LANGUAGES,
   AUTO_DETECT_LANGUAGE,
 } from "./src/services/translation";
+import { getColors } from "./src/theme";
 
 function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
   const translateX = useRef(new Animated.Value(0)).current;
@@ -536,6 +537,8 @@ export default function App() {
     chatText: { fontSize: Math.round(15 * fontScale) },
   }), [fontScale]);
 
+  const colors = useMemo(() => getColors(settings.theme), [settings.theme]);
+
   const submitTypedText = useCallback(async () => {
     const text = typedText.trim();
     if (!text) return;
@@ -567,8 +570,8 @@ export default function App() {
   }, [typedText, sourceLang.code, targetLang.code, showError]);
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="light-content" />
+    <SafeAreaView style={[styles.safe, { backgroundColor: colors.safeBg }]}>
+      <StatusBar barStyle={colors.statusBar} />
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.headerRow}>
@@ -578,17 +581,17 @@ export default function App() {
             accessibilityRole="button"
             accessibilityLabel="Open settings"
           >
-            <Text style={styles.settingsIcon}>⚙</Text>
+            <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>⚙</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Live Translator</Text>
+          <Text style={[styles.title, { color: colors.titleText }]}>Live Translator</Text>
           <TouchableOpacity
-            style={[styles.modeToggle, conversationMode && styles.modeToggleActive]}
+            style={[styles.modeToggle, { backgroundColor: colors.cardBg }, conversationMode && styles.modeToggleActive]}
             onPress={() => setConversationMode((m) => !m)}
             accessibilityRole="button"
             accessibilityLabel={conversationMode ? "Switch to standard mode" : "Switch to conversation mode"}
             accessibilityState={{ selected: conversationMode }}
           >
-            <Text style={[styles.modeToggleText, conversationMode && styles.modeToggleTextActive]}>
+            <Text style={[styles.modeToggleText, { color: colors.mutedText }, conversationMode && styles.modeToggleTextActive]}>
               {conversationMode ? "Chat" : "Chat"}
             </Text>
           </TouchableOpacity>
@@ -609,33 +612,35 @@ export default function App() {
             onSelect={(lang) => { setSourceLang(lang); trackRecentLang(lang.code); }}
             showAutoDetect
             recentCodes={recentLangCodes}
+            colors={colors}
           />
           <TouchableOpacity
-            style={styles.swapButton}
+            style={[styles.swapButton, { backgroundColor: colors.cardBg }]}
             onPress={swapLanguages}
             accessibilityRole="button"
             accessibilityLabel={`Swap languages. Currently translating from ${sourceLang.name} to ${targetLang.name}`}
           >
-            <Text style={styles.swapIcon}>⇄</Text>
+            <Text style={[styles.swapIcon, { color: colors.primary }]}>⇄</Text>
           </TouchableOpacity>
           <LanguagePicker
             label="To"
             selected={targetLang}
             onSelect={(lang) => { setTargetLang(lang); trackRecentLang(lang.code); }}
             recentCodes={recentLangCodes}
+            colors={colors}
           />
         </View>
 
         {/* Error banner */}
         {errorMessage ? (
           <TouchableOpacity
-            style={styles.errorBanner}
+            style={[styles.errorBanner, { backgroundColor: colors.errorBg, borderColor: colors.errorBorder }]}
             onPress={() => setErrorMessage("")}
             accessibilityRole="alert"
             accessibilityLabel={`Error: ${errorMessage}. Tap to dismiss.`}
           >
-            <Text style={styles.errorText}>{errorMessage}</Text>
-            <Text style={styles.errorDismiss} importantForAccessibility="no">✕</Text>
+            <Text style={[styles.errorText, { color: colors.errorText }]}>{errorMessage}</Text>
+            <Text style={[styles.errorDismiss, { color: colors.errorBorder }]} importantForAccessibility="no">✕</Text>
           </TouchableOpacity>
         ) : null}
 
@@ -651,9 +656,9 @@ export default function App() {
               <View>
                 <View style={styles.searchRow}>
                   <TextInput
-                    style={styles.searchInput}
+                    style={[styles.searchInput, { backgroundColor: colors.bubbleBg, color: colors.primaryText, borderColor: colors.border }]}
                     placeholder="Search translations..."
-                    placeholderTextColor="#555577"
+                    placeholderTextColor={colors.placeholderText}
                     value={searchQuery}
                     onChangeText={setSearchQuery}
                     accessibilityLabel="Search translation history"
@@ -666,12 +671,12 @@ export default function App() {
                       accessibilityRole="button"
                       accessibilityLabel="Clear search"
                     >
-                      <Text style={styles.searchClearText}>✕</Text>
+                      <Text style={[styles.searchClearText, { color: colors.mutedText }]}>✕</Text>
                     </TouchableOpacity>
                   ) : null}
                   {hasFavorites ? (
                     <TouchableOpacity
-                      style={[styles.favFilterButton, showFavoritesOnly && styles.favFilterButtonActive]}
+                      style={[styles.favFilterButton, { backgroundColor: colors.bubbleBg, borderColor: colors.border }, showFavoritesOnly && styles.favFilterButtonActive]}
                       onPress={() => setShowFavoritesOnly((v) => !v)}
                       accessibilityRole="button"
                       accessibilityLabel={showFavoritesOnly ? "Show all translations" : "Show favorites only"}
@@ -695,15 +700,15 @@ export default function App() {
             <SwipeableRow onDelete={() => deleteHistoryItem(realIndex)}>
             {conversationMode && item.speaker ? (
               <View style={[styles.chatRow, isB && styles.chatRowRight]}>
-                <View style={[styles.chatBubble, isB ? styles.chatBubbleB : styles.chatBubbleA]}>
-                  <Text style={styles.chatSpeakerLabel}>
+                <View style={[styles.chatBubble, isB ? [styles.chatBubbleB, { backgroundColor: colors.translatedBubbleBg }] : [styles.chatBubbleA, { backgroundColor: colors.bubbleBg }]]}>
+                  <Text style={[styles.chatSpeakerLabel, { color: colors.primary }]}>
                     {isB ? targetLang.name : sourceLang.name}
                   </Text>
                   <TouchableOpacity onPress={() => copyToClipboard(item.original)}>
-                    <Text style={[styles.chatOriginal, dynamicFontSizes.chatText]}>{item.original}</Text>
+                    <Text style={[styles.chatOriginal, { color: colors.secondaryText }, dynamicFontSizes.chatText]}>{item.original}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => copyToClipboard(item.translated)}>
-                    <Text style={[styles.chatTranslated, dynamicFontSizes.chatText]}>{item.translated}</Text>
+                    <Text style={[styles.chatTranslated, { color: colors.translatedText }, dynamicFontSizes.chatText]}>{item.translated}</Text>
                   </TouchableOpacity>
                   {copiedText === item.original || copiedText === item.translated ? (
                     <Text style={styles.copiedBadge}>Copied!</Text>
@@ -725,7 +730,7 @@ export default function App() {
                       accessibilityRole="button"
                       accessibilityLabel={item.favorited ? "Remove from favorites" : "Add to favorites"}
                     >
-                      <Text style={[styles.favoriteIcon, item.favorited && styles.favoriteIconActive]}>
+                      <Text style={[styles.favoriteIcon, { color: colors.dimText }, item.favorited && styles.favoriteIconActive]}>
                         {item.favorited ? "★" : "☆"}
                       </Text>
                     </TouchableOpacity>
@@ -736,22 +741,22 @@ export default function App() {
               <View style={styles.historyItem}>
                 <TouchableOpacity
                   onPress={() => copyToClipboard(item.original)}
-                  style={styles.bubble}
+                  style={[styles.bubble, { backgroundColor: colors.bubbleBg }]}
                   accessibilityRole="button"
                   accessibilityLabel={`Original: ${item.original}. Tap to copy.`}
                 >
-                  <Text style={[styles.originalText, dynamicFontSizes.original]}>{item.original}</Text>
+                  <Text style={[styles.originalText, { color: colors.secondaryText }, dynamicFontSizes.original]}>{item.original}</Text>
                   {copiedText === item.original && (
                     <Text style={styles.copiedBadge}>Copied!</Text>
                   )}
                 </TouchableOpacity>
-                <View style={[styles.bubble, styles.translatedBubble]}>
+                <View style={[styles.bubble, styles.translatedBubble, { backgroundColor: colors.translatedBubbleBg, borderLeftColor: colors.primary }]}>
                   <TouchableOpacity
                     onPress={() => copyToClipboard(item.translated)}
                     accessibilityRole="button"
                     accessibilityLabel={`Translation: ${item.translated}. Tap to copy.`}
                   >
-                    <Text style={[styles.translatedTextHistory, dynamicFontSizes.translated]}>
+                    <Text style={[styles.translatedTextHistory, { color: colors.translatedText }, dynamicFontSizes.translated]}>
                       {item.translated}
                     </Text>
                     {copiedText === item.translated && (
@@ -775,7 +780,7 @@ export default function App() {
                       accessibilityRole="button"
                       accessibilityLabel={item.favorited ? "Remove from favorites" : "Add to favorites"}
                     >
-                      <Text style={[styles.favoriteIcon, item.favorited && styles.favoriteIconActive]}>
+                      <Text style={[styles.favoriteIcon, { color: colors.dimText }, item.favorited && styles.favoriteIconActive]}>
                         {item.favorited ? "★" : "☆"}
                       </Text>
                     </TouchableOpacity>
@@ -790,25 +795,25 @@ export default function App() {
             liveText ? (
               <View style={styles.liveSection}>
                 <View style={styles.liveDivider}>
-                  <View style={styles.dividerLine} />
+                  <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
                   <Text style={styles.liveLabel}>
                     {isListening ? "● LIVE" : "PROCESSING"}
                   </Text>
-                  <View style={styles.dividerLine} />
+                  <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
                 </View>
 
-                <View style={[styles.bubble, styles.liveBubble]}>
-                  <Text style={[styles.liveOriginalText, dynamicFontSizes.liveOriginal]}>{liveText}</Text>
+                <View style={[styles.bubble, styles.liveBubble, { backgroundColor: colors.liveBubbleBg, borderColor: colors.border }]}>
+                  <Text style={[styles.liveOriginalText, { color: colors.liveOriginalText }, dynamicFontSizes.liveOriginal]}>{liveText}</Text>
                 </View>
 
                 {translatedText ? (
-                  <View style={[styles.bubble, styles.liveTranslatedBubble]}>
+                  <View style={[styles.bubble, styles.liveTranslatedBubble, { backgroundColor: colors.liveTranslatedBubbleBg, borderColor: colors.border, borderLeftColor: colors.primary }]}>
                     <TouchableOpacity
                       onPress={() => copyToClipboard(translatedText)}
                       accessibilityRole="button"
                       accessibilityLabel={`Live translation: ${translatedText}. Tap to copy.`}
                     >
-                      <Text style={[styles.liveTranslatedText, dynamicFontSizes.liveTranslated]}>
+                      <Text style={[styles.liveTranslatedText, { color: colors.liveTranslatedText }, dynamicFontSizes.liveTranslated]}>
                         {translatedText}
                       </Text>
                       {copiedText === translatedText && (
@@ -827,12 +832,12 @@ export default function App() {
                     </TouchableOpacity>
                   </View>
                 ) : isTranslating ? (
-                  <View style={[styles.bubble, styles.liveTranslatedBubble]}
+                  <View style={[styles.bubble, styles.liveTranslatedBubble, { backgroundColor: colors.liveTranslatedBubbleBg, borderColor: colors.border, borderLeftColor: colors.primary }]}
                     accessibilityLabel="Translation loading"
                     accessibilityRole="progressbar"
                   >
-                    <Animated.View style={[styles.skeletonLine, styles.skeletonLong, { opacity: skeletonAnim }]} />
-                    <Animated.View style={[styles.skeletonLine, styles.skeletonShort, { opacity: skeletonAnim }]} />
+                    <Animated.View style={[styles.skeletonLine, styles.skeletonLong, { opacity: skeletonAnim, backgroundColor: colors.skeleton }]} />
+                    <Animated.View style={[styles.skeletonLine, styles.skeletonShort, { opacity: skeletonAnim, backgroundColor: colors.skeleton }]} />
                   </View>
                 ) : null}
               </View>
@@ -842,8 +847,8 @@ export default function App() {
             !isListening && !liveText ? (
               <View style={styles.emptyState}>
                 <Text style={styles.emptyIcon}>🎙️</Text>
-                <Text style={styles.emptyTitle}>Tap to start translating</Text>
-                <Text style={styles.emptySubtitle}>
+                <Text style={[styles.emptyTitle, { color: colors.titleText }]}>Tap to start translating</Text>
+                <Text style={[styles.emptySubtitle, { color: colors.dimText }]}>
                   Speak naturally and see translations appear in real time
                 </Text>
               </View>
@@ -861,7 +866,7 @@ export default function App() {
                 accessibilityRole="button"
                 accessibilityLabel="Clear translation history"
               >
-                <Text style={styles.clearText}>Clear</Text>
+                <Text style={[styles.clearText, { color: colors.dimText }]}>Clear</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.clearButton}
@@ -869,7 +874,7 @@ export default function App() {
                 accessibilityRole="button"
                 accessibilityLabel="Share translation history"
               >
-                <Text style={styles.shareText}>Share</Text>
+                <Text style={[styles.shareText, { color: colors.primary }]}>Share</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -892,7 +897,7 @@ export default function App() {
                     <Text style={styles.micIcon} importantForAccessibility="no">🎙️</Text>
                   </TouchableOpacity>
                 </View>
-                <Text style={styles.convoLabel}>{sourceLang.name}</Text>
+                <Text style={[styles.convoLabel, { color: colors.mutedText }]}>{sourceLang.name}</Text>
               </View>
               <View style={styles.convoMicCol}>
                 <View style={styles.micButtonWrapper}>
@@ -910,7 +915,7 @@ export default function App() {
                     <Text style={styles.micIcon} importantForAccessibility="no">🎙️</Text>
                   </TouchableOpacity>
                 </View>
-                <Text style={styles.convoLabel}>{targetLang.name}</Text>
+                <Text style={[styles.convoLabel, { color: colors.mutedText }]}>{targetLang.name}</Text>
               </View>
             </View>
           ) : (
@@ -955,9 +960,9 @@ export default function App() {
           {!isListening && (
             <View style={styles.textInputRow}>
               <TextInput
-                style={styles.textInput}
+                style={[styles.textInput, { backgroundColor: colors.bubbleBg, color: colors.primaryText, borderColor: colors.border }]}
                 placeholder="Or type to translate..."
-                placeholderTextColor="#555577"
+                placeholderTextColor={colors.placeholderText}
                 value={typedText}
                 onChangeText={setTypedText}
                 onSubmitEditing={submitTypedText}
@@ -986,7 +991,6 @@ export default function App() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#0f0f23",
   },
   container: {
     flex: 1,
@@ -1000,7 +1004,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   title: {
-    color: "#ffffff",
     fontSize: 28,
     fontWeight: "800",
     textAlign: "center",
@@ -1011,13 +1014,11 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   settingsIcon: {
-    color: "#8888aa",
     fontSize: 22,
   },
   modeToggle: {
     position: "absolute",
     right: 0,
-    backgroundColor: "#252547",
     borderRadius: 12,
     paddingVertical: 6,
     paddingHorizontal: 12,
@@ -1026,7 +1027,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#6c63ff",
   },
   modeToggleText: {
-    color: "#8888aa",
     fontSize: 12,
     fontWeight: "700",
   },
@@ -1040,7 +1040,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   swapButton: {
-    backgroundColor: "#252547",
     borderRadius: 12,
     width: 44,
     height: 44,
@@ -1049,12 +1048,10 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   swapIcon: {
-    color: "#6c63ff",
     fontSize: 20,
     fontWeight: "700",
   },
   errorBanner: {
-    backgroundColor: "#3d1a1a",
     borderRadius: 12,
     padding: 12,
     marginBottom: 12,
@@ -1062,15 +1059,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     borderWidth: 1,
-    borderColor: "#ff4757",
   },
   errorText: {
-    color: "#ff6b7a",
     fontSize: 14,
     flex: 1,
   },
   errorDismiss: {
-    color: "#ff4757",
     fontSize: 16,
     marginLeft: 12,
     fontWeight: "700",
@@ -1090,21 +1084,17 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
     borderRadius: 16,
     paddingVertical: 8,
     paddingHorizontal: 14,
-    color: "#ffffff",
     fontSize: 14,
     borderWidth: 1,
-    borderColor: "#333355",
   },
   searchClear: {
     marginLeft: 8,
     padding: 4,
   },
   searchClearText: {
-    color: "#8888aa",
     fontSize: 16,
     fontWeight: "700",
   },
@@ -1112,15 +1102,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   bubble: {
-    backgroundColor: "#1a1a2e",
     borderRadius: 16,
     padding: 14,
     marginBottom: 6,
   },
   translatedBubble: {
-    backgroundColor: "#1e1e40",
     borderLeftWidth: 3,
-    borderLeftColor: "#6c63ff",
   },
   copiedBadge: {
     color: "#4ade80",
@@ -1129,12 +1116,10 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   originalText: {
-    color: "#ccccdd",
     fontSize: 16,
     lineHeight: 22,
   },
   translatedTextHistory: {
-    color: "#a8a4ff",
     fontSize: 16,
     lineHeight: 22,
     fontWeight: "500",
@@ -1151,7 +1136,6 @@ const styles = StyleSheet.create({
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: "#333355",
   },
   liveLabel: {
     color: "#ff4757",
@@ -1160,24 +1144,17 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   liveBubble: {
-    backgroundColor: "#1a1a35",
     borderWidth: 1,
-    borderColor: "#333355",
   },
   liveOriginalText: {
-    color: "#eeeeff",
     fontSize: 18,
     lineHeight: 26,
   },
   liveTranslatedBubble: {
-    backgroundColor: "#1a1a40",
     borderLeftWidth: 3,
-    borderLeftColor: "#6c63ff",
     borderWidth: 1,
-    borderColor: "#333366",
   },
   liveTranslatedText: {
-    color: "#b8b4ff",
     fontSize: 20,
     lineHeight: 28,
     fontWeight: "600",
@@ -1185,7 +1162,6 @@ const styles = StyleSheet.create({
   skeletonLine: {
     height: 14,
     borderRadius: 7,
-    backgroundColor: "#333366",
     marginBottom: 8,
   },
   skeletonLong: {
@@ -1206,13 +1182,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   emptyTitle: {
-    color: "#ffffff",
     fontSize: 22,
     fontWeight: "700",
     marginBottom: 8,
   },
   emptySubtitle: {
-    color: "#666688",
     fontSize: 15,
     textAlign: "center",
     lineHeight: 22,
@@ -1231,12 +1205,10 @@ const styles = StyleSheet.create({
   clearButton: {
   },
   clearText: {
-    color: "#555577",
     fontSize: 14,
     fontWeight: "600",
   },
   shareText: {
-    color: "#6c63ff",
     fontSize: 14,
     fontWeight: "600",
   },
@@ -1297,14 +1269,11 @@ const styles = StyleSheet.create({
   },
   textInput: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
     borderRadius: 20,
     paddingVertical: 10,
     paddingHorizontal: 16,
-    color: "#ffffff",
     fontSize: 15,
     borderWidth: 1,
-    borderColor: "#333355",
   },
   sendButton: {
     width: 40,
@@ -1332,15 +1301,12 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   chatBubbleA: {
-    backgroundColor: "#1a1a2e",
     borderBottomLeftRadius: 4,
   },
   chatBubbleB: {
-    backgroundColor: "#1e1e40",
     borderBottomRightRadius: 4,
   },
   chatSpeakerLabel: {
-    color: "#6c63ff",
     fontSize: 11,
     fontWeight: "700",
     marginBottom: 4,
@@ -1348,12 +1314,10 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   chatOriginal: {
-    color: "#ccccdd",
     fontSize: 15,
     lineHeight: 21,
   },
   chatTranslated: {
-    color: "#a8a4ff",
     fontSize: 15,
     lineHeight: 21,
     fontWeight: "500",
@@ -1369,7 +1333,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   convoLabel: {
-    color: "#8888aa",
     fontSize: 12,
     fontWeight: "600",
   },
@@ -1399,7 +1362,6 @@ const styles = StyleSheet.create({
   },
   favoriteIcon: {
     fontSize: 18,
-    color: "#555577",
   },
   favoriteIconActive: {
     color: "#ffd700",
@@ -1408,9 +1370,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     padding: 6,
     borderRadius: 12,
-    backgroundColor: "#1a1a2e",
     borderWidth: 1,
-    borderColor: "#333355",
   },
   favFilterButtonActive: {
     backgroundColor: "#2a2a4a",

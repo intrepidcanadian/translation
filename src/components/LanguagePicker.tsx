@@ -9,6 +9,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { Language, LANGUAGES, AUTO_DETECT_LANGUAGE } from "../services/translation";
+import { type ThemeColors } from "../theme";
 
 interface Props {
   label: string;
@@ -16,6 +17,7 @@ interface Props {
   onSelect: (lang: Language) => void;
   showAutoDetect?: boolean;
   recentCodes?: string[];
+  colors?: ThemeColors;
 }
 
 type ListItem = Language | { type: "section"; title: string };
@@ -24,7 +26,7 @@ function isSectionHeader(item: ListItem): item is { type: "section"; title: stri
   return "type" in item && item.type === "section";
 }
 
-export default function LanguagePicker({ label, selected, onSelect, showAutoDetect, recentCodes = [] }: Props) {
+export default function LanguagePicker({ label, selected, onSelect, showAutoDetect, recentCodes = [], colors }: Props) {
   const [visible, setVisible] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -67,27 +69,29 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
     setSearch("");
   };
 
+  const c = colors;
+
   return (
     <View style={styles.container}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, c && { color: c.mutedText }]}>{label}</Text>
       <TouchableOpacity
-        style={styles.button}
+        style={[styles.button, c && { backgroundColor: c.cardBg }]}
         onPress={() => setVisible(true)}
         accessibilityRole="button"
         accessibilityLabel={`${label} language: ${selected.name}. Tap to change.`}
       >
-        <Text style={styles.buttonText}>{selected.name}</Text>
-        <Text style={styles.arrow} importantForAccessibility="no">▼</Text>
+        <Text style={[styles.buttonText, c && { color: c.primaryText }]}>{selected.name}</Text>
+        <Text style={[styles.arrow, c && { color: c.primary }]} importantForAccessibility="no">▼</Text>
       </TouchableOpacity>
 
       <Modal visible={visible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select Language</Text>
+        <View style={[styles.modalOverlay, c && { backgroundColor: c.overlayBg }]}>
+          <View style={[styles.modalContent, c && { backgroundColor: c.modalBg }]}>
+            <Text style={[styles.modalTitle, c && { color: c.titleText }]}>Select Language</Text>
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, c && { backgroundColor: c.cardBg, color: c.primaryText }]}
               placeholder="Search languages..."
-              placeholderTextColor="#555577"
+              placeholderTextColor={c ? c.placeholderText : "#555577"}
               value={search}
               onChangeText={setSearch}
               autoCorrect={false}
@@ -101,13 +105,13 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
               }
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
-                <Text style={styles.noResults}>No languages found</Text>
+                <Text style={[styles.noResults, c && { color: c.dimText }]}>No languages found</Text>
               }
               renderItem={({ item }) => {
                 if (isSectionHeader(item)) {
                   return (
-                    <View style={styles.sectionHeader}>
-                      <Text style={styles.sectionHeaderText}>{item.title}</Text>
+                    <View style={[styles.sectionHeader, c && { backgroundColor: c.sectionBg }]}>
+                      <Text style={[styles.sectionHeaderText, c && { color: c.primary }]}>{item.title}</Text>
                     </View>
                   );
                 }
@@ -115,7 +119,9 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
                   <TouchableOpacity
                     style={[
                       styles.langItem,
+                      c && { borderBottomColor: c.borderLight },
                       item.code === selected.code && styles.langItemSelected,
+                      item.code === selected.code && c && { backgroundColor: c.cardBg },
                     ]}
                     onPress={() => {
                       onSelect(item);
@@ -128,23 +134,25 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
                     <Text
                       style={[
                         styles.langText,
+                        c && { color: c.secondaryText },
                         item.code === selected.code && styles.langTextSelected,
+                        item.code === selected.code && c && { color: c.primary },
                       ]}
                     >
                       {item.name}
                     </Text>
-                    <Text style={styles.langCode}>{item.code.toUpperCase()}</Text>
+                    <Text style={[styles.langCode, c && { color: c.dimText }]}>{item.code.toUpperCase()}</Text>
                   </TouchableOpacity>
                 );
               }}
             />
             <TouchableOpacity
-              style={styles.closeButton}
+              style={[styles.closeButton, c && { borderTopColor: c.borderLight }]}
               onPress={closeModal}
               accessibilityRole="button"
               accessibilityLabel="Cancel language selection"
             >
-              <Text style={styles.closeText}>Cancel</Text>
+              <Text style={[styles.closeText, c && { color: c.primary }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>

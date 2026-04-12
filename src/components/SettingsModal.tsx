@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Platform,
 } from "react-native";
 import Slider from "@react-native-community/slider";
+import { type ThemeMode, type ThemeColors, getColors } from "../theme";
 
 export type FontSizeOption = "small" | "medium" | "large" | "xlarge";
 
@@ -25,6 +26,7 @@ export interface Settings {
   autoPlayTTS: boolean;
   speechRate: number;
   fontSize: FontSizeOption;
+  theme: ThemeMode;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -32,6 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoPlayTTS: false,
   speechRate: 1.0,
   fontSize: "medium",
+  theme: "dark",
 };
 
 interface Props {
@@ -42,49 +45,103 @@ interface Props {
 }
 
 export default function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
+  const colors = useMemo(() => getColors(settings.theme), [settings.theme]);
+
   const toggle = (key: keyof Settings) => {
     onUpdate({ ...settings, [key]: !settings[key] });
   };
 
+  const dynamicStyles = useMemo(() => ({
+    overlay: { backgroundColor: colors.overlayBg },
+    content: { backgroundColor: colors.modalBg },
+    title: { color: colors.titleText },
+    rowTitle: { color: colors.primaryText },
+    rowSubtitle: { color: colors.dimText },
+    rowBorder: { borderBottomColor: colors.borderLight },
+    switchTrack: { false: colors.border, true: colors.primary },
+    sliderMax: colors.border,
+    fontSizeOption: { backgroundColor: colors.cardBg },
+    fontSizeLabel: { color: colors.mutedText },
+    infoTitle: { color: colors.mutedText },
+    infoText: { color: colors.dimText },
+    closeButton: { borderTopColor: colors.borderLight },
+    closeText: { color: colors.primary },
+    themeOption: { backgroundColor: colors.cardBg },
+    themeLabel: { color: colors.mutedText },
+  }), [colors]);
+
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.overlay}>
-        <View style={styles.content}>
-          <Text style={styles.title}>Settings</Text>
+      <View style={[styles.overlay, dynamicStyles.overlay]}>
+        <View style={[styles.content, dynamicStyles.content]}>
+          <Text style={[styles.title, dynamicStyles.title]}>Settings</Text>
 
           <ScrollView style={styles.list}>
-            <View style={styles.row}>
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
               <View style={styles.rowText}>
-                <Text style={styles.rowTitle}>Haptic Feedback</Text>
-                <Text style={styles.rowSubtitle}>Vibration on button presses</Text>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Theme</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>App color scheme</Text>
+              </View>
+            </View>
+            <View style={styles.fontSizeRow}>
+              {(["dark", "light"] as ThemeMode[]).map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[
+                    styles.fontSizeOption,
+                    dynamicStyles.themeOption,
+                    settings.theme === option && styles.fontSizeOptionActive,
+                  ]}
+                  onPress={() => onUpdate({ ...settings, theme: option })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Theme: ${option}`}
+                  accessibilityState={{ selected: settings.theme === option }}
+                >
+                  <Text
+                    style={[
+                      styles.fontSizeLabel,
+                      dynamicStyles.themeLabel,
+                      settings.theme === option && styles.fontSizeLabelActive,
+                    ]}
+                  >
+                    {option === "dark" ? "Dark" : "Light"}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Haptic Feedback</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Vibration on button presses</Text>
               </View>
               <Switch
                 value={settings.hapticsEnabled}
                 onValueChange={() => toggle("hapticsEnabled")}
-                trackColor={{ false: "#333355", true: "#6c63ff" }}
+                trackColor={dynamicStyles.switchTrack}
                 thumbColor="#ffffff"
                 accessibilityLabel="Toggle haptic feedback"
               />
             </View>
 
-            <View style={styles.row}>
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
               <View style={styles.rowText}>
-                <Text style={styles.rowTitle}>Auto-Play Translation</Text>
-                <Text style={styles.rowSubtitle}>Speak translations automatically</Text>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Auto-Play Translation</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Speak translations automatically</Text>
               </View>
               <Switch
                 value={settings.autoPlayTTS}
                 onValueChange={() => toggle("autoPlayTTS")}
-                trackColor={{ false: "#333355", true: "#6c63ff" }}
+                trackColor={dynamicStyles.switchTrack}
                 thumbColor="#ffffff"
                 accessibilityLabel="Toggle auto-play translation speech"
               />
             </View>
 
-            <View style={styles.row}>
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
               <View style={styles.rowText}>
-                <Text style={styles.rowTitle}>Speech Speed</Text>
-                <Text style={styles.rowSubtitle}>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Speech Speed</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>
                   {settings.speechRate <= 0.6 ? "Very Slow" : settings.speechRate <= 0.8 ? "Slow" : settings.speechRate <= 1.1 ? "Normal" : settings.speechRate <= 1.5 ? "Fast" : "Very Fast"} ({settings.speechRate.toFixed(1)}x)
                 </Text>
               </View>
@@ -96,16 +153,16 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
               step={0.1}
               value={settings.speechRate}
               onSlidingComplete={(value) => onUpdate({ ...settings, speechRate: Math.round(value * 10) / 10 })}
-              minimumTrackTintColor="#6c63ff"
-              maximumTrackTintColor="#333355"
+              minimumTrackTintColor={colors.primary}
+              maximumTrackTintColor={dynamicStyles.sliderMax}
               thumbTintColor="#ffffff"
               accessibilityLabel={`Speech speed: ${settings.speechRate.toFixed(1)}x`}
             />
 
-            <View style={styles.row}>
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
               <View style={styles.rowText}>
-                <Text style={styles.rowTitle}>Text Size</Text>
-                <Text style={styles.rowSubtitle}>Adjust translation bubble font size</Text>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Text Size</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Adjust translation bubble font size</Text>
               </View>
             </View>
             <View style={styles.fontSizeRow}>
@@ -114,6 +171,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                   key={option}
                   style={[
                     styles.fontSizeOption,
+                    dynamicStyles.fontSizeOption,
                     settings.fontSize === option && styles.fontSizeOptionActive,
                   ]}
                   onPress={() => onUpdate({ ...settings, fontSize: option })}
@@ -124,6 +182,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                   <Text
                     style={[
                       styles.fontSizeLabel,
+                      dynamicStyles.fontSizeLabel,
                       settings.fontSize === option && styles.fontSizeLabelActive,
                     ]}
                   >
@@ -134,19 +193,19 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
             </View>
 
             <View style={styles.infoSection}>
-              <Text style={styles.infoTitle}>About</Text>
-              <Text style={styles.infoText}>Live Translator v1.0.0</Text>
-              <Text style={styles.infoText}>Translation powered by MyMemory API</Text>
+              <Text style={[styles.infoTitle, dynamicStyles.infoTitle]}>About</Text>
+              <Text style={[styles.infoText, dynamicStyles.infoText]}>Live Translator v1.0.0</Text>
+              <Text style={[styles.infoText, dynamicStyles.infoText]}>Translation powered by MyMemory API</Text>
             </View>
           </ScrollView>
 
           <TouchableOpacity
-            style={styles.closeButton}
+            style={[styles.closeButton, dynamicStyles.closeButton]}
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="Close settings"
           >
-            <Text style={styles.closeText}>Done</Text>
+            <Text style={[styles.closeText, dynamicStyles.closeText]}>Done</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -157,18 +216,15 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
     justifyContent: "flex-end",
   },
   content: {
-    backgroundColor: "#1a1a2e",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: "70%",
     paddingTop: 20,
   },
   title: {
-    color: "#ffffff",
     fontSize: 20,
     fontWeight: "700",
     textAlign: "center",
@@ -183,19 +239,16 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#252547",
   },
   rowText: {
     flex: 1,
     marginRight: 16,
   },
   rowTitle: {
-    color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
   },
   rowSubtitle: {
-    color: "#666688",
     fontSize: 13,
     marginTop: 2,
   },
@@ -209,7 +262,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   infoTitle: {
-    color: "#8888aa",
     fontSize: 12,
     fontWeight: "700",
     textTransform: "uppercase",
@@ -217,7 +269,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   infoText: {
-    color: "#555577",
     fontSize: 14,
     marginBottom: 4,
   },
@@ -230,7 +281,6 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 10,
     borderRadius: 10,
-    backgroundColor: "#252547",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -238,7 +288,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#6c63ff",
   },
   fontSizeLabel: {
-    color: "#8888aa",
     fontSize: 15,
     fontWeight: "700",
   },
@@ -249,10 +298,8 @@ const styles = StyleSheet.create({
     padding: 18,
     alignItems: "center",
     borderTopWidth: 1,
-    borderTopColor: "#252547",
   },
   closeText: {
-    color: "#6c63ff",
     fontSize: 17,
     fontWeight: "600",
   },
