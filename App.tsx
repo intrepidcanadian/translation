@@ -42,7 +42,7 @@ import {
   AUTO_DETECT_LANGUAGE,
 } from "./src/services/translation";
 import { getColors } from "./src/theme";
-import { PHRASE_CATEGORIES, getPhrasesForCategory, type PhraseCategory, type OfflinePhrase } from "./src/services/offlinePhrases";
+import { PHRASE_CATEGORIES, getPhrasesForCategory, getPhraseOfTheDay, type PhraseCategory, type OfflinePhrase } from "./src/services/offlinePhrases";
 
 function SwipeableRow({ onDelete, children }: { onDelete: () => void; children: React.ReactNode }) {
   const translateX = useRef(new Animated.Value(0)).current;
@@ -1465,6 +1465,24 @@ export default function App() {
                 <Text style={[styles.emptySubtitle, { color: colors.dimText }]}>
                   Speak naturally and see translations appear in real time
                 </Text>
+                {(() => {
+                  const potd = getPhraseOfTheDay(targetLang.code);
+                  if (!potd) return null;
+                  const categoryInfo = PHRASE_CATEGORIES.find((c) => c.key === potd.category);
+                  return (
+                    <View style={[styles.phraseOfDay, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                      <Text style={[styles.phraseOfDayLabel, { color: colors.dimText }]}>
+                        {categoryInfo?.icon || "💬"} Phrase of the Day
+                      </Text>
+                      <Text style={[styles.phraseOfDayText, { color: colors.titleText }]}>
+                        {potd.phrase.en}
+                      </Text>
+                      <Text style={[styles.phraseOfDayTranslation, { color: colors.primaryText }]}>
+                        {potd.phrase[targetLang.code as keyof OfflinePhrase] || potd.phrase.es}
+                      </Text>
+                    </View>
+                  );
+                })()}
               </View>
             ) : null
           }
@@ -1938,6 +1956,33 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
     paddingHorizontal: 40,
+  },
+  phraseOfDay: {
+    marginTop: 24,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    width: "80%",
+  },
+  phraseOfDayLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  phraseOfDayText: {
+    fontSize: 18,
+    fontWeight: "600",
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  phraseOfDayTranslation: {
+    fontSize: 16,
+    fontStyle: "italic",
+    textAlign: "center",
   },
   controls: {
     alignItems: "center",

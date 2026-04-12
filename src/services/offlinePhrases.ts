@@ -211,6 +211,31 @@ type SupportedLang = keyof OfflinePhrase;
 const SUPPORTED_OFFLINE: SupportedLang[] = ["en", "es", "fr", "de", "it", "pt", "ja", "zh", "ko", "ar"];
 
 /**
+ * Returns a deterministic "phrase of the day" based on the current date.
+ * Same phrase is returned all day, changes each day, cycles through all phrases.
+ */
+export function getPhraseOfTheDay(targetLang: string): { phrase: OfflinePhrase; category: PhraseCategory } | null {
+  const tgtLang = targetLang as SupportedLang;
+  if (!SUPPORTED_OFFLINE.includes(tgtLang) && targetLang !== "autodetect") return null;
+
+  const now = new Date();
+  const dayIndex = Math.floor(now.getTime() / 86400000); // days since epoch
+  const index = dayIndex % ALL_PHRASES.length;
+  const phrase = ALL_PHRASES[index];
+
+  // Find which category this phrase belongs to
+  let category: PhraseCategory = "basic";
+  for (const [cat, phrases] of Object.entries(CATEGORIZED_PHRASES)) {
+    if (phrases.includes(phrase)) {
+      category = cat as PhraseCategory;
+      break;
+    }
+  }
+
+  return { phrase, category };
+}
+
+/**
  * Attempt to translate text using the built-in offline phrase dictionary.
  * Returns null if no match is found (caller should fall back to online).
  * Matching is case-insensitive and ignores trailing punctuation.
