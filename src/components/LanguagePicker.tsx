@@ -15,9 +15,16 @@ interface Props {
   selected: Language;
   onSelect: (lang: Language) => void;
   showAutoDetect?: boolean;
+  recentCodes?: string[];
 }
 
-export default function LanguagePicker({ label, selected, onSelect, showAutoDetect }: Props) {
+type ListItem = Language | { type: "section"; title: string };
+
+function isSectionHeader(item: ListItem): item is { type: "section"; title: string } {
+  return "type" in item && item.type === "section";
+}
+
+export default function LanguagePicker({ label, selected, onSelect, showAutoDetect, recentCodes = [] }: Props) {
   const [visible, setVisible] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -25,15 +32,35 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
     return showAutoDetect ? [AUTO_DETECT_LANGUAGE, ...LANGUAGES] : LANGUAGES;
   }, [showAutoDetect]);
 
-  const filteredLanguages = useMemo(() => {
+  const listData = useMemo((): ListItem[] => {
     const q = search.trim().toLowerCase();
-    if (!q) return allLanguages;
-    return allLanguages.filter(
-      (lang) =>
-        lang.name.toLowerCase().includes(q) ||
-        lang.code.toLowerCase().includes(q)
-    );
-  }, [search, allLanguages]);
+
+    if (q) {
+      // When searching, show flat filtered list (no sections)
+      return allLanguages.filter(
+        (lang) =>
+          lang.name.toLowerCase().includes(q) ||
+          lang.code.toLowerCase().includes(q)
+      );
+    }
+
+    // Build recent languages list from codes, excluding auto-detect
+    const recentLangs = recentCodes
+      .map((code) => allLanguages.find((l) => l.code === code))
+      .filter((l): l is Language => l != null && l.code !== "autodetect");
+
+    if (recentLangs.length === 0) return allLanguages;
+
+    const recentCodesSet = new Set(recentLangs.map((l) => l.code));
+    const rest = allLanguages.filter((l) => !recentCodesSet.has(l.code));
+
+    return [
+      { type: "section", title: "Recent" },
+      ...recentLangs,
+      { type: "section", title: "All Languages" },
+      ...rest,
+    ];
+  }, [search, allLanguages, recentCodes]);
 
   const closeModal = () => {
     setVisible(false);
@@ -68,37 +95,48 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
               accessibilityLabel="Search languages"
             />
             <FlatList
-              data={filteredLanguages}
-              keyExtractor={(item) => item.code}
+              data={listData}
+              keyExtractor={(item, index) =>
+                isSectionHeader(item) ? `section-${item.title}` : item.code
+              }
               keyboardShouldPersistTaps="handled"
               ListEmptyComponent={
                 <Text style={styles.noResults}>No languages found</Text>
               }
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.langItem,
-                    item.code === selected.code && styles.langItemSelected,
-                  ]}
-                  onPress={() => {
-                    onSelect(item);
-                    closeModal();
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${item.name}`}
-                  accessibilityState={{ selected: item.code === selected.code }}
-                >
-                  <Text
+              renderItem={({ item }) => {
+                if (isSectionHeader(item)) {
+                  return (
+                    <View style={styles.sectionHeader}>
+                      <Text style={styles.sectionHeaderText}>{item.title}</Text>
+                    </View>
+                  );
+                }
+                return (
+                  <TouchableOpacity
                     style={[
-                      styles.langText,
-                      item.code === selected.code && styles.langTextSelected,
+                      styles.langItem,
+                      item.code === selected.code && styles.langItemSelected,
                     ]}
+                    onPress={() => {
+                      onSelect(item);
+                      closeModal();
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${item.name}`}
+                    accessibilityState={{ selected: item.code === selected.code }}
                   >
-                    {item.name}
-                  </Text>
-                  <Text style={styles.langCode}>{item.code.toUpperCase()}</Text>
-                </TouchableOpacity>
-              )}
+                    <Text
+                      style={[
+                        styles.langText,
+                        item.code === selected.code && styles.langTextSelected,
+                      ]}
+                    >
+                      {item.name}
+                    </Text>
+                    <Text style={styles.langCode}>{item.code.toUpperCase()}</Text>
+                  </TouchableOpacity>
+                );
+              }}
             />
             <TouchableOpacity
               style={styles.closeButton}
@@ -198,6 +236,18 @@ const styles = StyleSheet.create({
     color: "#555577",
     fontSize: 13,
     fontWeight: "600",
+  },
+  sectionHeader: {
+    paddingVertical: 8,
+    paddingHorizontal: 24,
+    backgroundColor: "#151530",
+  },
+  sectionHeaderText: {
+    color: "#6c63ff",
+    fontSize: 12,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
   },
   noResults: {
     color: "#555577",

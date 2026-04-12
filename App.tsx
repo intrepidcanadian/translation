@@ -149,8 +149,10 @@ export default function App() {
   const [speakingText, setSpeakingText] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
+  const [recentLangCodes, setRecentLangCodes] = useState<string[]>([]);
   const HISTORY_KEY = "translation_history";
   const SETTINGS_KEY = "app_settings";
+  const RECENT_LANGS_KEY = "recent_languages";
 
   // Pulse animation for mic button
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -227,6 +229,22 @@ export default function App() {
           setSettings((prev) => ({ ...prev, ...JSON.parse(stored) }));
         } catch {}
       }
+    });
+    AsyncStorage.getItem(RECENT_LANGS_KEY).then((stored) => {
+      if (stored) {
+        try {
+          setRecentLangCodes(JSON.parse(stored));
+        } catch {}
+      }
+    });
+  }, []);
+
+  const trackRecentLang = useCallback((code: string) => {
+    if (code === "autodetect") return;
+    setRecentLangCodes((prev) => {
+      const updated = [code, ...prev.filter((c) => c !== code)].slice(0, 5);
+      AsyncStorage.setItem(RECENT_LANGS_KEY, JSON.stringify(updated));
+      return updated;
     });
   }, []);
 
@@ -560,8 +578,9 @@ export default function App() {
           <LanguagePicker
             label="From"
             selected={sourceLang}
-            onSelect={setSourceLang}
+            onSelect={(lang) => { setSourceLang(lang); trackRecentLang(lang.code); }}
             showAutoDetect
+            recentCodes={recentLangCodes}
           />
           <TouchableOpacity
             style={styles.swapButton}
@@ -574,7 +593,8 @@ export default function App() {
           <LanguagePicker
             label="To"
             selected={targetLang}
-            onSelect={setTargetLang}
+            onSelect={(lang) => { setTargetLang(lang); trackRecentLang(lang.code); }}
+            recentCodes={recentLangCodes}
           />
         </View>
 
