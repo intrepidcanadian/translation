@@ -137,11 +137,7 @@ function withIOSWidget(config) {
           config.buildSettings.IPHONEOS_DEPLOYMENT_TARGET = "17.0";
           config.buildSettings.CODE_SIGN_ENTITLEMENTS = `${WIDGET_TARGET_NAME}/TranslateWidgetExtension.entitlements`;
           config.buildSettings.INFOPLIST_FILE = `${WIDGET_TARGET_NAME}/Info.plist`;
-          config.buildSettings.LD_RUNPATH_SEARCH_PATHS = [
-            "$(inherited)",
-            "@executable_path/Frameworks",
-            "@executable_path/../../Frameworks",
-          ];
+          config.buildSettings.LD_RUNPATH_SEARCH_PATHS = `"$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"`;
           config.buildSettings.PRODUCT_BUNDLE_IDENTIFIER = widgetBundleId;
           config.buildSettings.TARGETED_DEVICE_FAMILY = '"1,2"';
           config.buildSettings.MARKETING_VERSION = "1.0";
