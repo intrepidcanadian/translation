@@ -51,6 +51,7 @@ import { PHRASE_CATEGORIES, getPhraseOfTheDay, type OfflinePhrase } from "./src/
 import { romanize, needsRomanization, getRomanizationName } from "./src/services/romanization";
 import SwipeableRow from "./src/components/SwipeableRow";
 import TranslationBubble from "./src/components/TranslationBubble";
+import ChatBubble from "./src/components/ChatBubble";
 import CameraTranslator from "./src/components/CameraTranslator";
 import DocumentScanner from "./src/components/DocumentScanner";
 import NotesViewer from "./src/components/NotesViewer";
@@ -65,7 +66,6 @@ import StatsModal from "./src/components/StatsModal";
 import OnboardingModal from "./src/components/OnboardingModal";
 import type { ScannerModeKey } from "./src/services/scannerModes";
 import type { HistoryItem } from "./src/types";
-import { formatRelativeTime } from "./src/utils/formatRelativeTime";
 
 export default function App() {
   return (
@@ -1236,6 +1236,76 @@ function AppContent() {
     }
   }, [typedText, sourceLang.code, targetLang.code, showError, isOffline, addToOfflineQueue, glossaryLookup, settings.translationProvider, maybeRequestReview, updateStreak, updateWidgetData]);
 
+  const renderHistoryItem = useCallback(({ item, index }: { item: HistoryItem; index: number }) => {
+    const isB = item.speaker === "B";
+    const speakLang = isB ? sourceLang.speechCode : targetLang.speechCode;
+    const realIndex = searchQuery.trim()
+      ? history.findIndex((h) => h === item)
+      : index;
+    if (selectMode) {
+      const isSelected = selectedIndices.has(realIndex);
+      return (
+        <TouchableOpacity
+          onPress={() => toggleSelectItem(realIndex)}
+          activeOpacity={0.7}
+          style={styles.selectRow}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: isSelected }}
+          accessibilityLabel={`Select translation: ${item.original}`}
+        >
+          <View style={[styles.selectCheckbox, { borderColor: colors.border }, isSelected && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
+            {isSelected && <Text style={styles.selectCheckmark}>✓</Text>}
+          </View>
+          <View style={styles.selectContent}>
+            <Text style={[{ color: colors.secondaryText, fontSize: 14 }]} numberOfLines={1}>{item.original}</Text>
+            <Text style={[{ color: colors.translatedText, fontSize: 14 }]} numberOfLines={1}>{item.translated}</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    }
+    return (
+    <SwipeableRow onDelete={() => deleteHistoryItem(realIndex)}>
+    {conversationMode && item.speaker ? (
+      <ChatBubble
+        item={item}
+        realIndex={realIndex}
+        colors={colors}
+        dynamicFontSizes={dynamicFontSizes}
+        showRomanization={settings.showRomanization}
+        fontSizeScale={FONT_SIZE_SCALES[settings.fontSize] || 1}
+        copiedText={copiedText}
+        speakingText={speakingText}
+        speakLang={speakLang}
+        sourceLangName={sourceLang.name}
+        targetLangName={targetLang.name}
+        onCopy={copyToClipboard}
+        onSpeak={speakText}
+        onToggleFavorite={toggleFavorite}
+      />
+    ) : (
+      <TranslationBubble
+        item={item}
+        realIndex={realIndex}
+        colors={colors}
+        dynamicFontSizes={dynamicFontSizes}
+        showRomanization={settings.showRomanization}
+        fontSizeScale={fontScale}
+        copiedText={copiedText}
+        speakingText={speakingText}
+        targetSpeechCode={targetLang.speechCode}
+        onCopy={copyToClipboard}
+        onSpeak={speakText}
+        onToggleFavorite={toggleFavorite}
+        onRetry={retryTranslation}
+        onCompare={compareTranslation}
+        onCorrection={setCorrectionPrompt}
+        onWordLongPress={lookupWordAlternatives}
+      />
+    )}
+    </SwipeableRow>
+    );
+  }, [conversationMode, selectMode, selectedIndices, colors, dynamicFontSizes, settings.showRomanization, settings.fontSize, fontScale, copiedText, speakingText, sourceLang, targetLang, searchQuery, history, toggleSelectItem, deleteHistoryItem, copyToClipboard, speakText, toggleFavorite, retryTranslation, compareTranslation, lookupWordAlternatives]);
+
   return (
     <>
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.safeBg }]}>
@@ -1504,7 +1574,8 @@ function AppContent() {
           style={styles.scrollArea}
           contentContainerStyle={styles.scrollContent}
           data={filteredHistory}
-          keyExtractor={(item, index) => `${index}-${item.original.slice(0, 20)}`}
+          keyExtractor={(item, index) => item.timestamp ? `${item.timestamp}-${item.original.slice(0, 10)}` : `${index}-${item.original.slice(0, 20)}`}
+          keyboardDismissMode="on-drag"
           removeClippedSubviews={Platform.OS !== "web"}
           maxToRenderPerBatch={15}
           windowSize={7}
@@ -1557,122 +1628,7 @@ function AppContent() {
               </View>
             ) : null
           }
-          renderItem={({ item, index }) => {
-            const isB = item.speaker === "B";
-            const speakLang = isB ? sourceLang.speechCode : targetLang.speechCode;
-            // Find the real index in the full history array for deletion
-            const realIndex = searchQuery.trim()
-              ? history.findIndex((h) => h === item)
-              : index;
-            if (selectMode) {
-              const isSelected = selectedIndices.has(realIndex);
-              return (
-                <TouchableOpacity
-                  onPress={() => toggleSelectItem(realIndex)}
-                  activeOpacity={0.7}
-                  style={styles.selectRow}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: isSelected }}
-                  accessibilityLabel={`Select translation: ${item.original}`}
-                >
-                  <View style={[styles.selectCheckbox, { borderColor: colors.border }, isSelected && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
-                    {isSelected && <Text style={styles.selectCheckmark}>✓</Text>}
-                  </View>
-                  <View style={styles.selectContent}>
-                    <Text style={[{ color: colors.secondaryText, fontSize: 14 }]} numberOfLines={1}>{item.original}</Text>
-                    <Text style={[{ color: colors.translatedText, fontSize: 14 }]} numberOfLines={1}>{item.translated}</Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            }
-            return (
-            <SwipeableRow onDelete={() => deleteHistoryItem(realIndex)}>
-            {conversationMode && item.speaker ? (
-              <View style={[styles.chatRow, isB && styles.chatRowRight]}>
-                <View style={[styles.chatBubble, isB ? [styles.chatBubbleB, { backgroundColor: colors.translatedBubbleBg }] : [styles.chatBubbleA, { backgroundColor: colors.bubbleBg }]]}>
-                  <Text style={[styles.chatSpeakerLabel, { color: colors.primary }]}>
-                    {isB ? targetLang.name : sourceLang.name}
-                  </Text>
-                  <TouchableOpacity onPress={() => copyToClipboard(item.original)}>
-                    <Text style={[styles.chatOriginal, { color: colors.secondaryText }, dynamicFontSizes.chatText]}>{item.original}</Text>
-                  </TouchableOpacity>
-                  {item.detectedLang && (() => {
-                    const lang = LANGUAGES.find((l) => l.code === item.detectedLang);
-                    return lang ? (
-                      <Text style={[styles.detectedLangBadge, { color: colors.primary, backgroundColor: colors.primary + "18" }]}>
-                        Detected: {lang.name}
-                      </Text>
-                    ) : null;
-                  })()}
-                  {settings.showRomanization && item.sourceLangCode && (
-                    <AlignedRomanization text={item.original} langCode={item.sourceLangCode} textColor={colors.secondaryText} romanColor={colors.mutedText} fontSize={14 * (FONT_SIZE_SCALES[settings.fontSize] || 1)} />
-                  )}
-                  <TouchableOpacity onPress={() => copyToClipboard(item.translated)}>
-                    <Text style={[styles.chatTranslated, { color: colors.translatedText }, dynamicFontSizes.chatText]}>{item.translated}</Text>
-                  </TouchableOpacity>
-                  {settings.showRomanization && item.targetLangCode && (
-                    <AlignedRomanization text={item.translated} langCode={item.targetLangCode} textColor={colors.translatedText} romanColor={colors.mutedText} fontSize={14 * (FONT_SIZE_SCALES[settings.fontSize] || 1)} />
-                  )}
-                  {copiedText === item.original || copiedText === item.translated ? (
-                    <Text style={styles.copiedBadge}>Copied!</Text>
-                  ) : null}
-                  <View style={styles.bubbleActions}>
-                    <Text style={[styles.wordCountBubble, { color: colors.dimText }]}>
-                      {item.original.trim().split(/\s+/).filter(Boolean).length} → {item.translated.trim().split(/\s+/).filter(Boolean).length} words
-                      {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
-                    </Text>
-                    {(() => {
-                      const timeStr = formatRelativeTime(item.timestamp);
-                      return timeStr ? (
-                        <Text style={[styles.timestampText, { color: colors.dimText }]}>{timeStr}</Text>
-                      ) : null;
-                    })()}
-                    <TouchableOpacity
-                      style={styles.speakButton}
-                      onPress={() => speakText(item.translated, speakLang)}
-                      accessibilityRole="button"
-                      accessibilityLabel={speakingText === item.translated ? "Stop speaking" : "Speak translation"}
-                    >
-                      <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
-                        {speakingText === item.translated ? "⏹" : "🔊"}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.favoriteButton}
-                      onPress={() => toggleFavorite(realIndex)}
-                      accessibilityRole="button"
-                      accessibilityLabel={item.favorited ? "Remove from favorites" : "Add to favorites"}
-                    >
-                      <Text style={[styles.favoriteIcon, { color: colors.dimText }, item.favorited && styles.favoriteIconActive]}>
-                        {item.favorited ? "★" : "☆"}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            ) : (
-              <TranslationBubble
-                item={item}
-                realIndex={realIndex}
-                colors={colors}
-                dynamicFontSizes={dynamicFontSizes}
-                showRomanization={settings.showRomanization}
-                fontSizeScale={fontScale}
-                copiedText={copiedText}
-                speakingText={speakingText}
-                targetSpeechCode={targetLang.speechCode}
-                onCopy={copyToClipboard}
-                onSpeak={speakText}
-                onToggleFavorite={toggleFavorite}
-                onRetry={retryTranslation}
-                onCompare={compareTranslation}
-                onCorrection={setCorrectionPrompt}
-                onWordLongPress={lookupWordAlternatives}
-              />
-            )}
-            </SwipeableRow>
-            );
-          }}
+          renderItem={renderHistoryItem}
           ListFooterComponent={
             liveText ? (
               <View style={styles.liveSection}>
@@ -2432,41 +2388,6 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 18,
     fontWeight: "700",
-  },
-  chatRow: {
-    marginBottom: 12,
-    alignItems: "flex-start",
-  },
-  chatRowRight: {
-    alignItems: "flex-end",
-  },
-  chatBubble: {
-    maxWidth: "80%",
-    borderRadius: 16,
-    padding: 12,
-  },
-  chatBubbleA: {
-    borderBottomLeftRadius: 4,
-  },
-  chatBubbleB: {
-    borderBottomRightRadius: 4,
-  },
-  chatSpeakerLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  chatOriginal: {
-    fontSize: 15,
-    lineHeight: 21,
-  },
-  chatTranslated: {
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: "500",
-    marginTop: 4,
   },
   convoControls: {
     flexDirection: "row",
