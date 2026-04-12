@@ -173,6 +173,7 @@ export default function App() {
   const undoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showPhrasebook, setShowPhrasebook] = useState(false);
+  const [showStats, setShowStats] = useState(false);
   const [phraseCategory, setPhraseCategory] = useState<PhraseCategory>("basic");
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [recentLangCodes, setRecentLangCodes] = useState<string[]>([]);
@@ -972,6 +973,14 @@ export default function App() {
             >
               <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>📖</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => setShowStats(true)}
+              accessibilityRole="button"
+              accessibilityLabel="View translation statistics"
+            >
+              <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>📊</Text>
+            </TouchableOpacity>
           </View>
           <Text style={[styles.title, isLandscape && styles.titleLandscape, { color: colors.titleText }]}>Live Translator</Text>
           <TouchableOpacity
@@ -1098,6 +1107,148 @@ export default function App() {
                 onPress={() => setShowPhrasebook(false)}
                 accessibilityRole="button"
                 accessibilityLabel="Close phrasebook"
+              >
+                <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Statistics modal */}
+        <Modal visible={showStats} animationType="slide" transparent>
+          <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+            <View style={[styles.statsContent, { backgroundColor: colors.modalBg }]}>
+              <Text style={[styles.compareTitle, { color: colors.titleText }]}>Translation Statistics</Text>
+              {(() => {
+                const validHistory = history.filter((h) => !h.pending && !h.error);
+                const totalTranslations = validHistory.length;
+                const totalFavorites = validHistory.filter((h) => h.favorited).length;
+                const totalSourceWords = validHistory.reduce(
+                  (sum, h) => sum + h.original.trim().split(/\s+/).filter(Boolean).length, 0
+                );
+                const totalTranslatedWords = validHistory.reduce(
+                  (sum, h) => sum + h.translated.trim().split(/\s+/).filter(Boolean).length, 0
+                );
+                const confidenceItems = validHistory.filter((h) => h.confidence != null);
+                const avgConfidence = confidenceItems.length > 0
+                  ? confidenceItems.reduce((sum, h) => sum + (h.confidence ?? 0), 0) / confidenceItems.length
+                  : null;
+
+                // Most used language pairs
+                const pairCounts: Record<string, number> = {};
+                for (const h of validHistory) {
+                  if (h.sourceLangCode && h.targetLangCode) {
+                    const key = `${h.sourceLangCode}→${h.targetLangCode}`;
+                    pairCounts[key] = (pairCounts[key] || 0) + 1;
+                  }
+                }
+                const topPairs = Object.entries(pairCounts)
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 5)
+                  .map(([pair, count]) => {
+                    const [src, tgt] = pair.split("→");
+                    const srcName = LANGUAGES.find((l) => l.code === src)?.name || src;
+                    const tgtName = LANGUAGES.find((l) => l.code === tgt)?.name || tgt;
+                    return { label: `${srcName} → ${tgtName}`, count };
+                  });
+
+                // Most used target languages
+                const targetCounts: Record<string, number> = {};
+                for (const h of validHistory) {
+                  if (h.targetLangCode) {
+                    targetCounts[h.targetLangCode] = (targetCounts[h.targetLangCode] || 0) + 1;
+                  }
+                }
+                const topTargets = Object.entries(targetCounts)
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 3)
+                  .map(([code, count]) => ({
+                    label: LANGUAGES.find((l) => l.code === code)?.name || code,
+                    count,
+                  }));
+
+                return (
+                  <FlatList
+                    data={[{ key: "stats" }]}
+                    renderItem={() => (
+                      <View>
+                        {/* Summary cards */}
+                        <View style={styles.statsGrid}>
+                          <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
+                            <Text style={[styles.statNumber, { color: colors.primary }]}>{totalTranslations}</Text>
+                            <Text style={[styles.statLabel, { color: colors.mutedText }]}>Translations</Text>
+                          </View>
+                          <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
+                            <Text style={[styles.statNumber, { color: colors.primary }]}>{totalFavorites}</Text>
+                            <Text style={[styles.statLabel, { color: colors.mutedText }]}>Favorites</Text>
+                          </View>
+                          <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
+                            <Text style={[styles.statNumber, { color: colors.primary }]}>{totalSourceWords}</Text>
+                            <Text style={[styles.statLabel, { color: colors.mutedText }]}>Words In</Text>
+                          </View>
+                          <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
+                            <Text style={[styles.statNumber, { color: colors.primary }]}>{totalTranslatedWords}</Text>
+                            <Text style={[styles.statLabel, { color: colors.mutedText }]}>Words Out</Text>
+                          </View>
+                        </View>
+
+                        {avgConfidence != null && (
+                          <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
+                            <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Avg. Confidence</Text>
+                            <View style={styles.confidenceBarOuter}>
+                              <View style={[styles.confidenceBarInner, { width: `${Math.round(avgConfidence * 100)}%`, backgroundColor: colors.primary }]} />
+                            </View>
+                            <Text style={[styles.confidencePercent, { color: colors.primary }]}>{Math.round(avgConfidence * 100)}%</Text>
+                          </View>
+                        )}
+
+                        {topPairs.length > 0 && (
+                          <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
+                            <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Top Language Pairs</Text>
+                            {topPairs.map((p, i) => (
+                              <View key={i} style={styles.statsRow}>
+                                <Text style={[styles.statsRowLabel, { color: colors.primaryText }]}>{p.label}</Text>
+                                <View style={[styles.statsCountBadge, { backgroundColor: colors.primary + "22" }]}>
+                                  <Text style={[styles.statsCountText, { color: colors.primary }]}>{p.count}</Text>
+                                </View>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+
+                        {topTargets.length > 0 && (
+                          <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
+                            <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Most Translated To</Text>
+                            {topTargets.map((t, i) => (
+                              <View key={i} style={styles.statsRow}>
+                                <Text style={[styles.statsRowLabel, { color: colors.primaryText }]}>{t.label}</Text>
+                                <View style={[styles.statsCountBadge, { backgroundColor: colors.primary + "22" }]}>
+                                  <Text style={[styles.statsCountText, { color: colors.primary }]}>{t.count}</Text>
+                                </View>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+
+                        {totalTranslations === 0 && (
+                          <View style={styles.statsEmptyState}>
+                            <Text style={[{ color: colors.mutedText, fontSize: 40, marginBottom: 12 }]}>📭</Text>
+                            <Text style={[{ color: colors.mutedText, fontSize: 15, textAlign: "center" as const }]}>
+                              No translations yet.{"\n"}Start translating to see your stats!
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    )}
+                    keyExtractor={(item) => item.key}
+                  />
+                );
+              })()}
+              <TouchableOpacity
+                style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
+                onPress={() => setShowStats(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close statistics"
               >
                 <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
               </TouchableOpacity>
@@ -2392,6 +2543,86 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   // Phrasebook modal
+  statsContent: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "80%",
+    paddingTop: 20,
+    paddingHorizontal: 20,
+  },
+  statsGrid: {
+    flexDirection: "row" as const,
+    flexWrap: "wrap" as const,
+    gap: 10,
+    marginBottom: 16,
+  },
+  statCard: {
+    borderRadius: 14,
+    padding: 14,
+    alignItems: "center" as const,
+    width: "47%" as any,
+    flexGrow: 1,
+  },
+  statNumber: {
+    fontSize: 28,
+    fontWeight: "800" as const,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    marginTop: 4,
+  },
+  statsSection: {
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+  },
+  statsSectionTitle: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+    textTransform: "uppercase" as const,
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  statsRow: {
+    flexDirection: "row" as const,
+    justifyContent: "space-between" as const,
+    alignItems: "center" as const,
+    paddingVertical: 6,
+  },
+  statsRowLabel: {
+    fontSize: 14,
+    flex: 1,
+  },
+  statsCountBadge: {
+    borderRadius: 10,
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+  },
+  statsCountText: {
+    fontSize: 13,
+    fontWeight: "700" as const,
+  },
+  confidenceBarOuter: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(108,99,255,0.15)",
+    overflow: "hidden" as const,
+    marginBottom: 6,
+  },
+  confidenceBarInner: {
+    height: 8,
+    borderRadius: 4,
+  },
+  confidencePercent: {
+    fontSize: 14,
+    fontWeight: "700" as const,
+    textAlign: "right" as const,
+  },
+  statsEmptyState: {
+    alignItems: "center" as const,
+    paddingVertical: 40,
+  },
   phrasebookContent: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
