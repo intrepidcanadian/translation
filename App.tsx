@@ -50,6 +50,7 @@ import { getColors } from "./src/theme";
 import { PHRASE_CATEGORIES, getPhrasesForCategory, getPhraseOfTheDay, type PhraseCategory, type OfflinePhrase } from "./src/services/offlinePhrases";
 import { romanize, needsRomanization, getRomanizationName } from "./src/services/romanization";
 import CameraTranslator from "./src/components/CameraTranslator";
+import DocumentScanner from "./src/components/DocumentScanner";
 import AlignedRomanization from "./src/components/AlignedRomanization";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 
@@ -261,6 +262,7 @@ function AppContent() {
   >([]);
   const [showGlossary, setShowGlossary] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
+  const [showDocScanner, setShowDocScanner] = useState(false);
   const [glossarySource, setGlossarySource] = useState("");
   const [glossaryTarget, setGlossaryTarget] = useState("");
 
@@ -382,6 +384,7 @@ function AppContent() {
       { id: "translate_paste", title: "Paste & Translate", subtitle: "Translate from clipboard", icon: Platform.OS === "ios" ? "symbol:doc.on.clipboard" : undefined },
       { id: "phrasebook", title: "Phrasebook", subtitle: "Browse common phrases", icon: Platform.OS === "ios" ? "symbol:book.fill" : undefined },
       { id: "camera_translate", title: "Camera Translate", subtitle: "Translate text with camera", icon: Platform.OS === "ios" ? "symbol:camera.viewfinder" : undefined },
+      { id: "document_scan", title: "Document Intelligence", subtitle: "Scan and analyze documents", icon: Platform.OS === "ios" ? "symbol:doc.text.magnifyingglass" : undefined },
     ]);
 
     const sub = QuickActions.addListener((action) => {
@@ -424,6 +427,9 @@ function AppContent() {
           break;
         case "camera_translate":
           setShowCamera(true);
+          break;
+        case "document_scan":
+          setShowDocScanner(true);
           break;
       }
     }, 500);
@@ -1296,6 +1302,14 @@ function AppContent() {
             >
               <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>📷</Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => setShowDocScanner(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Open document intelligence scanner"
+            >
+              <Text style={[styles.settingsIcon, { color: colors.mutedText }]}>📄</Text>
+            </TouchableOpacity>
           </View>
           <Text style={[styles.title, isLandscape && styles.titleLandscape, { color: colors.titleText }]}>Live Translator</Text>
           <TouchableOpacity
@@ -1907,6 +1921,7 @@ function AppContent() {
                   { icon: "⌨️", title: "Type to Translate", desc: "Prefer typing? Use the text input at the bottom to translate written text, with multi-line support." },
                   { icon: "⭐", title: "Favorites & History", desc: "Star translations to bookmark them. Swipe left to delete. Search your full history anytime." },
                   { icon: "📷", title: "Camera Translate", desc: "Point your camera at any text — signs, menus, documents — and see translations overlaid in real time." },
+                  { icon: "📄", title: "Document Intelligence", desc: "Photograph contracts, menus, or forms — get a full translation plus extracted names, dates, amounts, and key information." },
                   { icon: "⚙️", title: "Customize Everything", desc: "Adjust font size, speech speed, theme, haptics, and even switch translation providers in Settings." },
                 ];
                 const step = steps[onboardingStep];
@@ -2655,6 +2670,20 @@ function AppContent() {
           targetLangCode={targetLang.code}
           translationProvider={settings.translationProvider}
           apiKey={settings.apiKey}
+          colors={colors}
+        />
+      )}
+
+      {/* Document Intelligence Scanner - full-screen overlay */}
+      {showDocScanner && (
+        <DocumentScanner
+          visible={showDocScanner}
+          onClose={() => setShowDocScanner(false)}
+          sourceLangCode={sourceLang.code === "autodetect" ? "en" : sourceLang.code}
+          targetLangCode={targetLang.code}
+          translationProvider={settings.translationProvider}
+          apiKey={settings.apiKey}
+          hapticsEnabled={settings.hapticsEnabled}
           colors={colors}
         />
       )}

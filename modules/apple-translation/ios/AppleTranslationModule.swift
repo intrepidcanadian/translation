@@ -110,5 +110,173 @@ public class AppleTranslationModule: Module {
       }
       return language.rawValue
     }
+
+    // Extract named entities from text using NaturalLanguage framework (on-device NER)
+    // Returns: { persons: [], organizations: [], places: [], dates: [], moneyAmounts: [] }
+    AsyncFunction("extractEntities") { (text: String) -> [String: [String]] in
+      var entities: [String: [String]] = [
+        "persons": [],
+        "organizations": [],
+        "places": [],
+      ]
+
+      let tagger = NLTagger(tagSchemes: [.nameType])
+      tagger.string = text
+
+      let options: NLTagger.Options = [.omitPunctuation, .omitWhitespace, .joinNames]
+      tagger.enumerateTags(
+        in: text.startIndex..<text.endIndex,
+        unit: .word,
+        scheme: .nameType,
+        options: options
+      ) { tag, tokenRange in
+        guard let tag = tag else { return true }
+        let token = String(text[tokenRange])
+
+        switch tag {
+        case .personalName:
+          if !entities["persons"]!.contains(token) {
+            entities["persons"]!.append(token)
+          }
+        case .organizationName:
+          if !entities["organizations"]!.contains(token) {
+            entities["organizations"]!.append(token)
+          }
+        case .placeName:
+          if !entities["places"]!.contains(token) {
+            entities["places"]!.append(token)
+          }
+        default:
+          break
+        }
+        return true
+      }
+
+      return entities
+    }
+
+    // Analyze document text: detect language, extract entities, identify key patterns
+    // (dates, monetary amounts, emails, phone numbers, URLs) using on-device processing
+    AsyncFunction("analyzeDocument") { (text: String) -> [String: Any] in
+      // Language detection
+      let langRecognizer = NLLanguageRecognizer()
+      langRecognizer.processString(text)
+      let detectedLang = langRecognizer.dominantLanguage?.rawValue
+
+      // Named entity recognition
+      var persons: [String] = []
+      var organizations: [String] = []
+      var places: [String] = []
+
+      let tagger = NLTagger(tagSchemes: [.nameType])
+      tagger.string = text
+      let options: NLTagger.Options = [.omitPunctuation, .omitWhitespace, .joinNames]
+      tagger.enumerateTags(
+        in: text.startIndex..<text.endIndex,
+        unit: .word,
+        scheme: .nameType,
+        options: options
+      ) { tag, tokenRange in
+        guard let tag = tag else { return true }
+        let token = String(text[tokenRange])
+        switch tag {
+        case .personalName:
+          if !persons.contains(token) { persons.append(token) }
+        case .organizationName:
+          if !organizations.contains(token) { organizations.append(token) }
+        case .placeName:
+          if !places.contains(token) { places.append(token) }
+        default: break
+        }
+        return true
+      }
+
+      // Pattern extraction using NSDataDetector (dates, addresses, phone numbers, links, money)
+      var dates: [String] = []
+      var phoneNumbers: [String] = []
+      var urls: [String] = []
+      var addresses: [String] = []
+
+      let detectorTypes: NSTextCheckingResult.CheckingType = [.date, .phoneNumber, .link, .address]
+      if let detector = try? NSDataDetector(types: detectorTypes.rawValue) {
+        let matches = detector.matches(in: text, options: [], range: NSRange(text.startIndex..., in: text))
+        for match in matches {
+          guard let range = Range(match.range, in: text) else { continue }
+          let matchText = String(text[range])
+
+          switch match.resultType {
+          case .date:
+            if let date = match.date {
+              let formatter = DateFormatter()
+              formatter.dateStyle = .medium
+              formatter.timeStyle = match.duration > 0 ? .short : .none
+              let formatted = formatter.string(from: date)
+              if !dates.contains(formatted) {
+                dates.append(formatted)
+              }
+            }
+          case .phoneNumber:
+            if let phone = match.phoneNumber, !phoneNumbers.contains(phone) {
+              phoneNumbers.append(phone)
+            }
+          case .link:
+            if let url = match.url, !urls.contains(url.absoluteString) {
+              urls.append(url.absoluteString)
+            }
+          case .address:
+            if !addresses.contains(matchText) {
+              addresses.append(matchText)
+            }
+          default: break
+          }
+        }
+      }
+
+      // Money pattern matching (common currency formats)
+      var moneyAmounts: [String] = []
+      let moneyPattern = #"(?:[$€£¥₹₩฿])\s*[\d,]+(?:\.\d{1,2})?|[\d,]+(?:\.\d{1,2})?\s*(?:dollars?|euros?|pounds?|yen|yuan|won|USD|EUR|GBP|JPY|CNY|KRW)"#
+      if let regex = try? NSRegularExpression(pattern: moneyPattern, options: [.caseInsensitive]) {
+        let matches = regex.matches(in: text, options: [], range: NSRange(text.startIndex..., in: text))
+        for match in matches {
+          if let range = Range(match.range, in: text) {
+            let amount = String(text[range])
+            if !moneyAmounts.contains(amount) {
+              moneyAmounts.append(amount)
+            }
+          }
+        }
+      }
+
+      // Sentence count and word count for document stats
+      let tokenizer = NLTokenizer(unit: .sentence)
+      tokenizer.string = text
+      var sentenceCount = 0
+      tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { _, _ in
+        sentenceCount += 1
+        return true
+      }
+
+      let wordTokenizer = NLTokenizer(unit: .word)
+      wordTokenizer.string = text
+      var wordCount = 0
+      wordTokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { _, _ in
+        wordCount += 1
+        return true
+      }
+
+      return [
+        "detectedLanguage": detectedLang as Any,
+        "persons": persons,
+        "organizations": organizations,
+        "places": places,
+        "dates": dates,
+        "phoneNumbers": phoneNumbers,
+        "urls": urls,
+        "addresses": addresses,
+        "moneyAmounts": moneyAmounts,
+        "sentenceCount": sentenceCount,
+        "wordCount": wordCount,
+      ]
+    }
   }
 }

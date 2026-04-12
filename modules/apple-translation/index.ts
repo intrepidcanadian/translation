@@ -1,5 +1,19 @@
 import { requireNativeModule, Platform } from "expo-modules-core";
 
+export interface DocumentAnalysis {
+  detectedLanguage: string | null;
+  persons: string[];
+  organizations: string[];
+  places: string[];
+  dates: string[];
+  phoneNumbers: string[];
+  urls: string[];
+  addresses: string[];
+  moneyAmounts: string[];
+  sentenceCount: number;
+  wordCount: number;
+}
+
 interface AppleTranslationModuleType {
   translate(text: string, sourceLanguage: string, targetLanguage: string): Promise<string>;
   translateBatch(texts: string[], sourceLanguage: string, targetLanguage: string): Promise<string[]>;
@@ -7,6 +21,8 @@ interface AppleTranslationModuleType {
   getSupportedLanguages(): Promise<string[]>;
   downloadLanguage(languageCode: string): Promise<void>;
   detectLanguage(text: string): Promise<string | null>;
+  extractEntities(text: string): Promise<{ persons: string[]; organizations: string[]; places: string[] }>;
+  analyzeDocument(text: string): Promise<DocumentAnalysis>;
 }
 
 const isIOS = Platform.OS === "ios";
@@ -68,4 +84,34 @@ export async function detectLanguage(text: string): Promise<string | null> {
   } catch {
     return null;
   }
+}
+
+export async function extractEntities(
+  text: string
+): Promise<{ persons: string[]; organizations: string[]; places: string[] }> {
+  if (!isIOS) return { persons: [], organizations: [], places: [] };
+  try {
+    return await getModule().extractEntities(text);
+  } catch {
+    return { persons: [], organizations: [], places: [] };
+  }
+}
+
+export async function analyzeDocument(text: string): Promise<DocumentAnalysis> {
+  if (!isIOS) {
+    return {
+      detectedLanguage: null,
+      persons: [],
+      organizations: [],
+      places: [],
+      dates: [],
+      phoneNumbers: [],
+      urls: [],
+      addresses: [],
+      moneyAmounts: [],
+      sentenceCount: 0,
+      wordCount: 0,
+    };
+  }
+  return getModule().analyzeDocument(text);
 }
