@@ -135,8 +135,9 @@ export default function App() {
 
   // History of completed translations
   const [history, setHistory] = useState<
-    Array<{ original: string; translated: string; speaker?: "A" | "B" }>
+    Array<{ original: string; translated: string; speaker?: "A" | "B"; favorited?: boolean }>
   >([]);
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
   const listRef = useRef<FlatList>(null);
   const translationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -485,6 +486,15 @@ export default function App() {
     setHistory((prev) => prev.filter((_, i) => i !== index));
   }, [settings.hapticsEnabled]);
 
+  const toggleFavorite = useCallback((index: number) => {
+    if (settings.hapticsEnabled) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setHistory((prev) =>
+      prev.map((item, i) =>
+        i === index ? { ...item, favorited: !item.favorited } : item
+      )
+    );
+  }, [settings.hapticsEnabled]);
+
   const shareHistory = useCallback(async () => {
     if (history.length === 0) return;
     const lines = history.map(
@@ -500,14 +510,22 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredHistory = useMemo(() => {
-    if (!searchQuery.trim()) return history;
-    const q = searchQuery.toLowerCase();
-    return history.filter(
-      (item) =>
-        item.original.toLowerCase().includes(q) ||
-        item.translated.toLowerCase().includes(q)
-    );
-  }, [history, searchQuery]);
+    let filtered = history;
+    if (showFavoritesOnly) {
+      filtered = filtered.filter((item) => item.favorited);
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (item) =>
+          item.original.toLowerCase().includes(q) ||
+          item.translated.toLowerCase().includes(q)
+      );
+    }
+    return filtered;
+  }, [history, searchQuery, showFavoritesOnly]);
+
+  const hasFavorites = useMemo(() => history.some((item) => item.favorited), [history]);
 
   const submitTypedText = useCallback(async () => {
     const text = typedText.trim();
@@ -621,26 +639,39 @@ export default function App() {
           keyExtractor={(item, index) => `${index}-${item.original.slice(0, 20)}`}
           ListHeaderComponent={
             history.length > 2 && !isListening ? (
-              <View style={styles.searchRow}>
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search translations..."
-                  placeholderTextColor="#555577"
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  accessibilityLabel="Search translation history"
-                  returnKeyType="search"
-                />
-                {searchQuery ? (
-                  <TouchableOpacity
-                    style={styles.searchClear}
-                    onPress={() => setSearchQuery("")}
-                    accessibilityRole="button"
-                    accessibilityLabel="Clear search"
-                  >
-                    <Text style={styles.searchClearText}>✕</Text>
-                  </TouchableOpacity>
-                ) : null}
+              <View>
+                <View style={styles.searchRow}>
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Search translations..."
+                    placeholderTextColor="#555577"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    accessibilityLabel="Search translation history"
+                    returnKeyType="search"
+                  />
+                  {searchQuery ? (
+                    <TouchableOpacity
+                      style={styles.searchClear}
+                      onPress={() => setSearchQuery("")}
+                      accessibilityRole="button"
+                      accessibilityLabel="Clear search"
+                    >
+                      <Text style={styles.searchClearText}>✕</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  {hasFavorites ? (
+                    <TouchableOpacity
+                      style={[styles.favFilterButton, showFavoritesOnly && styles.favFilterButtonActive]}
+                      onPress={() => setShowFavoritesOnly((v) => !v)}
+                      accessibilityRole="button"
+                      accessibilityLabel={showFavoritesOnly ? "Show all translations" : "Show favorites only"}
+                      accessibilityState={{ selected: showFavoritesOnly }}
+                    >
+                      <Text style={styles.favFilterIcon}>{showFavoritesOnly ? "★" : "☆"}</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               </View>
             ) : null
           }
@@ -668,16 +699,28 @@ export default function App() {
                   {copiedText === item.original || copiedText === item.translated ? (
                     <Text style={styles.copiedBadge}>Copied!</Text>
                   ) : null}
-                  <TouchableOpacity
-                    style={styles.speakButton}
-                    onPress={() => speakText(item.translated, speakLang)}
-                    accessibilityRole="button"
-                    accessibilityLabel={speakingText === item.translated ? "Stop speaking" : "Speak translation"}
-                  >
-                    <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
-                      {speakingText === item.translated ? "⏹" : "🔊"}
-                    </Text>
-                  </TouchableOpacity>
+                  <View style={styles.bubbleActions}>
+                    <TouchableOpacity
+                      style={styles.speakButton}
+                      onPress={() => speakText(item.translated, speakLang)}
+                      accessibilityRole="button"
+                      accessibilityLabel={speakingText === item.translated ? "Stop speaking" : "Speak translation"}
+                    >
+                      <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
+                        {speakingText === item.translated ? "⏹" : "🔊"}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.favoriteButton}
+                      onPress={() => toggleFavorite(realIndex)}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.favorited ? "Remove from favorites" : "Add to favorites"}
+                    >
+                      <Text style={[styles.favoriteIcon, item.favorited && styles.favoriteIconActive]}>
+                        {item.favorited ? "★" : "☆"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             ) : (
@@ -706,16 +749,28 @@ export default function App() {
                       <Text style={styles.copiedBadge}>Copied!</Text>
                     )}
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.speakButton}
-                    onPress={() => speakText(item.translated, targetLang.speechCode)}
-                    accessibilityRole="button"
-                    accessibilityLabel={speakingText === item.translated ? "Stop speaking" : `Speak translation: ${item.translated}`}
-                  >
-                    <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
-                      {speakingText === item.translated ? "⏹" : "🔊"}
-                    </Text>
-                  </TouchableOpacity>
+                  <View style={styles.bubbleActions}>
+                    <TouchableOpacity
+                      style={styles.speakButton}
+                      onPress={() => speakText(item.translated, targetLang.speechCode)}
+                      accessibilityRole="button"
+                      accessibilityLabel={speakingText === item.translated ? "Stop speaking" : `Speak translation: ${item.translated}`}
+                    >
+                      <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
+                        {speakingText === item.translated ? "⏹" : "🔊"}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.favoriteButton}
+                      onPress={() => toggleFavorite(realIndex)}
+                      accessibilityRole="button"
+                      accessibilityLabel={item.favorited ? "Remove from favorites" : "Add to favorites"}
+                    >
+                      <Text style={[styles.favoriteIcon, item.favorited && styles.favoriteIconActive]}>
+                        {item.favorited ? "★" : "☆"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
               </View>
             )}
@@ -1314,9 +1369,14 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
   },
-  speakButton: {
+  bubbleActions: {
+    flexDirection: "row",
     alignSelf: "flex-end",
+    alignItems: "center",
     marginTop: 6,
+    gap: 12,
+  },
+  speakButton: {
     padding: 4,
   },
   speakIcon: {
@@ -1324,5 +1384,31 @@ const styles = StyleSheet.create({
   },
   speakIconActive: {
     opacity: 0.6,
+  },
+  favoriteButton: {
+    padding: 4,
+  },
+  favoriteIcon: {
+    fontSize: 18,
+    color: "#555577",
+  },
+  favoriteIconActive: {
+    color: "#ffd700",
+  },
+  favFilterButton: {
+    marginLeft: 8,
+    padding: 6,
+    borderRadius: 12,
+    backgroundColor: "#1a1a2e",
+    borderWidth: 1,
+    borderColor: "#333355",
+  },
+  favFilterButtonActive: {
+    backgroundColor: "#2a2a4a",
+    borderColor: "#ffd700",
+  },
+  favFilterIcon: {
+    fontSize: 18,
+    color: "#ffd700",
   },
 });
