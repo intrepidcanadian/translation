@@ -15,12 +15,13 @@ import { loadNotes, deleteNote, updateNoteTitle, clearAllNotes, type SavedNote }
 import { getScannerMode } from "../services/scannerModes";
 import * as Clipboard from "expo-clipboard";
 import { notifySuccess, notifyWarning } from "../services/haptics";
+import type { ThemeColors } from "../theme";
 
 interface NotesViewerProps {
   visible: boolean;
   onClose: () => void;
   hapticsEnabled?: boolean;
-  colors: any;
+  colors: ThemeColors;
   refreshKey?: number; // increment to trigger reload
 }
 
@@ -102,7 +103,7 @@ export default function NotesViewer({
   const handleShare = useCallback(async (note: SavedNote) => {
     try {
       await Share.share({ message: note.formattedNote });
-    } catch {}
+    } catch (err) { console.warn("Note share failed:", err); }
   }, []);
 
   const handleCopy = useCallback(async (text: string, id: string) => {

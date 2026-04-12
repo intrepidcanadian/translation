@@ -159,7 +159,7 @@ async function loadIndex(): Promise<NoteIndex[]> {
       indexCache = JSON.parse(content);
       return indexCache!;
     }
-  } catch {}
+  } catch (err) { console.warn("Failed to load notes index:", err); }
   return rebuildIndex();
 }
 
@@ -176,7 +176,7 @@ async function rebuildIndex(): Promise<NoteIndex[]> {
           const content = await item.text();
           const note = markdownToNote(content, item.name);
           if (note) entries.push(noteToIndex(note));
-        } catch {}
+        } catch (err) { console.warn("Failed to parse note:", item.name, err); }
       }
     }
 
@@ -220,7 +220,7 @@ export async function loadNotes(): Promise<SavedNote[]> {
           notes.push(note);
         }
       }
-    } catch {}
+    } catch (err) { console.warn("Failed to load note:", err); }
   }
 
   return notes;
@@ -267,7 +267,7 @@ export async function deleteNote(id: string): Promise<void> {
   try {
     const file = getNoteFile(id);
     if (file.exists) file.delete();
-  } catch {}
+  } catch (err) { console.warn("Failed to delete note file:", id, err); }
 
   noteCache.delete(id);
 
@@ -298,7 +298,7 @@ export async function clearAllNotes(): Promise<void> {
   try {
     const dir = getNotesDir();
     if (dir.exists) dir.delete();
-  } catch {}
+  } catch (err) { console.warn("Failed to clear notes directory:", err); }
   noteCache.clear();
   indexCache = null;
   ensureDir();

@@ -8,6 +8,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { LANGUAGES } from "../services/translation";
+import type { ThemeColors } from "../theme";
 
 interface HistoryItem {
   original: string;
@@ -26,7 +27,7 @@ interface StatsModalProps {
   onClose: () => void;
   history: HistoryItem[];
   streak: { current: number; lastDate: string };
-  colors: any;
+  colors: ThemeColors;
 }
 
 export default function StatsModal({ visible, onClose, history, streak, colors }: StatsModalProps) {

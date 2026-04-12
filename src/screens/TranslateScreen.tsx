@@ -39,6 +39,7 @@ import AlignedRomanization from "../components/AlignedRomanization";
 import SwipeableRow from "../components/SwipeableRow";
 import TranslationBubble from "../components/TranslationBubble";
 import ChatBubble from "../components/ChatBubble";
+import ControlsPanel from "../components/ControlsPanel";
 import SplitConversation from "../components/SplitConversation";
 import ConversationPlayback from "../components/ConversationPlayback";
 import {
@@ -302,7 +303,7 @@ export default function TranslateScreen() {
             setTranslatedText(result.translatedText);
             lastTranslatedRef.current = text.trim();
             lastConfidenceRef.current = result.confidence;
-            lastDetectedLangRef.current = (result as any).detectedLanguage;
+            lastDetectedLangRef.current = result.detectedLanguage;
             updateWidgetData(text.trim(), result.translatedText, fromCode, toCode);
           }
         } catch (err) {
@@ -525,7 +526,7 @@ export default function TranslateScreen() {
       const lines = exportable.map((item, i) => `${i + 1}. ${item.original}\n   → ${item.translated}`);
       message = `Live Translator - ${exportable.length} translation(s)\n\n${lines.join("\n\n")}`;
     }
-    try { await Share.share({ message }); } catch {}
+    try { await Share.share({ message }); } catch (err) { console.warn("Share failed:", err); }
   }, [history]);
 
   const showExportPicker = useCallback(() => {
@@ -578,7 +579,7 @@ export default function TranslateScreen() {
     const items = history.filter((_, i) => selectedIndices.has(i));
     const lines = items.map((item, i) => `${i + 1}. ${item.original}\n   → ${item.translated}`);
     const text = `Live Translator - ${items.length} translation(s)\n\n${lines.join("\n\n")}`;
-    Share.share({ message: text }).catch(() => {});
+    Share.share({ message: text }).catch((err) => console.warn("Share selected failed:", err));
   }, [selectedIndices, history]);
 
   // Translate-as-you-type
@@ -629,7 +630,7 @@ export default function TranslateScreen() {
         ? { translatedText: glossaryMatch, confidence: 1.0 }
         : await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider });
       if (!controller.signal.aborted) {
-        setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, detectedLang: (result as any).detectedLanguage, timestamp: Date.now() }]);
+        setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, detectedLang: result.detectedLanguage, timestamp: Date.now() }]);
         maybeRequestReview();
         updateStreak();
         updateWidgetData(text, result.translatedText, sourceLang.code, targetLang.code);
@@ -1021,168 +1022,41 @@ export default function TranslateScreen() {
             )}
 
             {/* Bottom controls */}
-            <View style={[styles.controls, isLandscape && styles.controlsLandscape]}>
-              {history.length > 0 && !isListening && (
-                <View style={styles.historyActions}>
-                  {selectMode ? (
-                    <>
-                      <TouchableOpacity style={styles.clearButton} onPress={exitSelectMode} accessibilityRole="button" accessibilityLabel="Cancel selection">
-                        <Text style={[styles.clearText, { color: colors.dimText }]}>Cancel</Text>
-                      </TouchableOpacity>
-                      <Text style={[styles.selectCountText, { color: colors.mutedText }]}>{selectedIndices.size} selected</Text>
-                      <TouchableOpacity style={styles.clearButton} onPress={exportSelected} accessibilityRole="button" accessibilityLabel="Share selected" disabled={selectedIndices.size === 0}>
-                        <Text style={[styles.shareText, { color: selectedIndices.size > 0 ? colors.primary : colors.dimText }]}>Share</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.clearButton} onPress={deleteSelected} accessibilityRole="button" accessibilityLabel="Delete selected" disabled={selectedIndices.size === 0}>
-                        <Text style={[styles.clearText, { color: selectedIndices.size > 0 ? colors.errorText : colors.dimText }]}>Delete</Text>
-                      </TouchableOpacity>
-                    </>
-                  ) : (
-                    <>
-                      <TouchableOpacity style={styles.clearButton} onPress={clearHistory} accessibilityRole="button" accessibilityLabel="Clear translation history">
-                        <Text style={[styles.clearText, { color: colors.dimText }]}>Clear</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.clearButton} onPress={() => setSelectMode(true)} accessibilityRole="button" accessibilityLabel="Select multiple translations">
-                        <Text style={[styles.shareText, { color: colors.mutedText }]}>Select</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.clearButton} onPress={showExportPicker} accessibilityRole="button" accessibilityLabel="Share translation history">
-                        <Text style={[styles.shareText, { color: colors.primary }]}>Share</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                </View>
-              )}
-
-              {conversationMode ? (
-                <View style={styles.convoControls}>
-                  <TouchableOpacity
-                    style={[styles.splitScreenBtn, { backgroundColor: colors.cardBg, borderColor: colors.primary }]}
-                    onPress={() => {
-                      if (isListening) stopListening();
-                      setShowSplitScreen(true);
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel="Open split screen conversation mode"
-                  >
-                    <Text style={[styles.splitScreenIcon, { color: colors.primary }]}>⇅</Text>
-                    <Text style={[styles.splitScreenLabel, { color: colors.primary }]}>Face to Face</Text>
-                  </TouchableOpacity>
-                  <View style={styles.convoMicCol}>
-                    <View style={styles.micButtonWrapper}>
-                      {isListening && activeSpeakerRef.current === "A" && (
-                        <Animated.View style={[styles.pulseRing, { backgroundColor: colors.destructiveBg, transform: [{ scale: pulseAnim }], opacity: pulseOpacity }]} />
-                      )}
-                      <TouchableOpacity
-                        style={[styles.micButton, styles.micButtonSmall, { backgroundColor: colors.primary, shadowColor: colors.primary }, isListening && activeSpeakerRef.current === "A" && { backgroundColor: colors.destructiveBg, shadowColor: colors.destructiveBg }]}
-                        onPress={isListening ? stopListening : () => startListeningAs("A")}
-                        activeOpacity={0.7}
-                        disabled={isListening && activeSpeakerRef.current !== "A"}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Speak ${sourceLang.name}`}
-                      >
-                        <Text style={styles.micIcon} importantForAccessibility="no">🎙️</Text>
-                      </TouchableOpacity>
-                    </View>
-                    <Text style={[styles.convoLabel, { color: colors.mutedText }]}>{sourceLang.name}</Text>
-                  </View>
-                  <View style={styles.convoMicCol}>
-                    <View style={styles.micButtonWrapper}>
-                      {isListening && activeSpeakerRef.current === "B" && (
-                        <Animated.View style={[styles.pulseRing, { backgroundColor: colors.destructiveBg, transform: [{ scale: pulseAnim }], opacity: pulseOpacity }]} />
-                      )}
-                      <TouchableOpacity
-                        style={[styles.micButton, styles.micButtonSmall, { backgroundColor: colors.primary, shadowColor: colors.primary }, isListening && activeSpeakerRef.current === "B" && { backgroundColor: colors.destructiveBg, shadowColor: colors.destructiveBg }]}
-                        onPress={isListening ? stopListening : () => startListeningAs("B")}
-                        activeOpacity={0.7}
-                        disabled={isListening && activeSpeakerRef.current !== "B"}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Speak ${targetLang.name}`}
-                      >
-                        <Text style={styles.micIcon} importantForAccessibility="no">🎙️</Text>
-                      </TouchableOpacity>
-                    </View>
-                    <Text style={[styles.convoLabel, { color: colors.mutedText }]}>{targetLang.name}</Text>
-                  </View>
-                </View>
-              ) : (
-                <>
-                  <View style={[styles.micButtonWrapper, isLandscape && styles.micButtonWrapperLandscape]}>
-                    {isListening && (
-                      <Animated.View
-                        style={[styles.pulseRing, isLandscape && styles.pulseRingLandscape, { backgroundColor: colors.destructiveBg, transform: [{ scale: pulseAnim }], opacity: pulseOpacity }]}
-                      />
-                    )}
-                    <TouchableOpacity
-                      style={[styles.micButton, isLandscape && styles.micButtonLandscape, { backgroundColor: colors.primary, shadowColor: colors.primary }, isListening && { backgroundColor: colors.destructiveBg, shadowColor: colors.destructiveBg }]}
-                      onPress={isListening ? stopListening : startListening}
-                      activeOpacity={0.7}
-                      accessibilityRole="button"
-                      accessibilityLabel={isListening ? "Stop listening" : "Start listening"}
-                      accessibilityState={{ busy: isListening }}
-                      accessibilityHint={isListening ? "Stops speech recognition" : "Starts speech recognition for translation"}
-                    >
-                      <Text style={styles.micIcon} importantForAccessibility="no">{isListening ? "⏹" : "🎙️"}</Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  {isListening && (
-                    <View style={styles.listeningIndicator} accessibilityLiveRegion="polite">
-                      <Text style={[styles.listeningDot, { color: colors.destructiveBg }]} importantForAccessibility="no">●</Text>
-                      <Text style={[styles.listeningLabel, { color: colors.destructiveBg }]}>
-                        Listening...{settings.silenceTimeout > 0 ? ` (auto-stop ${settings.silenceTimeout}s)` : ""}
-                      </Text>
-                    </View>
-                  )}
-                </>
-              )}
-
-              {!isListening && (
-                <View>
-                  <View style={styles.textInputRow}>
-                    <TextInput
-                      style={[styles.textInput, { backgroundColor: colors.bubbleBg, color: colors.primaryText, borderColor: colors.border, maxHeight: 120 }]}
-                      placeholder="Or type to translate..."
-                      placeholderTextColor={colors.placeholderText}
-                      value={typedText}
-                      onChangeText={setTypedText}
-                      onSubmitEditing={submitTypedText}
-                      returnKeyType="send"
-                      editable={!isTranslating}
-                      accessibilityLabel="Type text to translate"
-                      maxLength={500}
-                      multiline
-                      textAlignVertical="top"
-                    />
-                    {typedText.trim() ? (
-                      <TouchableOpacity style={[styles.sendButton, { backgroundColor: colors.primary }]} onPress={submitTypedText} accessibilityRole="button" accessibilityLabel="Translate typed text">
-                        <Text style={[styles.sendIcon, { color: colors.destructiveText }]}>→</Text>
-                      </TouchableOpacity>
-                    ) : null}
-                  </View>
-                  {typedText.length > 0 && (
-                    <View style={styles.charCountRow}>
-                      <Text style={[styles.charCountText, { color: typedText.length >= 450 ? colors.errorText : colors.dimText }]}>
-                        {typedText.length}/500
-                      </Text>
-                      <Text style={[styles.wordCountText, { color: colors.dimText }]}>
-                        {typedText.trim().split(/\s+/).filter(Boolean).length} {typedText.trim().split(/\s+/).filter(Boolean).length === 1 ? "word" : "words"}
-                      </Text>
-                    </View>
-                  )}
-                  {typedPreview ? (
-                    <TouchableOpacity
-                      style={[styles.typedPreview, { backgroundColor: colors.translatedBubbleBg, borderLeftColor: colors.primary }]}
-                      onPress={() => copyToClipboard(typedPreview)}
-                      accessibilityLiveRegion="polite"
-                      accessibilityLabel={`Preview: ${typedPreview}. Tap to copy.`}
-                    >
-                      <Text style={[styles.typedPreviewText, { color: colors.translatedText }]}>{typedPreview}</Text>
-                      {copiedText === typedPreview && <Text style={[styles.copiedBadge, { color: colors.successText }]}>Copied!</Text>}
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-              )}
-            </View>
+            <ControlsPanel
+              colors={colors}
+              isLandscape={isLandscape}
+              isListening={isListening}
+              isTranslating={isTranslating}
+              conversationMode={conversationMode}
+              activeSpeaker={activeSpeakerRef.current}
+              history={history}
+              selectMode={selectMode}
+              selectedCount={selectedIndices.size}
+              typedText={typedText}
+              typedPreview={typedPreview}
+              copiedText={copiedText}
+              sourceLangName={sourceLang.name}
+              targetLangName={targetLang.name}
+              silenceTimeout={settings.silenceTimeout}
+              pulseAnim={pulseAnim}
+              pulseOpacity={pulseOpacity}
+              onClearHistory={clearHistory}
+              onEnterSelectMode={() => setSelectMode(true)}
+              onExitSelectMode={exitSelectMode}
+              onExportSelected={exportSelected}
+              onDeleteSelected={deleteSelected}
+              onShowExportPicker={showExportPicker}
+              onStartListening={startListening}
+              onStopListening={stopListening}
+              onStartListeningAs={startListeningAs}
+              onOpenSplitScreen={() => {
+                if (isListening) stopListening();
+                setShowSplitScreen(true);
+              }}
+              onTypedTextChange={setTypedText}
+              onSubmitTypedText={submitTypedText}
+              onCopyToClipboard={copyToClipboard}
+            />
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -1245,30 +1119,6 @@ const styles = StyleSheet.create({
   phraseOfDayLabel: { fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 },
   phraseOfDayText: { fontSize: 18, fontWeight: "600", marginBottom: 4, textAlign: "center" },
   phraseOfDayTranslation: { fontSize: 16, fontStyle: "italic", textAlign: "center" },
-  controls: { alignItems: "center", paddingBottom: Platform.OS === "android" ? 20 : 10, paddingTop: 10 },
-  historyActions: { flexDirection: "row", gap: 20, marginBottom: 12 },
-  clearButton: {},
-  clearText: { fontSize: 14, fontWeight: "600" },
-  shareText: { fontSize: 14, fontWeight: "600" },
-  micButtonWrapper: { width: 80, height: 80, alignItems: "center", justifyContent: "center" },
-  pulseRing: { position: "absolute", width: 80, height: 80, borderRadius: 40, backgroundColor: "#ff4757" },
-  micButton: { width: 80, height: 80, borderRadius: 40, backgroundColor: "#6c63ff", alignItems: "center", justifyContent: "center", shadowColor: "#6c63ff", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 12, elevation: 8 },
-  micButtonActive: { backgroundColor: "#ff4757", shadowColor: "#ff4757" },
-  micIcon: { fontSize: 32 },
-  listeningIndicator: { flexDirection: "row", alignItems: "center", marginTop: 12, gap: 6 },
-  listeningDot: { color: "#ff4757", fontSize: 10 },
-  listeningLabel: { color: "#ff4757", fontSize: 13, fontWeight: "600" },
-  textInputRow: { flexDirection: "row", alignItems: "flex-end", marginTop: 12, gap: 8, width: "100%" },
-  textInput: { flex: 1, borderRadius: 20, paddingTop: 10, paddingBottom: 10, paddingHorizontal: 16, fontSize: 15, borderWidth: 1, minHeight: 40 },
-  sendButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#6c63ff", alignItems: "center", justifyContent: "center" },
-  sendIcon: { color: "#ffffff", fontSize: 18, fontWeight: "700" },
-  convoControls: { flexDirection: "row", justifyContent: "center", alignItems: "flex-end", gap: 24 },
-  splitScreenBtn: { alignItems: "center", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5, marginBottom: 8 },
-  splitScreenIcon: { fontSize: 20, fontWeight: "700" },
-  splitScreenLabel: { fontSize: 10, fontWeight: "600", marginTop: 2 },
-  convoMicCol: { alignItems: "center", gap: 8 },
-  convoLabel: { fontSize: 12, fontWeight: "600" },
-  micButtonSmall: { width: 60, height: 60, borderRadius: 30 },
   speakButton: { padding: 4 },
   speakIcon: { fontSize: 18 },
   speakIconActive: { opacity: 0.6 },
@@ -1276,18 +1126,12 @@ const styles = StyleSheet.create({
   selectCheckbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, alignItems: "center", justifyContent: "center" },
   selectCheckmark: { color: "#ffffff", fontSize: 14, fontWeight: "700" },
   selectContent: { flex: 1, gap: 2 },
-  selectCountText: { fontSize: 13, fontWeight: "600" },
-  charCountRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16, marginTop: 4 },
-  charCountText: { fontSize: 11, fontWeight: "600" },
-  wordCountText: { fontSize: 11, fontWeight: "600" },
   undoToast: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 16, marginBottom: 8, borderWidth: 1 },
   undoToastText: { fontSize: 14, fontWeight: "500", flex: 1 },
   undoButton: { marginLeft: 12, paddingVertical: 4, paddingHorizontal: 12 },
   undoButtonText: { fontSize: 14, fontWeight: "700" },
   loadMoreButton: { alignSelf: "center", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 16, borderWidth: 1, marginBottom: 12 },
   loadMoreText: { fontSize: 13, fontWeight: "600" },
-  typedPreview: { marginTop: 8, borderRadius: 12, padding: 10, borderLeftWidth: 3 },
-  typedPreviewText: { fontSize: 14, lineHeight: 20, fontWeight: "500" },
   favFilterButton: { marginLeft: 8, padding: 6, borderRadius: 12, borderWidth: 1 },
   favFilterButtonActive: { backgroundColor: "#2a2a4a", borderColor: "#ffd700" },
   favFilterIcon: { fontSize: 18, color: "#ffd700" },
@@ -1295,8 +1139,4 @@ const styles = StyleSheet.create({
   containerLandscape: { paddingHorizontal: 40, paddingTop: 4 },
   headerRowLandscape: { marginBottom: 8 },
   titleLandscape: { fontSize: 20 },
-  controlsLandscape: { paddingBottom: 4, paddingTop: 4 },
-  micButtonWrapperLandscape: { width: 56, height: 56 },
-  micButtonLandscape: { width: 56, height: 56, borderRadius: 28 },
-  pulseRingLandscape: { width: 56, height: 56, borderRadius: 28 },
 });

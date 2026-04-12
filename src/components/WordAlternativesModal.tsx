@@ -1,5 +1,6 @@
 import React from "react";
 import { Modal, View, Text, TouchableOpacity, FlatList, StyleSheet } from "react-native";
+import type { ThemeColors } from "../theme";
 
 interface WordAlternativesModalProps {
   visible: boolean;
@@ -11,7 +12,7 @@ interface WordAlternativesModalProps {
   onClose: () => void;
   onCopy: (text: string) => void;
   copiedText: string | null;
-  colors: any;
+  colors: ThemeColors;
 }
 
 export default function WordAlternativesModal({ visible, data, onClose, onCopy, copiedText, colors }: WordAlternativesModalProps) {

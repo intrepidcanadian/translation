@@ -19,7 +19,7 @@ import {
 import TextRecognition, {
   TextRecognitionScript,
 } from "@react-native-ml-kit/text-recognition";
-import { translateText, translateAppleBatch } from "../services/translation";
+import { translateText, translateAppleBatch, type TranslationProvider } from "../services/translation";
 import {
   SCANNER_MODES,
   getScannerMode,
@@ -29,6 +29,7 @@ import {
 import { saveNote } from "../services/notes";
 import * as Clipboard from "expo-clipboard";
 import { notifySuccess, impactMedium, selection } from "../services/haptics";
+import type { ThemeColors } from "../theme";
 
 interface DocumentAnalysis {
   detectedLanguage: string | null;
@@ -49,9 +50,9 @@ interface DocumentScannerProps {
   onClose: () => void;
   sourceLangCode: string;
   targetLangCode: string;
-  translationProvider?: string;
+  translationProvider?: TranslationProvider;
   hapticsEnabled?: boolean;
-  colors: any;
+  colors: ThemeColors;
   initialMode?: ScannerModeKey;
   onNoteSaved?: () => void;
 }
@@ -185,7 +186,7 @@ export default function DocumentScanner({
 
     try {
       await Share.share({ message: sections.join("\n") });
-    } catch {}
+    } catch (err) { console.warn("Document share failed:", err); }
   }, [mode, originalText, translatedText, analysis, modeFields, selectedMode]);
 
   const captureAndAnalyze = useCallback(async () => {
@@ -252,7 +253,7 @@ export default function DocumentScanner({
           const results: string[] = [];
           for (const para of paragraphs) {
             const res = await translateText(para, srcLang, targetLangCode, {
-              provider: translationProvider as any,
+              provider: translationProvider,
               });
             results.push(res.translatedText);
           }
@@ -263,7 +264,7 @@ export default function DocumentScanner({
         for (const para of paragraphs) {
           if (!para.trim()) { results.push(""); continue; }
           const res = await translateText(para, srcLang, targetLangCode, {
-            provider: translationProvider as any,
+            provider: translationProvider,
           });
           results.push(res.translatedText);
         }
@@ -297,7 +298,7 @@ export default function DocumentScanner({
               addresses: [...new Set([...prev.addresses, ...translatedAnalysis.addresses])],
             };
           });
-        } catch {}
+        } catch (err) { console.warn("Translated text analysis failed:", err); }
       }
 
       setPhase("results");
@@ -579,7 +580,7 @@ function FieldRow({
   copiedText,
 }: {
   field: ExtractedField;
-  colors: any;
+  colors: ThemeColors;
   onCopy: (text: string) => void;
   copiedText: string | null;
 }) {
@@ -613,7 +614,7 @@ function EntityRow({
   icon: string;
   label: string;
   items: string[];
-  colors: any;
+  colors: ThemeColors;
   iconColor: string;
 }) {
   return (

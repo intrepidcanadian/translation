@@ -26,7 +26,7 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
         if (stored) {
           widgetProps = JSON.parse(stored);
         }
-      } catch {}
+      } catch (err) { console.warn("Widget data load failed:", err); }
 
       props.renderWidget(<Widget {...widgetProps} />);
       break;

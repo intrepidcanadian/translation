@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { notifySuccess } from "../services/haptics";
+import type { ThemeColors } from "../theme";
 
 interface GlossaryEntry {
   source: string;
@@ -32,7 +33,7 @@ interface GlossaryModalProps {
   sourceLangCode: string;
   targetLangCode: string;
   hapticsEnabled?: boolean;
-  colors: any;
+  colors: ThemeColors;
 }
 
 export default function GlossaryModal({
@@ -217,7 +218,7 @@ export default function GlossaryModal({
                         .join("\n");
                     try {
                       await Share.share({ message: csv });
-                    } catch {}
+                    } catch (err) { console.warn("Glossary export failed:", err); }
                   }}
                   accessibilityRole="button"
                   accessibilityLabel="Export glossary as CSV"

@@ -7,12 +7,13 @@ import {
   StyleSheet,
 } from "react-native";
 import { notifySuccess } from "../services/haptics";
+import type { ThemeColors } from "../theme";
 
 interface OnboardingModalProps {
   visible: boolean;
   onComplete: () => void;
   hapticsEnabled?: boolean;
-  colors: any;
+  colors: ThemeColors;
 }
 
 const steps = [

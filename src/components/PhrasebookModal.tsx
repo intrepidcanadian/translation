@@ -16,6 +16,7 @@ import {
   type OfflinePhrase,
 } from "../services/offlinePhrases";
 import { getLocationContext, getNearbyPhrases, type LocationContext } from "../services/locationPhrases";
+import type { ThemeColors } from "../theme";
 
 interface PhrasebookModalProps {
   visible: boolean;
@@ -25,7 +26,7 @@ interface PhrasebookModalProps {
   onCopy: (text: string) => void;
   onSpeak: (text: string, langCode: string) => void;
   hapticsEnabled?: boolean;
-  colors: any;
+  colors: ThemeColors;
 }
 
 const NEARBY_CATEGORY = { key: "nearby" as const, label: "Nearby", icon: "📍" };

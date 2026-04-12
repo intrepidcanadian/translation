@@ -22,7 +22,8 @@ import { Camera as OCRCamera } from "react-native-vision-camera-ocr-plus";
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
 import * as Clipboard from "expo-clipboard";
 import * as Speech from "expo-speech";
-import { translateText, translateAppleBatch, type TranslateOptions } from "../services/translation";
+import { translateText, translateAppleBatch, type TranslateOptions, type TranslationProvider } from "../services/translation";
+import type { ThemeColors } from "../theme";
 
 interface DetectedBlock {
   id: string;
@@ -62,8 +63,8 @@ interface CameraTranslatorProps {
   onClose: () => void;
   sourceLangCode: string;
   targetLangCode: string;
-  translationProvider?: string;
-  colors: any;
+  translationProvider?: TranslationProvider;
+  colors: ThemeColors;
 }
 
 // Map language codes to OCR plugin language options
@@ -119,7 +120,7 @@ export default function CameraTranslator({
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
-  const translateQueueRef = useRef<Array<{ text: string; frame: any }> | null>(null);
+  const translateQueueRef = useRef<Array<{ text: string; frame: { top: number; left: number; width: number; height: number } }> | null>(null);
   const isTranslatingRef = useRef(false);
   const lastOCRTextRef = useRef("");
   const [screenDims, setScreenDims] = useState(() => Dimensions.get("window"));
@@ -172,7 +173,7 @@ export default function CameraTranslator({
     abortRef.current = controller;
 
     const translateOptions: TranslateOptions = {
-      provider: translationProvider as any,
+      provider: translationProvider,
       signal: controller.signal,
     };
 
@@ -258,6 +259,7 @@ export default function CameraTranslator({
   }, [sourceLangCode, targetLangCode, translationProvider]);
 
   // Handle real-time OCR results from frame processor
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OCR plugin callback type varies by version
   const handleOCRResult = useCallback((data: any) => {
     if (isPaused || isCaptured || !isMountedRef.current) return;
 
@@ -373,7 +375,7 @@ export default function CameraTranslator({
           translations = [];
           for (const text of texts) {
             try {
-              const res = await translateText(text, sourceLangCode, targetLangCode, { provider: translationProvider as any });
+              const res = await translateText(text, sourceLangCode, targetLangCode, { provider: translationProvider });
               translations.push(res.translatedText);
             } catch {
               translations.push(text);

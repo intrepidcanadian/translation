@@ -1,5 +1,6 @@
 import React from "react";
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import type { ThemeColors } from "../theme";
 
 interface ComparisonModalProps {
   visible: boolean;
@@ -10,7 +11,7 @@ interface ComparisonModalProps {
   onClose: () => void;
   onCopy: (text: string) => void;
   copiedText: string | null;
-  colors: any;
+  colors: ThemeColors;
 }
 
 export default function ComparisonModal({ visible, data, onClose, onCopy, copiedText, colors }: ComparisonModalProps) {

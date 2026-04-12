@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Modal, View, Text, TouchableOpacity, TextInput, StyleSheet } from "react-native";
+import type { ThemeColors } from "../theme";
 
 interface CorrectionModalProps {
   visible: boolean;
@@ -10,7 +11,7 @@ interface CorrectionModalProps {
   } | null;
   onClose: () => void;
   onSubmit: (correctedText: string) => void;
-  colors: any;
+  colors: ThemeColors;
 }
 
 export default function CorrectionModal({ visible, data, onClose, onSubmit, colors }: CorrectionModalProps) {

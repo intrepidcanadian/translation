@@ -96,7 +96,7 @@ export default function NotesScreen() {
   const handleShare = useCallback(async (note: SavedNote) => {
     try {
       await Share.share({ message: note.formattedNote });
-    } catch {}
+    } catch (err) { console.warn("Note share failed:", err); }
   }, []);
 
   const handleCopy = useCallback(async (text: string, id: string) => {

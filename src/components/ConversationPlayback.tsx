@@ -187,8 +187,8 @@ export default function ConversationPlayback({
 
         const { uri } = await Print.printToFileAsync({ html });
         await Sharing.shareAsync(uri);
-      } catch {
-        // Sharing cancelled or failed silently
+      } catch (err) {
+        console.warn("Conversation export failed:", err);
       } finally {
         setExporting(false);
       }
