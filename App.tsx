@@ -137,7 +137,7 @@ export default function App() {
 
   // History of completed translations
   const [history, setHistory] = useState<
-    Array<{ original: string; translated: string; speaker?: "A" | "B"; favorited?: boolean }>
+    Array<{ original: string; translated: string; speaker?: "A" | "B"; favorited?: boolean; pending?: boolean }>
   >([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
@@ -156,6 +156,13 @@ export default function App() {
   const HISTORY_KEY = "translation_history";
   const SETTINGS_KEY = "app_settings";
   const RECENT_LANGS_KEY = "recent_languages";
+  const OFFLINE_QUEUE_KEY = "offline_translation_queue";
+
+  // Offline translation queue
+  const [offlineQueue, setOfflineQueue] = useState<
+    Array<{ text: string; sourceLang: string; targetLang: string; timestamp: number }>
+  >([]);
+  const isProcessingQueue = useRef(false);
 
   // Pulse animation for mic button
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -237,6 +244,13 @@ export default function App() {
       if (stored) {
         try {
           setRecentLangCodes(JSON.parse(stored));
+        } catch {}
+      }
+    });
+    AsyncStorage.getItem(OFFLINE_QUEUE_KEY).then((stored) => {
+      if (stored) {
+        try {
+          setOfflineQueue(JSON.parse(stored));
         } catch {}
       }
     });
@@ -544,11 +558,80 @@ export default function App() {
   const netInfo = useNetInfo();
   const isOffline = netInfo.isConnected === false;
 
+  const addToOfflineQueue = useCallback((text: string, fromCode: string, toCode: string) => {
+    const item = { text, sourceLang: fromCode, targetLang: toCode, timestamp: Date.now() };
+    setOfflineQueue((prev) => {
+      const updated = [...prev, item];
+      AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+    setHistory((prev) => [...prev, { original: text, translated: "Queued — will translate when online", pending: true }]);
+    if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  }, [settings.hapticsEnabled]);
+
+  const processOfflineQueue = useCallback(async () => {
+    if (isProcessingQueue.current) return;
+
+    // Read latest queue from state via ref-like pattern
+    let queue: typeof offlineQueue = [];
+    setOfflineQueue((prev) => { queue = prev; return prev; });
+
+    if (queue.length === 0) return;
+    isProcessingQueue.current = true;
+
+    const remaining = [...queue];
+    let processed = 0;
+
+    for (const item of queue) {
+      try {
+        const result = await translateText(item.text, item.sourceLang, item.targetLang);
+        // Replace the pending history entry with the real translation
+        setHistory((prev) => {
+          const pendingIdx = prev.findIndex(
+            (h) => h.pending && h.original === item.text
+          );
+          if (pendingIdx !== -1) {
+            const updated = [...prev];
+            updated[pendingIdx] = { original: item.text, translated: result.translatedText };
+            return updated;
+          }
+          return [...prev, { original: item.text, translated: result.translatedText }];
+        });
+        remaining.splice(remaining.indexOf(item), 1);
+        processed++;
+      } catch {
+        // Leave remaining items in queue for next attempt
+        break;
+      }
+    }
+
+    setOfflineQueue(remaining);
+    AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining));
+    isProcessingQueue.current = false;
+
+    if (processed > 0 && settings.hapticsEnabled) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, [offlineQueue, settings.hapticsEnabled]);
+
+  // Process offline queue when connectivity returns
+  useEffect(() => {
+    if (netInfo.isConnected && offlineQueue.length > 0) {
+      processOfflineQueue();
+    }
+  }, [netInfo.isConnected, offlineQueue.length, processOfflineQueue]);
+
   const submitTypedText = useCallback(async () => {
     const text = typedText.trim();
     if (!text) return;
     Keyboard.dismiss();
     setTypedText("");
+
+    // Queue if offline
+    if (isOffline) {
+      addToOfflineQueue(text, sourceLang.code, targetLang.code);
+      return;
+    }
 
     abortControllerRef.current?.abort();
     const controller = new AbortController();
@@ -572,7 +655,7 @@ export default function App() {
         setLiveText("");
       }
     }
-  }, [typedText, sourceLang.code, targetLang.code, showError]);
+  }, [typedText, sourceLang.code, targetLang.code, showError, isOffline, addToOfflineQueue]);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.safeBg }]}>
@@ -645,7 +728,7 @@ export default function App() {
           >
             <Text style={[styles.offlineIcon]}>⚡</Text>
             <Text style={[styles.offlineText, { color: colors.offlineText }]}>
-              No connection — translations unavailable
+              No connection{offlineQueue.length > 0 ? ` — ${offlineQueue.length} queued` : " — type to queue translations"}
             </Text>
           </View>
         )}
@@ -769,13 +852,19 @@ export default function App() {
                     <Text style={styles.copiedBadge}>Copied!</Text>
                   )}
                 </TouchableOpacity>
-                <View style={[styles.bubble, styles.translatedBubble, { backgroundColor: colors.translatedBubbleBg, borderLeftColor: colors.primary }]}>
+                <View style={[styles.bubble, styles.translatedBubble, { backgroundColor: colors.translatedBubbleBg, borderLeftColor: item.pending ? colors.offlineText : colors.primary }]}>
                   <TouchableOpacity
-                    onPress={() => copyToClipboard(item.translated)}
+                    onPress={() => !item.pending && copyToClipboard(item.translated)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Translation: ${item.translated}. Tap to copy.`}
+                    accessibilityLabel={item.pending ? `Queued for translation when online` : `Translation: ${item.translated}. Tap to copy.`}
+                    disabled={item.pending}
                   >
-                    <Text style={[styles.translatedTextHistory, { color: colors.translatedText }, dynamicFontSizes.translated]}>
+                    {item.pending && (
+                      <Text style={[styles.pendingBadge, { color: colors.offlineText }]}>
+                        Queued offline
+                      </Text>
+                    )}
+                    <Text style={[styles.translatedTextHistory, { color: item.pending ? colors.dimText : colors.translatedText }, dynamicFontSizes.translated, item.pending && { fontStyle: "italic" }]}>
                       {item.translated}
                     </Text>
                     {copiedText === item.translated && (
@@ -1415,5 +1504,12 @@ const styles = StyleSheet.create({
   favFilterIcon: {
     fontSize: 18,
     color: "#ffd700",
+  },
+  pendingBadge: {
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 4,
   },
 });
