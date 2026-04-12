@@ -137,7 +137,7 @@ export default function App() {
 
   // History of completed translations
   const [history, setHistory] = useState<
-    Array<{ original: string; translated: string; speaker?: "A" | "B"; favorited?: boolean; pending?: boolean }>
+    Array<{ original: string; translated: string; speaker?: "A" | "B"; favorited?: boolean; pending?: boolean; error?: boolean; sourceLangCode?: string; targetLangCode?: string }>
   >([]);
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
 
@@ -511,9 +511,41 @@ export default function App() {
     );
   }, [settings.hapticsEnabled]);
 
+  const retryTranslation = useCallback(async (index: number) => {
+    const item = history[index];
+    if (!item?.error || !item.sourceLangCode || !item.targetLangCode) return;
+
+    // Mark as retrying (remove error, show pending)
+    setHistory((prev) =>
+      prev.map((h, i) =>
+        i === index ? { ...h, error: false, pending: true, translated: "Retrying..." } : h
+      )
+    );
+
+    const controller = new AbortController();
+    try {
+      const result = await translateText(item.original, item.sourceLangCode, item.targetLangCode, controller.signal);
+      setHistory((prev) =>
+        prev.map((h, i) =>
+          i === index ? { ...h, translated: result.translatedText, pending: false, error: false, sourceLangCode: undefined, targetLangCode: undefined } : h
+        )
+      );
+      if (settings.hapticsEnabled) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Translation failed";
+      setHistory((prev) =>
+        prev.map((h, i) =>
+          i === index ? { ...h, translated: msg, pending: false, error: true } : h
+        )
+      );
+      showError(msg);
+    }
+  }, [history, settings.hapticsEnabled, showError]);
+
   const shareHistory = useCallback(async () => {
-    if (history.length === 0) return;
-    const lines = history.map(
+    const exportable = history.filter((item) => !item.error && !item.pending);
+    if (exportable.length === 0) return;
+    const lines = exportable.map(
       (item, i) => `${i + 1}. ${item.original}\n   → ${item.translated}`
     );
     const text = `Live Translator - ${history.length} translation(s)\n\n${lines.join("\n\n")}`;
@@ -648,6 +680,14 @@ export default function App() {
       if (!controller.signal.aborted) {
         const msg = err instanceof Error ? err.message : "Translation failed";
         showError(msg);
+        // Save failed translation to history with retry capability
+        setHistory((prev) => [...prev, {
+          original: text,
+          translated: msg,
+          error: true,
+          sourceLangCode: sourceLang.code,
+          targetLangCode: targetLang.code,
+        }]);
       }
     } finally {
       if (!controller.signal.aborted) {
@@ -852,19 +892,24 @@ export default function App() {
                     <Text style={styles.copiedBadge}>Copied!</Text>
                   )}
                 </TouchableOpacity>
-                <View style={[styles.bubble, styles.translatedBubble, { backgroundColor: colors.translatedBubbleBg, borderLeftColor: item.pending ? colors.offlineText : colors.primary }]}>
+                <View style={[styles.bubble, styles.translatedBubble, { backgroundColor: colors.translatedBubbleBg, borderLeftColor: item.error ? colors.errorBorder : item.pending ? colors.offlineText : colors.primary }]}>
                   <TouchableOpacity
-                    onPress={() => !item.pending && copyToClipboard(item.translated)}
+                    onPress={() => !item.pending && !item.error && copyToClipboard(item.translated)}
                     accessibilityRole="button"
-                    accessibilityLabel={item.pending ? `Queued for translation when online` : `Translation: ${item.translated}. Tap to copy.`}
-                    disabled={item.pending}
+                    accessibilityLabel={item.error ? `Translation failed: ${item.translated}` : item.pending ? `Queued for translation when online` : `Translation: ${item.translated}. Tap to copy.`}
+                    disabled={item.pending || item.error}
                   >
                     {item.pending && (
                       <Text style={[styles.pendingBadge, { color: colors.offlineText }]}>
                         Queued offline
                       </Text>
                     )}
-                    <Text style={[styles.translatedTextHistory, { color: item.pending ? colors.dimText : colors.translatedText }, dynamicFontSizes.translated, item.pending && { fontStyle: "italic" }]}>
+                    {item.error && (
+                      <Text style={[styles.pendingBadge, { color: colors.errorText }]}>
+                        Failed
+                      </Text>
+                    )}
+                    <Text style={[styles.translatedTextHistory, { color: item.error ? colors.errorText : item.pending ? colors.dimText : colors.translatedText }, dynamicFontSizes.translated, (item.pending || item.error) && { fontStyle: "italic" }]}>
                       {item.translated}
                     </Text>
                     {copiedText === item.translated && (
@@ -872,16 +917,28 @@ export default function App() {
                     )}
                   </TouchableOpacity>
                   <View style={styles.bubbleActions}>
-                    <TouchableOpacity
-                      style={styles.speakButton}
-                      onPress={() => speakText(item.translated, targetLang.speechCode)}
-                      accessibilityRole="button"
-                      accessibilityLabel={speakingText === item.translated ? "Stop speaking" : `Speak translation: ${item.translated}`}
-                    >
-                      <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
-                        {speakingText === item.translated ? "⏹" : "🔊"}
-                      </Text>
-                    </TouchableOpacity>
+                    {item.error ? (
+                      <TouchableOpacity
+                        style={styles.retryButton}
+                        onPress={() => retryTranslation(realIndex)}
+                        accessibilityRole="button"
+                        accessibilityLabel="Retry translation"
+                      >
+                        <Text style={styles.retryIcon}>↻</Text>
+                        <Text style={[styles.retryText, { color: colors.primary }]}>Retry</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.speakButton}
+                        onPress={() => speakText(item.translated, targetLang.speechCode)}
+                        accessibilityRole="button"
+                        accessibilityLabel={speakingText === item.translated ? "Stop speaking" : `Speak translation: ${item.translated}`}
+                      >
+                        <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
+                          {speakingText === item.translated ? "⏹" : "🔊"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                       style={styles.favoriteButton}
                       onPress={() => toggleFavorite(realIndex)}
@@ -1490,6 +1547,21 @@ const styles = StyleSheet.create({
   },
   favoriteIconActive: {
     color: "#ffd700",
+  },
+  retryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    padding: 4,
+  },
+  retryIcon: {
+    fontSize: 18,
+    color: "#6c63ff",
+    fontWeight: "700",
+  },
+  retryText: {
+    fontSize: 13,
+    fontWeight: "700",
   },
   favFilterButton: {
     marginLeft: 8,
