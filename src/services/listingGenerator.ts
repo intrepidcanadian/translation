@@ -21,6 +21,8 @@ export interface ListingDraft {
   category: ListingCategory;
   condition: ListingCondition;
   suggestedTags: string[];
+  price?: string;
+  currency?: string;
   translatedTitle?: string;
   translatedDescription?: string;
   targetLang?: string;
@@ -207,6 +209,9 @@ export async function translateListing(
 export function formatListingForShare(draft: ListingDraft, includeTranslation: boolean = false): string {
   const parts: string[] = [];
   parts.push(draft.title);
+  if (draft.price) {
+    parts.push(`💰 ${draft.currency || "$"}${draft.price}`);
+  }
   parts.push("─".repeat(30));
   parts.push(draft.description);
 

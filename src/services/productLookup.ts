@@ -149,3 +149,78 @@ export function getMarketplaceLinks(productName: string): Array<{ name: string; 
     { name: "Walmart", icon: "🏪", url: `https://www.walmart.com/search?q=${q}` },
   ];
 }
+
+// Generate price comparison links including eBay sold/completed listings
+export function getPriceCompLinks(productName: string): Array<{ name: string; icon: string; url: string; description: string }> {
+  const q = encodeURIComponent(productName);
+  return [
+    {
+      name: "eBay Sold",
+      icon: "✅",
+      url: `https://www.ebay.com/sch/i.html?_nkw=${q}&LH_Complete=1&LH_Sold=1&_sop=13`,
+      description: "Recently sold — best comp data",
+    },
+    {
+      name: "eBay Active",
+      icon: "🏷️",
+      url: `https://www.ebay.com/sch/i.html?_nkw=${q}&_sop=15`,
+      description: "Current listings — see asking prices",
+    },
+    {
+      name: "Amazon",
+      icon: "🛒",
+      url: `https://www.amazon.com/s?k=${q}`,
+      description: "New retail price",
+    },
+    {
+      name: "Google Shopping",
+      icon: "🔍",
+      url: `https://www.google.com/search?tbm=shop&q=${q}`,
+      description: "Compare across stores",
+    },
+  ];
+}
+
+export interface PriceCompResult {
+  query: string;
+  retailPrice?: { source: string; price: string };
+  links: Array<{ name: string; icon: string; url: string; description: string }>;
+}
+
+// Fetch price comps for a product name/brand+model
+export async function fetchPriceComps(
+  query: string,
+  signal?: AbortSignal,
+): Promise<PriceCompResult> {
+  const links = getPriceCompLinks(query);
+  const result: PriceCompResult = { query, links };
+
+  // Try UPCitemdb text search for retail price
+  try {
+    const res = await fetch(
+      `https://api.upcitemdb.com/prod/trial/search?s=${encodeURIComponent(query)}&match_mode=0&type=product`,
+      { signal },
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (data.items?.length > 0) {
+        const item = data.items[0];
+        // Find lowest offer price
+        if (item.offers?.length) {
+          const prices = item.offers
+            .filter((o: any) => o.price && parseFloat(o.price) > 0)
+            .map((o: any) => ({ source: o.merchant || o.domain || "Retailer", price: parseFloat(o.price) }))
+            .sort((a: any, b: any) => a.price - b.price);
+          if (prices.length > 0) {
+            result.retailPrice = { source: prices[0].source, price: `$${prices[0].price.toFixed(2)}` };
+          }
+        }
+      }
+    }
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    console.warn("Price comp lookup failed:", err);
+  }
+
+  return result;
+}

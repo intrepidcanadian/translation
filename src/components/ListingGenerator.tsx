@@ -18,6 +18,7 @@ import {
   type PhotoFile,
 } from "react-native-vision-camera";
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
+import { Linking } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { impactMedium, notifySuccess, impactLight } from "../services/haptics";
 import {
@@ -30,6 +31,7 @@ import {
   type ListingCondition,
   type ListingCategory,
 } from "../services/listingGenerator";
+import { fetchPriceComps, type PriceCompResult } from "../services/productLookup";
 import { translateText, type TranslationProvider } from "../services/translation";
 import type { ThemeColors } from "../theme";
 
@@ -73,6 +75,9 @@ export default function ListingGenerator({
   const [editDescription, setEditDescription] = useState("");
   const [condition, setCondition] = useState<ListingCondition>("good");
   const [category, setCategory] = useState<ListingCategory>("other");
+  const [price, setPrice] = useState("");
+  const [priceComps, setPriceComps] = useState<PriceCompResult | null>(null);
+  const [isCheckingPrice, setIsCheckingPrice] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [copiedField, setCopiedField] = useState<string | null>(null);
 
@@ -88,6 +93,9 @@ export default function ListingGenerator({
     setDraft(null);
     setEditTitle("");
     setEditDescription("");
+    setPrice("");
+    setPriceComps(null);
+    setIsCheckingPrice(false);
     setIsTranslating(false);
   }, []);
 
@@ -150,16 +158,38 @@ export default function ListingGenerator({
     }
   }, [draft, editTitle, editDescription, targetLangCode, translationProvider]);
 
+  const handlePriceCheck = useCallback(async () => {
+    if (!draft) return;
+    setIsCheckingPrice(true);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      // Build search query from brand/model/title
+      const query = editTitle || draft.title;
+      const comps = await fetchPriceComps(query, controller.signal);
+      if (!controller.signal.aborted) {
+        setPriceComps(comps);
+        impactLight();
+      }
+    } catch (err) {
+      if (!controller.signal.aborted) console.warn("Price check failed:", err);
+    } finally {
+      if (!controller.signal.aborted) setIsCheckingPrice(false);
+    }
+  }, [draft, editTitle]);
+
   const handleShare = useCallback(async () => {
     if (!draft) return;
-    const finalDraft: ListingDraft = { ...draft, title: editTitle, description: editDescription };
+    const finalDraft: ListingDraft = { ...draft, title: editTitle, description: editDescription, price: price || undefined };
     const text = formatListingForShare(finalDraft, !!draft.translatedTitle);
     try {
       await Share.share({ message: text });
     } catch (err) {
       console.warn("Listing share failed:", err);
     }
-  }, [draft, editTitle, editDescription]);
+  }, [draft, editTitle, editDescription, price]);
 
   const handleCopy = useCallback(async (text: string, field: string) => {
     await Clipboard.setStringAsync(text);
@@ -328,6 +358,67 @@ export default function ListingGenerator({
             </View>
           )}
 
+          {/* Price */}
+          <Text style={[styles.label, { color: colors.secondaryText }]}>Price</Text>
+          <View style={styles.priceRow}>
+            <View style={[styles.priceInputWrap, { backgroundColor: colors.inputBg, borderColor: colors.border }]}>
+              <Text style={[styles.priceCurrency, { color: colors.mutedText }]}>$</Text>
+              <TextInput
+                style={[styles.priceInput, { color: colors.primaryText }]}
+                value={price}
+                onChangeText={setPrice}
+                placeholder="0.00"
+                placeholderTextColor={colors.placeholderText}
+                keyboardType="decimal-pad"
+                maxLength={10}
+              />
+            </View>
+            <TouchableOpacity
+              style={[styles.priceCheckBtn, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
+              onPress={handlePriceCheck}
+              disabled={isCheckingPrice}
+            >
+              {isCheckingPrice ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Text style={[styles.priceCheckText, { color: colors.primary }]}>Price Check</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Price Comps */}
+          {priceComps && (
+            <View style={[styles.priceCompsBox, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+              {priceComps.retailPrice && (
+                <View style={styles.retailPriceRow}>
+                  <Text style={[styles.retailPriceLabel, { color: colors.mutedText }]}>
+                    Retail ({priceComps.retailPrice.source}):
+                  </Text>
+                  <Text style={[styles.retailPriceValue, { color: colors.primary }]}>
+                    {priceComps.retailPrice.price}
+                  </Text>
+                </View>
+              )}
+              <Text style={[styles.compLinksTitle, { color: colors.secondaryText }]}>
+                Check comparable prices:
+              </Text>
+              {priceComps.links.map((link) => (
+                <TouchableOpacity
+                  key={link.name}
+                  style={[styles.compLink, { borderColor: colors.border }]}
+                  onPress={() => Linking.openURL(link.url)}
+                >
+                  <Text style={styles.compLinkIcon}>{link.icon}</Text>
+                  <View style={styles.compLinkInfo}>
+                    <Text style={[styles.compLinkName, { color: colors.primaryText }]}>{link.name}</Text>
+                    <Text style={[styles.compLinkDesc, { color: colors.dimText }]}>{link.description}</Text>
+                  </View>
+                  <Text style={[styles.compLinkArrow, { color: colors.mutedText }]}>→</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
           {/* Translation */}
           {draft.translatedTitle && (
             <View style={[styles.translationBox, { backgroundColor: colors.translatedBubbleBg, borderColor: colors.border }]}>
@@ -375,7 +466,7 @@ export default function ListingGenerator({
               style={[styles.actionBtn, { backgroundColor: colors.cardBg, borderColor: colors.border, borderWidth: 1 }]}
               onPress={() => {
                 const fullText = formatListingForShare(
-                  { ...draft, title: editTitle, description: editDescription },
+                  { ...draft, title: editTitle, description: editDescription, price: price || undefined },
                   !!draft.translatedTitle
                 );
                 handleCopy(fullText, "fullListing");
@@ -469,6 +560,57 @@ const styles = StyleSheet.create({
   translationLabel: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 },
   translatedTitle: { fontSize: 16, fontWeight: "600", marginBottom: 6 },
   translatedDesc: { fontSize: 13, lineHeight: 18 },
+  priceRow: { flexDirection: "row", gap: 10, alignItems: "center" },
+  priceInputWrap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+  },
+  priceCurrency: { fontSize: 18, fontWeight: "700", marginRight: 4 },
+  priceInput: { flex: 1, fontSize: 18, fontWeight: "600", paddingVertical: 12 },
+  priceCheckBtn: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    minWidth: 110,
+  },
+  priceCheckText: { fontSize: 14, fontWeight: "700" },
+  priceCompsBox: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+    marginTop: 10,
+  },
+  retailPriceRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+    paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(128,128,128,0.3)",
+  },
+  retailPriceLabel: { fontSize: 13, fontWeight: "600" },
+  retailPriceValue: { fontSize: 18, fontWeight: "800" },
+  compLinksTitle: { fontSize: 12, fontWeight: "700", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 },
+  compLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 10,
+  },
+  compLinkIcon: { fontSize: 18 },
+  compLinkInfo: { flex: 1 },
+  compLinkName: { fontSize: 14, fontWeight: "600" },
+  compLinkDesc: { fontSize: 11, marginTop: 1 },
+  compLinkArrow: { fontSize: 16, fontWeight: "600" },
   actionsRow: { flexDirection: "row", gap: 12, marginTop: 12 },
   actionBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   actionBtnText: { fontSize: 15, fontWeight: "700" },
