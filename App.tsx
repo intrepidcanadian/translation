@@ -31,7 +31,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
 import LanguagePicker from "./src/components/LanguagePicker";
-import SettingsModal, { Settings, DEFAULT_SETTINGS } from "./src/components/SettingsModal";
+import SettingsModal, { Settings, DEFAULT_SETTINGS, FONT_SIZE_SCALES } from "./src/components/SettingsModal";
 import {
   translateText,
   Language,
@@ -527,6 +527,15 @@ export default function App() {
 
   const hasFavorites = useMemo(() => history.some((item) => item.favorited), [history]);
 
+  const fontScale = FONT_SIZE_SCALES[settings.fontSize];
+  const dynamicFontSizes = useMemo(() => ({
+    original: { fontSize: Math.round(16 * fontScale) },
+    translated: { fontSize: Math.round(16 * fontScale) },
+    liveOriginal: { fontSize: Math.round(18 * fontScale) },
+    liveTranslated: { fontSize: Math.round(20 * fontScale) },
+    chatText: { fontSize: Math.round(15 * fontScale) },
+  }), [fontScale]);
+
   const submitTypedText = useCallback(async () => {
     const text = typedText.trim();
     if (!text) return;
@@ -691,10 +700,10 @@ export default function App() {
                     {isB ? targetLang.name : sourceLang.name}
                   </Text>
                   <TouchableOpacity onPress={() => copyToClipboard(item.original)}>
-                    <Text style={styles.chatOriginal}>{item.original}</Text>
+                    <Text style={[styles.chatOriginal, dynamicFontSizes.chatText]}>{item.original}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => copyToClipboard(item.translated)}>
-                    <Text style={styles.chatTranslated}>{item.translated}</Text>
+                    <Text style={[styles.chatTranslated, dynamicFontSizes.chatText]}>{item.translated}</Text>
                   </TouchableOpacity>
                   {copiedText === item.original || copiedText === item.translated ? (
                     <Text style={styles.copiedBadge}>Copied!</Text>
@@ -731,7 +740,7 @@ export default function App() {
                   accessibilityRole="button"
                   accessibilityLabel={`Original: ${item.original}. Tap to copy.`}
                 >
-                  <Text style={styles.originalText}>{item.original}</Text>
+                  <Text style={[styles.originalText, dynamicFontSizes.original]}>{item.original}</Text>
                   {copiedText === item.original && (
                     <Text style={styles.copiedBadge}>Copied!</Text>
                   )}
@@ -742,7 +751,7 @@ export default function App() {
                     accessibilityRole="button"
                     accessibilityLabel={`Translation: ${item.translated}. Tap to copy.`}
                   >
-                    <Text style={styles.translatedTextHistory}>
+                    <Text style={[styles.translatedTextHistory, dynamicFontSizes.translated]}>
                       {item.translated}
                     </Text>
                     {copiedText === item.translated && (
@@ -789,7 +798,7 @@ export default function App() {
                 </View>
 
                 <View style={[styles.bubble, styles.liveBubble]}>
-                  <Text style={styles.liveOriginalText}>{liveText}</Text>
+                  <Text style={[styles.liveOriginalText, dynamicFontSizes.liveOriginal]}>{liveText}</Text>
                 </View>
 
                 {translatedText ? (
@@ -799,7 +808,7 @@ export default function App() {
                       accessibilityRole="button"
                       accessibilityLabel={`Live translation: ${translatedText}. Tap to copy.`}
                     >
-                      <Text style={styles.liveTranslatedText}>
+                      <Text style={[styles.liveTranslatedText, dynamicFontSizes.liveTranslated]}>
                         {translatedText}
                       </Text>
                       {copiedText === translatedText && (

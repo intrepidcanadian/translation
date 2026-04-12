@@ -11,16 +11,27 @@ import {
 } from "react-native";
 import Slider from "@react-native-community/slider";
 
+export type FontSizeOption = "small" | "medium" | "large" | "xlarge";
+
+export const FONT_SIZE_SCALES: Record<FontSizeOption, number> = {
+  small: 0.85,
+  medium: 1.0,
+  large: 1.2,
+  xlarge: 1.4,
+};
+
 export interface Settings {
   hapticsEnabled: boolean;
   autoPlayTTS: boolean;
   speechRate: number;
+  fontSize: FontSizeOption;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   hapticsEnabled: true,
   autoPlayTTS: false,
   speechRate: 1.0,
+  fontSize: "medium",
 };
 
 interface Props {
@@ -90,6 +101,37 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
               thumbTintColor="#ffffff"
               accessibilityLabel={`Speech speed: ${settings.speechRate.toFixed(1)}x`}
             />
+
+            <View style={styles.row}>
+              <View style={styles.rowText}>
+                <Text style={styles.rowTitle}>Text Size</Text>
+                <Text style={styles.rowSubtitle}>Adjust translation bubble font size</Text>
+              </View>
+            </View>
+            <View style={styles.fontSizeRow}>
+              {(["small", "medium", "large", "xlarge"] as FontSizeOption[]).map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[
+                    styles.fontSizeOption,
+                    settings.fontSize === option && styles.fontSizeOptionActive,
+                  ]}
+                  onPress={() => onUpdate({ ...settings, fontSize: option })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Text size: ${option === "xlarge" ? "extra large" : option}`}
+                  accessibilityState={{ selected: settings.fontSize === option }}
+                >
+                  <Text
+                    style={[
+                      styles.fontSizeLabel,
+                      settings.fontSize === option && styles.fontSizeLabelActive,
+                    ]}
+                  >
+                    {option === "small" ? "S" : option === "medium" ? "M" : option === "large" ? "L" : "XL"}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
 
             <View style={styles.infoSection}>
               <Text style={styles.infoTitle}>About</Text>
@@ -178,6 +220,30 @@ const styles = StyleSheet.create({
     color: "#555577",
     fontSize: 14,
     marginBottom: 4,
+  },
+  fontSizeRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 8,
+  },
+  fontSizeOption: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#252547",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fontSizeOptionActive: {
+    backgroundColor: "#6c63ff",
+  },
+  fontSizeLabel: {
+    color: "#8888aa",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  fontSizeLabelActive: {
+    color: "#ffffff",
   },
   closeButton: {
     padding: 18,
