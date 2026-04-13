@@ -33,7 +33,7 @@ export default class ErrorBoundary extends Component<Props, State> {
       componentStack: info.componentStack?.slice(0, 500),
       timestamp: Date.now(),
     };
-    AsyncStorage.setItem(LAST_CRASH_KEY, JSON.stringify(crashReport)).catch(() => {});
+    AsyncStorage.setItem(LAST_CRASH_KEY, JSON.stringify(crashReport)).catch((err) => logger.warn("Storage", "Failed to persist crash report", err));
 
     this.setState((prev) => ({ crashCount: prev.crashCount + 1 }));
   }

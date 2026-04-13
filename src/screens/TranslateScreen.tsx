@@ -259,7 +259,11 @@ export default function TranslateScreen() {
       } catch (err: unknown) {
         if (!(err instanceof DOMException && err.name === "AbortError")) {
           logger.warn("Translation", "Type-ahead translation failed", err);
-          if (!controller.signal.aborted) setTypedPreview("");
+          if (!controller.signal.aborted) {
+            setTypedPreview("");
+            const msg = err instanceof Error ? err.message : "Translation preview failed";
+            showError(msg);
+          }
         }
       }
     }, 500);
@@ -267,7 +271,7 @@ export default function TranslateScreen() {
       if (typedTranslateTimer.current) clearTimeout(typedTranslateTimer.current);
       typedAbortRef.current?.abort();
     };
-  }, [typedText, sourceLang.code, targetLang.code, settings.translationProvider, glossaryLookup, isListening]);
+  }, [typedText, sourceLang.code, targetLang.code, settings.translationProvider, glossaryLookup, isListening, showError]);
 
   const submitTypedText = useCallback(async () => {
     const text = typedText.trim();

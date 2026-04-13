@@ -32,7 +32,10 @@ interface UPCItem {
 }
 
 function safeParseJSON(response: Response): Promise<Record<string, unknown>> {
-  return response.json().catch(() => ({}));
+  return response.json().catch((err) => {
+    logger.warn("Product", "Failed to parse JSON response", err);
+    return {};
+  });
 }
 
 // Runtime type guards for external API responses

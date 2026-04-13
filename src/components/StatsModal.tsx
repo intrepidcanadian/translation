@@ -301,7 +301,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 14,
     alignItems: "center" as const,
-    width: "47%" as any,
+    width: "47%" as const,
     flexGrow: 1,
   },
   statNumber: {

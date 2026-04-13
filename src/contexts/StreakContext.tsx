@@ -27,7 +27,9 @@ export function StreakProvider({ children }: { children: React.ReactNode }) {
           try {
             const data = JSON.parse(val) as Streak;
             setStreak(data);
-          } catch {}
+          } catch (err) {
+            logger.warn("Storage", "Failed to parse streak JSON", err);
+          }
         }
         loaded.current = true;
       })

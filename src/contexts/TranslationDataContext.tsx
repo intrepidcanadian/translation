@@ -40,7 +40,9 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
             allHistoryRef.current = data;
             const startIdx = Math.max(0, data.length - HISTORY_PAGE_SIZE);
             setHistory(data.slice(startIdx));
-          } catch {}
+          } catch (err) {
+            logger.warn("Storage", "Failed to parse history JSON", err);
+          }
         }
       })
       .catch((err) => logger.warn("Storage", "Failed to load history", err));
@@ -83,7 +85,7 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
               ),
             });
           });
-        }).catch((err: any) => logger.warn("Widget", "Widget update failed", err));
+        }).catch((err: unknown) => logger.warn("Widget", "Widget update failed", err));
       } else if (Platform.OS === "ios") {
         import("../../modules/apple-translation").then((AppleTranslation) => {
           AppleTranslation.saveWidgetData({
@@ -92,7 +94,7 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
             sourceLang: from.toUpperCase(),
             targetLang: to.toUpperCase(),
           });
-        }).catch((err: any) => logger.warn("Widget", "iOS widget update failed", err));
+        }).catch((err: unknown) => logger.warn("Widget", "iOS widget update failed", err));
       }
     } catch (err) {
       logger.warn("Widget", "Widget data save failed", err);

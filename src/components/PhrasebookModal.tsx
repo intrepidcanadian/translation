@@ -14,8 +14,10 @@ import {
   getPhrasesForCategory,
   type PhraseCategory,
   type OfflinePhrase,
+  type PhraseLangCode,
 } from "../services/offlinePhrases";
 import { getLocationContext, getNearbyPhrases, type LocationContext } from "../services/locationPhrases";
+import { logger } from "../services/logger";
 import type { ThemeColors } from "../theme";
 
 interface PhrasebookModalProps {
@@ -50,7 +52,7 @@ export default function PhrasebookModal({
       setLocationLoading(true);
       getLocationContext()
         .then(setLocationCtx)
-        .catch(() => {})
+        .catch((err) => logger.warn("Location", "Failed to get location context", err))
         .finally(() => setLocationLoading(false));
     }
   }, [visible]);
@@ -127,8 +129,8 @@ export default function PhrasebookModal({
             keyExtractor={(_, i) => `phrase-${phraseCategory}-${i}`}
             style={styles.phraseList}
             renderItem={({ item: phrase }) => {
-              const srcText = (phrase as any)[sourceLangCode] || phrase.en;
-              const tgtText = (phrase as any)[targetLangCode] || "";
+              const srcText = (sourceLangCode in phrase ? phrase[sourceLangCode as PhraseLangCode] : phrase.en);
+              const tgtText = (targetLangCode in phrase ? phrase[targetLangCode as PhraseLangCode] : "");
               return (
                 <TouchableOpacity
                   style={[styles.phraseItem, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}

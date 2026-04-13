@@ -44,8 +44,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
         if (settingsResult[1]) {
           const data = JSON.parse(settingsResult[1]) as Settings;
-          const provider = data.translationProvider;
-          if (provider === ("deepl" as any) || provider === ("google" as any)) {
+          const provider: string = data.translationProvider;
+          if (provider === "deepl" || provider === "google") {
             data.translationProvider = "apple";
           }
           setSettings((prev) => ({ ...prev, ...data }));

@@ -1,7 +1,9 @@
 // Built-in offline phrase dictionary organized by category
 // Provides basic offline capability without requiring a local ML model
 
-export interface OfflinePhrase {
+export type PhraseLangCode = "en" | "es" | "fr" | "de" | "it" | "pt" | "ja" | "zh" | "ko" | "ar";
+
+export interface OfflinePhrase extends Record<PhraseLangCode, string> {
   en: string;
   es: string;
   fr: string;
