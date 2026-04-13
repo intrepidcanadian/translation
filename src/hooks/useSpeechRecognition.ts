@@ -61,6 +61,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const translationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isStartingRef = useRef(false); // Guard against rapid double-taps
 
   // Pulse animation for mic button
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -211,33 +212,42 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
   });
 
   const startListening = useCallback(async () => {
+    // Prevent double-tap: ignore if already starting or listening
+    if (isStartingRef.current || isListening) return;
+    isStartingRef.current = true;
+
     impactMedium();
-    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    if (!result.granted) {
-      Alert.alert(
-        "Microphone Permission Required",
-        "Live Translator needs microphone access to translate speech. Please enable it in Settings.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open Settings", onPress: () => Linking.openSettings() },
-        ]
-      );
-      return;
+    try {
+      const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+      if (!result.granted) {
+        Alert.alert(
+          "Microphone Permission Required",
+          "Live Translator needs microphone access to translate speech. Please enable it in Settings.",
+          [
+            { text: "Cancel", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() },
+          ]
+        );
+        return;
+      }
+
+      const speechLang = (conversationMode && activeSpeakerRef.current === "B")
+        ? targetSpeechCode
+        : (sourceLangCode === "autodetect" ? "en-US" : sourceSpeechCode);
+
+      ExpoSpeechRecognitionModule.start({
+        lang: speechLang,
+        interimResults: true,
+        continuous: true,
+        maxAlternatives: 1,
+        requiresOnDeviceRecognition: offlineSpeech,
+        ...(sourceLangCode === "autodetect" ? { addsPunctuation: true } : {}),
+      });
+    } finally {
+      // Reset guard after a short delay to allow the "start" event to fire
+      setTimeout(() => { isStartingRef.current = false; }, 500);
     }
-
-    const speechLang = (conversationMode && activeSpeakerRef.current === "B")
-      ? targetSpeechCode
-      : (sourceLangCode === "autodetect" ? "en-US" : sourceSpeechCode);
-
-    ExpoSpeechRecognitionModule.start({
-      lang: speechLang,
-      interimResults: true,
-      continuous: true,
-      maxAlternatives: 1,
-      requiresOnDeviceRecognition: offlineSpeech,
-      ...(sourceLangCode === "autodetect" ? { addsPunctuation: true } : {}),
-    });
-  }, [conversationMode, activeSpeakerRef, sourceLangCode, sourceSpeechCode, targetSpeechCode, offlineSpeech]);
+  }, [conversationMode, activeSpeakerRef, sourceLangCode, sourceSpeechCode, targetSpeechCode, offlineSpeech, isListening]);
 
   const startListeningAs = useCallback((speaker: "A" | "B") => {
     activeSpeakerRef.current = speaker;
