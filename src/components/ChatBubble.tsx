@@ -1,7 +1,8 @@
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Share } from "react-native";
 import AlignedRomanization from "./AlignedRomanization";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
+import { highlightMatches } from "../utils/highlightText";
 import { LANGUAGES } from "../services/translation";
 import type { ThemeColors } from "../theme";
 import type { HistoryItem } from "../types";
@@ -22,6 +23,7 @@ interface ChatBubbleProps {
   onCopy: (text: string) => void;
   onSpeak: (text: string, langCode: string) => void;
   onToggleFavorite: (index: number) => void;
+  searchQuery?: string;
 }
 
 function ChatBubble({
@@ -40,8 +42,22 @@ function ChatBubble({
   onCopy,
   onSpeak,
   onToggleFavorite,
+  searchQuery,
 }: ChatBubbleProps) {
   const isB = item.speaker === "B";
+
+  const handleShare = () => {
+    const speakerLabel = isB ? targetLangName : sourceLangName;
+    const card = [
+      `[${speakerLabel}]`,
+      `"${item.original}"`,
+      "",
+      `→ "${item.translated}"`,
+      "",
+      "— Live Translator",
+    ].join("\n");
+    Share.share({ message: card }).catch((err) => console.warn("Share failed:", err));
+  };
 
   return (
     <View style={[styles.chatRow, isB && styles.chatRowRight]}>
@@ -50,7 +66,11 @@ function ChatBubble({
           {isB ? targetLangName : sourceLangName}
         </Text>
         <TouchableOpacity onPress={() => onCopy(item.original)}>
-          <Text selectable style={[styles.chatOriginal, { color: colors.secondaryText }, dynamicFontSizes.chatText]}>{item.original}</Text>
+          <Text selectable style={[styles.chatOriginal, { color: colors.secondaryText }, dynamicFontSizes.chatText]}>
+            {searchQuery?.trim()
+              ? highlightMatches(item.original, searchQuery, { color: colors.secondaryText }, { backgroundColor: colors.primary + "30", color: colors.primaryText, borderRadius: 2 })
+              : item.original}
+          </Text>
         </TouchableOpacity>
         {item.detectedLang && (() => {
           const lang = LANGUAGES.find((l) => l.code === item.detectedLang);
@@ -64,7 +84,11 @@ function ChatBubble({
           <AlignedRomanization text={item.original} langCode={item.sourceLangCode} textColor={colors.secondaryText} romanColor={colors.mutedText} fontSize={14 * fontSizeScale} />
         )}
         <TouchableOpacity onPress={() => onCopy(item.translated)}>
-          <Text selectable style={[styles.chatTranslated, { color: colors.translatedText }, dynamicFontSizes.chatText]}>{item.translated}</Text>
+          <Text selectable style={[styles.chatTranslated, { color: colors.translatedText }, dynamicFontSizes.chatText]}>
+            {searchQuery?.trim()
+              ? highlightMatches(item.translated, searchQuery, { color: colors.translatedText }, { backgroundColor: colors.primary + "30", color: colors.primaryText, borderRadius: 2 })
+              : item.translated}
+          </Text>
         </TouchableOpacity>
         {showRomanization && item.targetLangCode && (
           <AlignedRomanization text={item.translated} langCode={item.targetLangCode} textColor={colors.translatedText} romanColor={colors.mutedText} fontSize={14 * fontSizeScale} />
@@ -107,6 +131,14 @@ function ChatBubble({
             <Text style={[styles.favoriteIcon, { color: colors.dimText }, item.favorited && { color: colors.favoriteColor }]}>
               {item.favorited ? "★" : "☆"}
             </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.speakButton}
+            onPress={handleShare}
+            accessibilityRole="button"
+            accessibilityLabel="Share this translation"
+          >
+            <Text style={[{ fontSize: 14, color: colors.dimText }]}>↗</Text>
           </TouchableOpacity>
         </View>
       </View>

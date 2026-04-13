@@ -17,6 +17,7 @@ import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useGlossary } from "../contexts/GlossaryContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
+import { useStreak } from "../contexts/StreakContext";
 import { getColors } from "../theme";
 import * as Speech from "expo-speech";
 
@@ -24,7 +25,8 @@ export default function SettingsScreen() {
   const { settings, updateSettings, showOnboarding, setShowOnboarding, completeOnboarding } = useSettings();
   const { sourceLang, targetLang } = useLanguage();
   const { glossary, addGlossaryEntry, removeGlossaryEntry, importGlossaryEntries } = useGlossary();
-  const { history, streak } = useTranslationData();
+  const { history } = useTranslationData();
+  const { streak } = useStreak();
   const colors = getColors(settings.theme);
 
   const [showSettingsModal, setShowSettingsModal] = useState(false);

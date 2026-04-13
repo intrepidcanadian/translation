@@ -1,40 +1,16 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useNetInfo } from "@react-native-community/netinfo";
-import { notifySuccess, notifyWarning } from "../services/haptics";
-import { translateText } from "../services/translation";
-import { useSettings } from "./SettingsContext";
-import { useLanguage } from "./LanguageContext";
 import type { HistoryItem } from "../types";
 
 const HISTORY_KEY = "translation_history";
-const STREAK_KEY = "usage_streak";
-const OFFLINE_QUEUE_KEY = "offline_translation_queue";
 const HISTORY_PAGE_SIZE = 20;
-
-interface OfflineQueueItem {
-  text: string;
-  sourceLang: string;
-  targetLang: string;
-  timestamp: number;
-}
-
-interface Streak {
-  current: number;
-  lastDate: string;
-}
 
 interface TranslationDataContextValue {
   history: HistoryItem[];
   setHistory: React.Dispatch<React.SetStateAction<HistoryItem[]>>;
   hasMoreHistory: boolean;
   loadMoreHistory: () => void;
-  streak: Streak;
-  updateStreak: () => void;
-  offlineQueue: OfflineQueueItem[];
-  addToOfflineQueue: (text: string, fromCode: string, toCode: string) => void;
-  isOffline: boolean;
   notesRefreshKey: number;
   incrementNotesRefresh: () => void;
   updateWidgetData: (original: string, translated: string, from: string, to: string) => Promise<void>;
@@ -43,47 +19,30 @@ interface TranslationDataContextValue {
 const TranslationDataContext = createContext<TranslationDataContextValue | null>(null);
 
 export function TranslationDataProvider({ children }: { children: React.ReactNode }) {
-  const { settings } = useSettings();
-  const { sourceLang, targetLang } = useLanguage();
-
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const allHistoryRef = useRef<HistoryItem[]>([]);
   const [historyPage, setHistoryPage] = useState(1);
-
-  const [streak, setStreak] = useState<Streak>({ current: 0, lastDate: "" });
-  const [offlineQueue, setOfflineQueue] = useState<OfflineQueueItem[]>([]);
-  const isProcessingQueue = useRef(false);
   const [notesRefreshKey, setNotesRefreshKey] = useState(0);
-
-  const netInfo = useNetInfo();
-  const isOffline = netInfo.isConnected === false;
 
   const hasMoreHistory = useMemo(
     () => allHistoryRef.current.length > history.length,
     [history.length]
   );
 
-  // Load persisted data on mount (single batch read for faster startup)
+  // Load persisted history on mount
   useEffect(() => {
-    AsyncStorage.multiGet([HISTORY_KEY, STREAK_KEY, OFFLINE_QUEUE_KEY])
-      .then((results) => {
-        const parse = <T,>(val: string | null): T | null => {
-          if (!val) return null;
-          try { return JSON.parse(val) as T; } catch { return null; }
-        };
-
-        const historyData = parse<HistoryItem[]>(results[0][1]);
-        if (historyData) {
-          allHistoryRef.current = historyData;
-          const startIdx = Math.max(0, historyData.length - HISTORY_PAGE_SIZE);
-          setHistory(historyData.slice(startIdx));
+    AsyncStorage.getItem(HISTORY_KEY)
+      .then((val) => {
+        if (val) {
+          try {
+            const data = JSON.parse(val) as HistoryItem[];
+            allHistoryRef.current = data;
+            const startIdx = Math.max(0, data.length - HISTORY_PAGE_SIZE);
+            setHistory(data.slice(startIdx));
+          } catch {}
         }
-        const streakData = parse<Streak>(results[1][1]);
-        if (streakData) setStreak(streakData);
-        const queueData = parse<OfflineQueueItem[]>(results[2][1]);
-        if (queueData) setOfflineQueue(queueData);
       })
-      .catch((err) => console.warn("Failed to load translation data:", err));
+      .catch((err) => console.warn("Failed to load history:", err));
   }, []);
 
   // Persist history
@@ -105,79 +64,6 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
     setHistory(all.slice(startIdx));
     setHistoryPage(nextPage);
   }, [history.length, historyPage]);
-
-  // Streak
-  const updateStreak = useCallback(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    setStreak((prev) => {
-      if (prev.lastDate === today) return prev;
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-      const newStreak = prev.lastDate === yesterday
-        ? { current: prev.current + 1, lastDate: today }
-        : { current: 1, lastDate: today };
-      AsyncStorage.setItem(STREAK_KEY, JSON.stringify(newStreak));
-      return newStreak;
-    });
-  }, []);
-
-  // Offline queue
-  const addToOfflineQueue = useCallback((text: string, fromCode: string, toCode: string) => {
-    const item = { text, sourceLang: fromCode, targetLang: toCode, timestamp: Date.now() };
-    setOfflineQueue((prev) => {
-      const updated = [...prev, item];
-      AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(updated));
-      return updated;
-    });
-    setHistory((prev) => [...prev, { original: text, translated: "Queued — will translate when online", pending: true, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() }]);
-    notifyWarning();
-  }, [sourceLang.code, targetLang.code]);
-
-  const processOfflineQueue = useCallback(async () => {
-    if (isProcessingQueue.current) return;
-    let queue: OfflineQueueItem[] = [];
-    setOfflineQueue((prev) => { queue = prev; return prev; });
-    if (queue.length === 0) return;
-    isProcessingQueue.current = true;
-
-    const failed: OfflineQueueItem[] = [];
-    let processed = 0;
-    let consecutiveFailures = 0;
-
-    for (const item of queue) {
-      if (consecutiveFailures >= 3) { failed.push(item); continue; }
-      try {
-        const result = await translateText(item.text, item.sourceLang, item.targetLang, { provider: settings.translationProvider });
-        setHistory((prev) => {
-          const pendingIdx = prev.findIndex((h) => h.pending && h.original === item.text);
-          if (pendingIdx !== -1) {
-            const updated = [...prev];
-            updated[pendingIdx] = { original: item.text, translated: result.translatedText };
-            return updated;
-          }
-          return [...prev, { original: item.text, translated: result.translatedText, timestamp: Date.now() }];
-        });
-        processed++;
-        consecutiveFailures = 0;
-      } catch (err) {
-        console.warn("Offline queue translation failed:", err);
-        failed.push(item);
-        consecutiveFailures++;
-      }
-    }
-
-    setOfflineQueue(failed);
-    AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(failed)).catch(() => {});
-    isProcessingQueue.current = false;
-    if (processed > 0) {
-      notifySuccess();
-    }
-  }, [offlineQueue, settings.translationProvider]);
-
-  useEffect(() => {
-    if (netInfo.isConnected && offlineQueue.length > 0) {
-      processOfflineQueue();
-    }
-  }, [netInfo.isConnected, offlineQueue.length, processOfflineQueue]);
 
   // Widget
   const updateWidgetData = useCallback(async (original: string, translated: string, from: string, to: string) => {
@@ -221,15 +107,10 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
     setHistory,
     hasMoreHistory,
     loadMoreHistory,
-    streak,
-    updateStreak,
-    offlineQueue,
-    addToOfflineQueue,
-    isOffline,
     notesRefreshKey,
     incrementNotesRefresh,
     updateWidgetData,
-  }), [history, hasMoreHistory, loadMoreHistory, streak, updateStreak, offlineQueue, addToOfflineQueue, isOffline, notesRefreshKey, incrementNotesRefresh, updateWidgetData]);
+  }), [history, hasMoreHistory, loadMoreHistory, notesRefreshKey, incrementNotesRefresh, updateWidgetData]);
 
   return (
     <TranslationDataContext.Provider value={value}>{children}</TranslationDataContext.Provider>

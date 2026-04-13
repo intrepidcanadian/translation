@@ -48,6 +48,8 @@ import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useGlossary } from "../contexts/GlossaryContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
+import { useStreak } from "../contexts/StreakContext";
+import { useOfflineQueue } from "../contexts/OfflineQueueContext";
 import type { HistoryItem } from "../types";
 import type { RootTabParamList } from "../navigation/types";
 
@@ -58,8 +60,25 @@ export default function TranslateScreen() {
   const { settings, reduceMotion, maybeRequestReview } = useSettings();
   const { sourceLang, targetLang, setSourceLang, setTargetLang, swapLanguages, recentLangCodes, trackRecentLang, savedPairs, isCurrentPairSaved, toggleSavePair, applyPair, removeSavedPair } = useLanguage();
   const { glossaryLookup } = useGlossary();
-  const { history, setHistory, hasMoreHistory, loadMoreHistory, isOffline, offlineQueue, addToOfflineQueue, updateStreak, updateWidgetData } = useTranslationData();
+  const { history, setHistory, hasMoreHistory, loadMoreHistory, updateWidgetData } = useTranslationData();
+  const { updateStreak } = useStreak();
+  const { isOffline, offlineQueue, addToOfflineQueue, registerOnTranslated } = useOfflineQueue();
   const route = useRoute<any>();
+
+  // Register callback for when offline queue items complete translation
+  useEffect(() => {
+    registerOnTranslated((original, translatedText) => {
+      setHistory((prev) => {
+        const pendingIdx = prev.findIndex((h) => h.pending && h.original === original);
+        if (pendingIdx !== -1) {
+          const updated = [...prev];
+          updated[pendingIdx] = { original, translated: translatedText };
+          return updated;
+        }
+        return [...prev, { original, translated: translatedText, timestamp: Date.now() }];
+      });
+    });
+  }, [registerOnTranslated, setHistory]);
 
   // Handle deep link params (e.g. livetranslator://translate/en/es)
   useEffect(() => {
@@ -482,7 +501,9 @@ export default function TranslateScreen() {
     setTypedPreview("");
 
     if (isOffline) {
-      addToOfflineQueue(text, sourceLang.code, targetLang.code);
+      addToOfflineQueue({ text, sourceLang: sourceLang.code, targetLang: targetLang.code, timestamp: Date.now() });
+      setHistory((prev) => [...prev, { original: text, translated: "Queued — will translate when online", pending: true, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() }]);
+      notifyWarning();
       return;
     }
 

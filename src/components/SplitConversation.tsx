@@ -15,6 +15,7 @@ import { useLanguage } from "../contexts/LanguageContext";
 import { useSettings } from "../contexts/SettingsContext";
 import { useGlossary } from "../contexts/GlossaryContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
+import { useStreak } from "../contexts/StreakContext";
 import { useTheme } from "../contexts/ThemeContext";
 
 interface SplitConversationProps {
@@ -31,7 +32,8 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
   const { sourceLang, targetLang } = useLanguage();
   const { settings, reduceMotion, maybeRequestReview } = useSettings();
   const { glossaryLookup } = useGlossary();
-  const { setHistory, updateStreak } = useTranslationData();
+  const { setHistory } = useTranslationData();
+  const { updateStreak } = useStreak();
   const { colors } = useTheme();
 
   const [activeSpeaker, setActiveSpeaker] = useState<"A" | "B" | null>(null);

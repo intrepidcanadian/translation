@@ -1,7 +1,8 @@
 import React from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Share } from "react-native";
 import AlignedRomanization from "./AlignedRomanization";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
+import { highlightMatches } from "../utils/highlightText";
 import { LANGUAGES } from "../services/translation";
 import type { ThemeColors } from "../theme";
 import type { HistoryItem } from "../types";
@@ -27,6 +28,7 @@ interface TranslationBubbleProps {
   onCompare: (original: string, translated: string) => void;
   onCorrection: (data: { index: number; original: string; translated: string }) => void;
   onWordLongPress: (word: string, targetLang: string, sourceLang: string) => void;
+  searchQuery?: string;
 }
 
 function TranslationBubble({
@@ -47,8 +49,24 @@ function TranslationBubble({
   onCompare,
   onCorrection,
   onWordLongPress,
+  searchQuery,
 }: TranslationBubbleProps) {
   const timeStr = formatRelativeTime(item.timestamp);
+
+  const handleShare = () => {
+    const srcName = item.sourceLangCode ? LANGUAGES.find((l) => l.code === item.sourceLangCode)?.name : null;
+    const tgtName = item.targetLangCode ? LANGUAGES.find((l) => l.code === item.targetLangCode)?.name : null;
+    const langLine = srcName && tgtName ? `${srcName} → ${tgtName}` : "";
+    const card = [
+      `"${item.original}"`,
+      "",
+      `→ "${item.translated}"`,
+      "",
+      langLine,
+      "— Live Translator",
+    ].filter(Boolean).join("\n");
+    Share.share({ message: card }).catch((err) => console.warn("Share failed:", err));
+  };
 
   return (
     <View style={styles.historyItem}>
@@ -58,7 +76,11 @@ function TranslationBubble({
         accessibilityRole="button"
         accessibilityLabel={`Original: ${item.original}. Tap to copy.`}
       >
-        <Text selectable style={[styles.originalText, { color: colors.secondaryText }, dynamicFontSizes.original]}>{item.original}</Text>
+        <Text selectable style={[styles.originalText, { color: colors.secondaryText }, dynamicFontSizes.original]}>
+          {searchQuery?.trim()
+            ? highlightMatches(item.original, searchQuery, { color: colors.secondaryText }, { backgroundColor: colors.primary + "30", color: colors.primaryText, borderRadius: 2 })
+            : item.original}
+        </Text>
         {item.detectedLang && (() => {
           const lang = LANGUAGES.find((l) => l.code === item.detectedLang);
           return lang ? (
@@ -182,6 +204,16 @@ function TranslationBubble({
               accessibilityLabel="Suggest a better translation"
             >
               <Text style={[{ fontSize: 14, color: colors.dimText }]}>✏️</Text>
+            </TouchableOpacity>
+          )}
+          {!item.error && !item.pending && (
+            <TouchableOpacity
+              style={styles.speakButton}
+              onPress={handleShare}
+              accessibilityRole="button"
+              accessibilityLabel="Share this translation"
+            >
+              <Text style={[{ fontSize: 14, color: colors.dimText }]}>↗</Text>
             </TouchableOpacity>
           )}
         </View>

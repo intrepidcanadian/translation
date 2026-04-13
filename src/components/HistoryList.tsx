@@ -207,6 +207,7 @@ function HistoryList({
               onCopy={onCopyToClipboard}
               onSpeak={onSpeakText}
               onToggleFavorite={onToggleFavorite}
+              searchQuery={searchQuery}
             />
           ) : (
             <TranslationBubble
@@ -227,6 +228,7 @@ function HistoryList({
               onCompare={onCompareTranslation}
               onCorrection={onCorrection}
               onWordLongPress={onWordLongPress}
+              searchQuery={searchQuery}
             />
           )}
         </SwipeableRow>

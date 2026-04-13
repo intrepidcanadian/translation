@@ -22,7 +22,8 @@ import { Camera as OCRCamera } from "react-native-vision-camera-ocr-plus";
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
 import * as Clipboard from "expo-clipboard";
 import * as Speech from "expo-speech";
-import { translateText, translateAppleBatch, type TranslateOptions, type TranslationProvider } from "../services/translation";
+import type { TranslationProvider } from "../services/translation";
+import { translateOCRLines, translateCapturedLines, mapToScreenCoords, clearOCRCache } from "../services/ocrTranslation";
 import type { ThemeColors } from "../theme";
 
 interface DetectedBlock {
@@ -89,8 +90,6 @@ function getMLKitScript(langCode: string): TextRecognitionScript {
   }
 }
 
-// Translation cache to avoid re-translating the same text
-const ocrTranslationCache = new Map<string, string>();
 
 export default function CameraTranslator({
   visible,
@@ -151,7 +150,7 @@ export default function CameraTranslator({
 
   // Clear cache when languages change
   useEffect(() => {
-    ocrTranslationCache.clear();
+    clearOCRCache();
     setDetectedBlocks([]);
     lastOCRTextRef.current = "";
   }, [sourceLangCode, targetLangCode]);
@@ -172,72 +171,10 @@ export default function CameraTranslator({
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const translateOptions: TranslateOptions = {
-      provider: translationProvider,
-      signal: controller.signal,
-    };
-
     try {
-      const cachedMap = new Map<string, string>();
-      const uncachedTexts: string[] = [];
-
-      for (let i = 0; i < lines.length; i++) {
-        const cacheKey = `${sourceLangCode}|${targetLangCode}|${lines[i].text}`;
-        if (ocrTranslationCache.has(cacheKey)) {
-          cachedMap.set(lines[i].text, ocrTranslationCache.get(cacheKey)!);
-        } else {
-          uncachedTexts.push(lines[i].text);
-        }
-      }
-
-      let translatedTexts: string[] = [];
-      if (uncachedTexts.length > 0 && !controller.signal.aborted) {
-        try {
-          if (translationProvider === "apple" && Platform.OS === "ios") {
-            translatedTexts = await translateAppleBatch(uncachedTexts, sourceLangCode, targetLangCode);
-          } else {
-            for (const text of uncachedTexts) {
-              if (controller.signal.aborted) break;
-              try {
-                const res = await translateText(text, sourceLangCode, targetLangCode, translateOptions);
-                translatedTexts.push(res.translatedText);
-              } catch (err) {
-                console.warn("OCR line translation failed:", err);
-                translatedTexts.push(text);
-              }
-            }
-          }
-
-          for (let i = 0; i < uncachedTexts.length && i < translatedTexts.length; i++) {
-            const cacheKey = `${sourceLangCode}|${targetLangCode}|${uncachedTexts[i]}`;
-            ocrTranslationCache.set(cacheKey, translatedTexts[i]);
-            if (ocrTranslationCache.size > 500) {
-              const firstKey = ocrTranslationCache.keys().next().value;
-              if (firstKey) ocrTranslationCache.delete(firstKey);
-            }
-          }
-        } catch (err) {
-          console.warn("Batch OCR translation failed, using originals:", err);
-          translatedTexts = uncachedTexts;
-        }
-      }
+      const blocks = await translateOCRLines(lines, sourceLangCode, targetLangCode, translationProvider, controller.signal);
 
       if (isMountedRef.current && !controller.signal.aborted) {
-        const blocks: DetectedBlock[] = [];
-        let uncachedIdx = 0;
-
-        for (const line of lines) {
-          const cached = cachedMap.get(line.text);
-          const translated = cached ?? (uncachedIdx < translatedTexts.length ? translatedTexts[uncachedIdx++] : line.text);
-
-          blocks.push({
-            id: `${line.frame.top}-${line.frame.left}-${line.text.slice(0, 10)}`,
-            originalText: line.text,
-            translatedText: translated,
-            frame: line.frame,
-          });
-        }
-
         setDetectedBlocks(blocks);
         const activeIds = new Set(blocks.map((b) => b.id));
         for (const key of blockOpacities.keys()) {
@@ -369,48 +306,15 @@ export default function CameraTranslator({
 
       // Batch translate
       const texts = lines.map((l) => l.text);
-      let translations: string[];
-      try {
-        if (translationProvider === "apple" && Platform.OS === "ios") {
-          translations = await translateAppleBatch(texts, sourceLangCode, targetLangCode);
-        } else {
-          translations = [];
-          for (const text of texts) {
-            try {
-              const res = await translateText(text, sourceLangCode, targetLangCode, { provider: translationProvider });
-              translations.push(res.translatedText);
-            } catch (err) {
-              console.warn("Capture line translation failed:", err);
-              translations.push(text);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn("Batch capture translation failed, using originals:", err);
-        translations = texts;
-      }
+      const translations = await translateCapturedLines(texts, sourceLangCode, targetLangCode, translationProvider);
 
       // Scale coordinates from image space to screen space
-      const imgW = photo.width;
-      const imgH = photo.height;
-      // Account for possible rotation (portrait photo on portrait screen)
-      const isRotated = imgW > imgH && screenDims.height > screenDims.width;
-      const effectiveW = isRotated ? imgH : imgW;
-      const effectiveH = isRotated ? imgW : imgH;
-      const scaleX = screenDims.width / effectiveW;
-      const scaleY = screenDims.height / effectiveH;
-
       const blocks: CapturedBlock[] = lines.map((line, i) => ({
         id: `cap-${i}-${line.text.slice(0, 8)}`,
         originalText: line.text,
         translatedText: translations[i] || line.text,
         imageFrame: line.frame,
-        screenFrame: {
-          top: line.frame.top * scaleY,
-          left: line.frame.left * scaleX,
-          width: line.frame.width * scaleX,
-          height: line.frame.height * scaleY,
-        },
+        screenFrame: mapToScreenCoords(line.frame, photo.width, photo.height, screenDims.width, screenDims.height),
       }));
 
       setCapturedBlocks(blocks);

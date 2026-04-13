@@ -12,6 +12,8 @@ import { SettingsProvider, useSettings } from "./src/contexts/SettingsContext";
 import { LanguageProvider } from "./src/contexts/LanguageContext";
 import { GlossaryProvider } from "./src/contexts/GlossaryContext";
 import { TranslationDataProvider } from "./src/contexts/TranslationDataContext";
+import { StreakProvider } from "./src/contexts/StreakContext";
+import { OfflineQueueProvider } from "./src/contexts/OfflineQueueContext";
 import RootNavigator from "./src/navigation/RootNavigator";
 import { linking } from "./src/navigation/linking";
 import type { RootTabParamList } from "./src/navigation/types";
@@ -24,12 +26,16 @@ export default function App() {
       <SettingsProvider>
         <LanguageProvider>
           <GlossaryProvider>
-            <TranslationDataProvider>
-              <NavigationContainer ref={navigationRef} linking={linking}>
-                <QuickActionHandler />
-                <RootNavigator />
-              </NavigationContainer>
-            </TranslationDataProvider>
+            <StreakProvider>
+              <OfflineQueueProvider>
+                <TranslationDataProvider>
+                  <NavigationContainer ref={navigationRef} linking={linking}>
+                    <QuickActionHandler />
+                    <RootNavigator />
+                  </NavigationContainer>
+                </TranslationDataProvider>
+              </OfflineQueueProvider>
+            </StreakProvider>
           </GlossaryProvider>
         </LanguageProvider>
       </SettingsProvider>
