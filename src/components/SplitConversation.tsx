@@ -13,6 +13,7 @@ import { impactLight, impactMedium } from "../services/haptics";
 import { translateText, type TranslateOptions } from "../services/translation";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useSettings } from "../contexts/SettingsContext";
+import { useGlossary } from "../contexts/GlossaryContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
 import { useTheme } from "../contexts/ThemeContext";
 
@@ -29,7 +30,8 @@ interface TranslationResult {
 export default function SplitConversation({ visible, onClose }: SplitConversationProps) {
   const { sourceLang, targetLang } = useLanguage();
   const { settings, reduceMotion, maybeRequestReview } = useSettings();
-  const { setHistory, glossaryLookup, updateStreak } = useTranslationData();
+  const { glossaryLookup } = useGlossary();
+  const { setHistory, updateStreak } = useTranslationData();
   const { colors } = useTheme();
 
   const [activeSpeaker, setActiveSpeaker] = useState<"A" | "B" | null>(null);

@@ -10,6 +10,7 @@ import * as Clipboard from "expo-clipboard";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import { SettingsProvider, useSettings } from "./src/contexts/SettingsContext";
 import { LanguageProvider } from "./src/contexts/LanguageContext";
+import { GlossaryProvider } from "./src/contexts/GlossaryContext";
 import { TranslationDataProvider } from "./src/contexts/TranslationDataContext";
 import RootNavigator from "./src/navigation/RootNavigator";
 import { linking } from "./src/navigation/linking";
@@ -22,12 +23,14 @@ export default function App() {
     <ErrorBoundary>
       <SettingsProvider>
         <LanguageProvider>
-          <TranslationDataProvider>
-            <NavigationContainer ref={navigationRef} linking={linking}>
-              <QuickActionHandler />
-              <RootNavigator />
-            </NavigationContainer>
-          </TranslationDataProvider>
+          <GlossaryProvider>
+            <TranslationDataProvider>
+              <NavigationContainer ref={navigationRef} linking={linking}>
+                <QuickActionHandler />
+                <RootNavigator />
+              </NavigationContainer>
+            </TranslationDataProvider>
+          </GlossaryProvider>
         </LanguageProvider>
       </SettingsProvider>
     </ErrorBoundary>

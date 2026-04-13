@@ -15,6 +15,7 @@ import StatsModal from "../components/StatsModal";
 import OnboardingModal from "../components/OnboardingModal";
 import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
+import { useGlossary } from "../contexts/GlossaryContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
 import { getColors } from "../theme";
 import * as Speech from "expo-speech";
@@ -22,7 +23,8 @@ import * as Speech from "expo-speech";
 export default function SettingsScreen() {
   const { settings, updateSettings, showOnboarding, setShowOnboarding, completeOnboarding } = useSettings();
   const { sourceLang, targetLang } = useLanguage();
-  const { history, glossary, addGlossaryEntry, removeGlossaryEntry, importGlossaryEntries, streak } = useTranslationData();
+  const { glossary, addGlossaryEntry, removeGlossaryEntry, importGlossaryEntries } = useGlossary();
+  const { history, streak } = useTranslationData();
   const colors = getColors(settings.theme);
 
   const [showSettingsModal, setShowSettingsModal] = useState(false);

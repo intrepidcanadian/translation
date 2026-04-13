@@ -2,24 +2,16 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNetInfo } from "@react-native-community/netinfo";
-import { impactLight, impactMedium, notifySuccess, notifyWarning } from "../services/haptics";
+import { notifySuccess, notifyWarning } from "../services/haptics";
 import { translateText } from "../services/translation";
 import { useSettings } from "./SettingsContext";
 import { useLanguage } from "./LanguageContext";
 import type { HistoryItem } from "../types";
 
 const HISTORY_KEY = "translation_history";
-const GLOSSARY_KEY = "user_glossary";
 const STREAK_KEY = "usage_streak";
 const OFFLINE_QUEUE_KEY = "offline_translation_queue";
 const HISTORY_PAGE_SIZE = 20;
-
-interface GlossaryEntry {
-  source: string;
-  target: string;
-  sourceLang: string;
-  targetLang: string;
-}
 
 interface OfflineQueueItem {
   text: string;
@@ -38,11 +30,6 @@ interface TranslationDataContextValue {
   setHistory: React.Dispatch<React.SetStateAction<HistoryItem[]>>;
   hasMoreHistory: boolean;
   loadMoreHistory: () => void;
-  glossary: GlossaryEntry[];
-  glossaryLookup: (text: string, srcLang: string, tgtLang: string) => string | null;
-  addGlossaryEntry: (src: string, tgt: string) => void;
-  removeGlossaryEntry: (index: number) => void;
-  importGlossaryEntries: (entries: GlossaryEntry[]) => void;
   streak: Streak;
   updateStreak: () => void;
   offlineQueue: OfflineQueueItem[];
@@ -63,7 +50,6 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
   const allHistoryRef = useRef<HistoryItem[]>([]);
   const [historyPage, setHistoryPage] = useState(1);
 
-  const [glossary, setGlossary] = useState<GlossaryEntry[]>([]);
   const [streak, setStreak] = useState<Streak>({ current: 0, lastDate: "" });
   const [offlineQueue, setOfflineQueue] = useState<OfflineQueueItem[]>([]);
   const isProcessingQueue = useRef(false);
@@ -79,7 +65,7 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
 
   // Load persisted data on mount (single batch read for faster startup)
   useEffect(() => {
-    AsyncStorage.multiGet([HISTORY_KEY, GLOSSARY_KEY, STREAK_KEY, OFFLINE_QUEUE_KEY])
+    AsyncStorage.multiGet([HISTORY_KEY, STREAK_KEY, OFFLINE_QUEUE_KEY])
       .then((results) => {
         const parse = <T,>(val: string | null): T | null => {
           if (!val) return null;
@@ -92,11 +78,9 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
           const startIdx = Math.max(0, historyData.length - HISTORY_PAGE_SIZE);
           setHistory(historyData.slice(startIdx));
         }
-        const glossaryData = parse<GlossaryEntry[]>(results[1][1]);
-        if (glossaryData) setGlossary(glossaryData);
-        const streakData = parse<Streak>(results[2][1]);
+        const streakData = parse<Streak>(results[1][1]);
         if (streakData) setStreak(streakData);
-        const queueData = parse<OfflineQueueItem[]>(results[3][1]);
+        const queueData = parse<OfflineQueueItem[]>(results[2][1]);
         if (queueData) setOfflineQueue(queueData);
       })
       .catch((err) => console.warn("Failed to load translation data:", err));
@@ -121,48 +105,6 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
     setHistory(all.slice(startIdx));
     setHistoryPage(nextPage);
   }, [history.length, historyPage]);
-
-  // Glossary — Map-based O(1) lookup instead of O(n) array scan
-  const glossaryMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const g of glossary) {
-      const key = `${g.sourceLang}|${g.targetLang}|${g.source.toLowerCase()}`;
-      map.set(key, g.target);
-    }
-    return map;
-  }, [glossary]);
-
-  const glossaryLookup = useCallback((text: string, srcLang: string, tgtLang: string): string | null => {
-    const key = `${srcLang}|${tgtLang}|${text.trim().toLowerCase()}`;
-    return glossaryMap.get(key) ?? null;
-  }, [glossaryMap]);
-
-  const addGlossaryEntry = useCallback((src: string, tgt: string) => {
-    if (!src || !tgt) return;
-    impactLight();
-    setGlossary((prev) => {
-      const filtered = prev.filter(
-        (g) => !(g.source.toLowerCase() === src.toLowerCase() && g.sourceLang === sourceLang.code && g.targetLang === targetLang.code)
-      );
-      const updated = [...filtered, { source: src, target: tgt, sourceLang: sourceLang.code, targetLang: targetLang.code }];
-      AsyncStorage.setItem(GLOSSARY_KEY, JSON.stringify(updated));
-      return updated;
-    });
-  }, [sourceLang.code, targetLang.code]);
-
-  const removeGlossaryEntry = useCallback((index: number) => {
-    impactMedium();
-    setGlossary((prev) => {
-      const updated = prev.filter((_, i) => i !== index);
-      AsyncStorage.setItem(GLOSSARY_KEY, JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
-
-  const importGlossaryEntries = useCallback((entries: GlossaryEntry[]) => {
-    setGlossary(entries);
-    AsyncStorage.setItem(GLOSSARY_KEY, JSON.stringify(entries));
-  }, []);
 
   // Streak
   const updateStreak = useCallback(() => {
@@ -279,11 +221,6 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
     setHistory,
     hasMoreHistory,
     loadMoreHistory,
-    glossary,
-    glossaryLookup,
-    addGlossaryEntry,
-    removeGlossaryEntry,
-    importGlossaryEntries,
     streak,
     updateStreak,
     offlineQueue,
@@ -292,7 +229,7 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
     notesRefreshKey,
     incrementNotesRefresh,
     updateWidgetData,
-  }), [history, hasMoreHistory, loadMoreHistory, glossary, glossaryLookup, addGlossaryEntry, removeGlossaryEntry, importGlossaryEntries, streak, updateStreak, offlineQueue, addToOfflineQueue, isOffline, notesRefreshKey, incrementNotesRefresh, updateWidgetData]);
+  }), [history, hasMoreHistory, loadMoreHistory, streak, updateStreak, offlineQueue, addToOfflineQueue, isOffline, notesRefreshKey, incrementNotesRefresh, updateWidgetData]);
 
   return (
     <TranslationDataContext.Provider value={value}>{children}</TranslationDataContext.Provider>

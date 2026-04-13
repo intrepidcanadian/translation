@@ -46,6 +46,7 @@ import type { TranslationProvider } from "../services/translation";
 import { useRoute } from "@react-navigation/native";
 import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
+import { useGlossary } from "../contexts/GlossaryContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
 import type { HistoryItem } from "../types";
 import type { RootTabParamList } from "../navigation/types";
@@ -56,7 +57,8 @@ export default function TranslateScreen() {
 
   const { settings, reduceMotion, maybeRequestReview } = useSettings();
   const { sourceLang, targetLang, setSourceLang, setTargetLang, swapLanguages, recentLangCodes, trackRecentLang, savedPairs, isCurrentPairSaved, toggleSavePair, applyPair, removeSavedPair } = useLanguage();
-  const { history, setHistory, hasMoreHistory, loadMoreHistory, glossaryLookup, isOffline, offlineQueue, addToOfflineQueue, updateStreak, updateWidgetData } = useTranslationData();
+  const { glossaryLookup } = useGlossary();
+  const { history, setHistory, hasMoreHistory, loadMoreHistory, isOffline, offlineQueue, addToOfflineQueue, updateStreak, updateWidgetData } = useTranslationData();
   const route = useRoute<any>();
 
   // Handle deep link params (e.g. livetranslator://translate/en/es)
