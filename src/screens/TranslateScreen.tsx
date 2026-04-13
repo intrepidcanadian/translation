@@ -12,6 +12,7 @@ import {
   KeyboardAvoidingView,
   UIManager,
   useWindowDimensions,
+  PanResponder,
 } from "react-native";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -31,6 +32,9 @@ import SplitConversation from "../components/SplitConversation";
 import ConversationPlayback from "../components/ConversationPlayback";
 import PassengerView from "../components/PassengerView";
 import VisualCardsModal from "../components/VisualCardsModal";
+import TranslationShareCard from "../components/TranslationShareCard";
+import PhrasebookModal from "../components/PhrasebookModal";
+import { HistoryActionsProvider, type HistoryActions } from "../contexts/HistoryActionsContext";
 import {
   translateText,
   LANGUAGES,
@@ -106,13 +110,13 @@ export default function TranslateScreen() {
   useEffect(() => {
     registerOnTranslated((original, translatedText) => {
       setHistory((prev) => {
-        const pendingIdx = prev.findIndex((h) => h.pending && h.original === original);
+        const pendingIdx = prev.findIndex((h) => h.status === "pending" && h.original === original);
         if (pendingIdx !== -1) {
           const updated = [...prev];
-          updated[pendingIdx] = { original, translated: translatedText };
+          updated[pendingIdx] = { ...updated[pendingIdx], original, translated: translatedText, status: "ok" as const };
           return updated;
         }
-        return [...prev, { original, translated: translatedText, timestamp: Date.now() }];
+        return [...prev, { original, translated: translatedText, status: "ok" as const, timestamp: Date.now() }];
       });
     });
   }, [registerOnTranslated, setHistory]);
@@ -170,7 +174,7 @@ export default function TranslateScreen() {
   const onTranslationComplete = useCallback((original: string, translated: string, speaker: "A" | "B" | undefined, confidence?: number, detectedLang?: string) => {
     setHistory((prev) => [
       ...prev,
-      { original, translated, speaker, confidence, detectedLang, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() },
+      { original, translated, status: "ok" as const, speaker, confidence, detectedLang, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() },
     ]);
     maybeRequestReview();
     updateStreak();
@@ -221,7 +225,42 @@ export default function TranslateScreen() {
   const [typedPreview, setTypedPreview] = useState("");
   const [passengerViewIndex, setPassengerViewIndex] = useState<number | null>(null);
   const [showVisualCards, setShowVisualCards] = useState(false);
+  const [showPhrasebook, setShowPhrasebook] = useState(false);
+  const [shareCardIndex, setShareCardIndex] = useState<number | null>(null);
   const typedTranslateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Gesture shortcuts: swipe up → phrasebook, swipe down → mic toggle, two-finger tap → swap languages
+  const gestureResponder = useMemo(() => PanResponder.create({
+    onStartShouldSetPanResponder: (evt) => {
+      // Two-finger tap to swap languages
+      if (evt.nativeEvent.touches.length >= 2) return true;
+      return false;
+    },
+    onMoveShouldSetPanResponder: (_evt, gestureState) => {
+      // Only capture vertical swipes (not horizontal — those are for SwipeableRow)
+      return !isListening && Math.abs(gestureState.dy) > 30 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx) * 1.5;
+    },
+    onPanResponderRelease: (evt, gestureState) => {
+      // Two-finger tap
+      if (evt.nativeEvent.touches.length >= 1 && Math.abs(gestureState.dy) < 10 && Math.abs(gestureState.dx) < 10) {
+        swapLanguages();
+        return;
+      }
+      // Swipe up → open phrasebook
+      if (gestureState.dy < -80) {
+        setShowPhrasebook(true);
+        return;
+      }
+      // Swipe down → toggle mic
+      if (gestureState.dy > 80) {
+        if (isListening) {
+          stopListening();
+        } else {
+          startListening();
+        }
+      }
+    },
+  }), [isListening, swapLanguages, stopListening, startListening]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -291,7 +330,7 @@ export default function TranslateScreen() {
 
     if (isOffline) {
       addToOfflineQueue({ text, sourceLang: sourceLang.code, targetLang: targetLang.code, timestamp: Date.now() });
-      setHistory((prev) => [...prev, { original: text, translated: "Queued — will translate when online", pending: true, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() }]);
+      setHistory((prev) => [...prev, { original: text, translated: "Queued — will translate when online", status: "pending" as const, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() }]);
       notifyWarning();
       return;
     }
@@ -308,7 +347,7 @@ export default function TranslateScreen() {
         ? { translatedText: glossaryMatch, confidence: 1.0 }
         : await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider });
       if (!controller.signal.aborted) {
-        setHistory((prev) => [...prev, { original: text, translated: result.translatedText, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, detectedLang: result.detectedLanguage, timestamp: Date.now() }]);
+        setHistory((prev) => [...prev, { original: text, translated: result.translatedText, status: "ok" as const, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, detectedLang: result.detectedLanguage, timestamp: Date.now() }]);
         maybeRequestReview();
         updateStreak();
         updateWidgetData(text, result.translatedText, sourceLang.code, targetLang.code);
@@ -317,7 +356,7 @@ export default function TranslateScreen() {
       if (!controller.signal.aborted) {
         const msg = err instanceof Error ? err.message : "Translation failed";
         showError(msg);
-        setHistory((prev) => [...prev, { original: text, translated: msg, error: true, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() }]);
+        setHistory((prev) => [...prev, { original: text, translated: msg, status: "error" as const, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() }]);
       }
     } finally {
       if (!controller.signal.aborted) {
@@ -358,6 +397,24 @@ export default function TranslateScreen() {
   const onCloseSplitScreen = useCallback(() => dispatchPanel({ type: "SET_SPLIT_SCREEN", value: false }), []);
   const onOpenPlayback = useCallback(() => dispatchPanel({ type: "SET_PLAYBACK", value: true }), []);
   const onClosePlayback = useCallback(() => dispatchPanel({ type: "SET_PLAYBACK", value: false }), []);
+
+  // Memoized history actions for context — avoids re-creating object each render
+  const historyActionsValue = useMemo<HistoryActions>(() => ({
+    onDeleteHistoryItem: deleteHistoryItem,
+    onCopyToClipboard: copyToClipboard,
+    onSpeakText: speakText,
+    onToggleFavorite: toggleFavorite,
+    onRetryTranslation: retryTranslation,
+    onCompareTranslation: compareTranslation,
+    onCorrection: setCorrectionPrompt,
+    onWordLongPress: lookupWordAlternatives,
+    onShowPassenger: setPassengerViewIndex,
+    onShareCard: setShareCardIndex,
+    onToggleSelectItem: toggleSelectItem,
+    onSearchChange: setSearchQuery,
+    onToggleFavoritesOnly: toggleFavoritesOnly,
+    onLoadMoreHistory: loadMoreHistory,
+  }), [deleteHistoryItem, copyToClipboard, speakText, toggleFavorite, retryTranslation, compareTranslation, setCorrectionPrompt, lookupWordAlternatives, toggleSelectItem, toggleFavoritesOnly, loadMoreHistory]);
 
   // Stable callbacks for LanguagePicker (React.memo) — prevents re-renders from inline closures
   const onSelectSourceLang = useCallback((lang: Language) => {
@@ -401,7 +458,7 @@ export default function TranslateScreen() {
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          <View style={[styles.container, isLandscape && styles.containerLandscape]}>
+          <View style={[styles.container, isLandscape && styles.containerLandscape]} {...gestureResponder.panHandlers}>
             {/* Header */}
             <View style={[styles.headerRow, isLandscape && styles.headerRowLandscape]}>
               <Text style={[styles.title, isLandscape && styles.titleLandscape, { color: colors.titleText }]}>Live Translator</Text>
@@ -533,48 +590,36 @@ export default function TranslateScreen() {
             ) : null}
 
             {/* History + live translation */}
-            <HistoryList
-              history={history}
-              filteredHistory={filteredHistory}
-              colors={colors}
-              dynamicFontSizes={dynamicFontSizes}
-              fontScale={fontScale}
-              showRomanization={settings.showRomanization}
-              fontSize={settings.fontSize}
-              confidenceThreshold={settings.confidenceThreshold}
-              conversationMode={conversationMode}
-              selectMode={selectMode}
-              selectedIndices={selectedIndices}
-              searchQuery={searchQuery}
-              showFavoritesOnly={showFavoritesOnly}
-              hasFavorites={hasFavorites}
-              hasMoreHistory={hasMoreHistory}
-              copiedText={copiedText}
-              speakingText={speakingText}
-              sourceLang={sourceLang}
-              targetLang={targetLang}
-              isListening={isListening}
-              isTranslating={isTranslating}
-              liveText={liveText}
-              translatedText={translatedText}
-              lastDetectedLang={lastDetectedLang}
-              skeletonAnim={skeletonAnim}
-              autoScroll={settings.autoScroll}
-              phraseOfTheDay={phraseOfTheDay}
-              onSearchChange={setSearchQuery}
-              onToggleFavoritesOnly={toggleFavoritesOnly}
-              onLoadMoreHistory={loadMoreHistory}
-              onToggleSelectItem={toggleSelectItem}
-              onDeleteHistoryItem={deleteHistoryItem}
-              onCopyToClipboard={copyToClipboard}
-              onSpeakText={speakText}
-              onToggleFavorite={toggleFavorite}
-              onRetryTranslation={retryTranslation}
-              onCompareTranslation={compareTranslation}
-              onCorrection={setCorrectionPrompt}
-              onWordLongPress={lookupWordAlternatives}
-              onShowPassenger={setPassengerViewIndex}
-            />
+            <HistoryActionsProvider value={historyActionsValue}>
+              <HistoryList
+                history={history}
+                filteredHistory={filteredHistory}
+                colors={colors}
+                dynamicFontSizes={dynamicFontSizes}
+                fontScale={fontScale}
+                showRomanization={settings.showRomanization}
+                confidenceThreshold={settings.confidenceThreshold}
+                conversationMode={conversationMode}
+                selectMode={selectMode}
+                selectedIndices={selectedIndices}
+                searchQuery={searchQuery}
+                showFavoritesOnly={showFavoritesOnly}
+                hasFavorites={hasFavorites}
+                hasMoreHistory={hasMoreHistory}
+                copiedText={copiedText}
+                speakingText={speakingText}
+                sourceLang={sourceLang}
+                targetLang={targetLang}
+                isListening={isListening}
+                isTranslating={isTranslating}
+                liveText={liveText}
+                translatedText={translatedText}
+                lastDetectedLang={lastDetectedLang}
+                skeletonAnim={skeletonAnim}
+                autoScroll={settings.autoScroll}
+                phraseOfTheDay={phraseOfTheDay}
+              />
+            </HistoryActionsProvider>
 
             {/* Undo delete toast */}
             {deletedItem && (
@@ -640,6 +685,27 @@ export default function TranslateScreen() {
         passengerLang={targetLang.code === "autodetect" ? undefined : targetLang.code}
         speechRate={settings.speechRate}
       />
+      <PhrasebookModal
+        visible={showPhrasebook}
+        onClose={() => setShowPhrasebook(false)}
+        sourceLangCode={sourceLang.code}
+        targetLangCode={targetLang.code}
+        colors={colors}
+        onCopy={copyToClipboard}
+        onSpeak={speakText}
+      />
+      {shareCardIndex !== null && history[shareCardIndex] && (
+        <TranslationShareCard
+          visible
+          onClose={() => setShareCardIndex(null)}
+          original={history[shareCardIndex].original}
+          translated={history[shareCardIndex].translated}
+          sourceLangCode={history[shareCardIndex].sourceLangCode}
+          targetLangCode={history[shareCardIndex].targetLangCode}
+          confidence={history[shareCardIndex].confidence}
+          colors={colors}
+        />
+      )}
     </>
   );
 }

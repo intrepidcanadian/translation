@@ -43,7 +43,7 @@ export default function PassengerView({
 }: Props) {
   // Filter to only successful translations
   const validHistory = useMemo(
-    () => history.filter((h) => !h.error && !h.pending && h.translated),
+    () => history.filter((h) => h.status === "ok" && h.translated),
     [history]
   );
 

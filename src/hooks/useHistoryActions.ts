@@ -180,23 +180,23 @@ export function useHistoryActions({
 
   const retryTranslation = useCallback(async (index: number) => {
     const item = history[index];
-    if (!item?.error || !item.sourceLangCode || !item.targetLangCode) return;
+    if (item?.status !== "error" || !item.sourceLangCode || !item.targetLangCode) return;
 
     setHistory((prev) =>
-      prev.map((h, i) => i === index ? { ...h, error: false, pending: true, translated: "Retrying..." } : h)
+      prev.map((h, i) => i === index ? { ...h, status: "pending" as const, translated: "Retrying..." } : h)
     );
 
     const controller = new AbortController();
     try {
       const result = await translateText(item.original, item.sourceLangCode, item.targetLangCode, { signal: controller.signal, provider: translationProvider });
       setHistory((prev) =>
-        prev.map((h, i) => i === index ? { ...h, translated: result.translatedText, pending: false, error: false, sourceLangCode: undefined, targetLangCode: undefined } : h)
+        prev.map((h, i) => i === index ? { ...h, translated: result.translatedText, status: "ok" as const, sourceLangCode: undefined, targetLangCode: undefined } : h)
       );
       notifySuccess();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Translation failed";
       setHistory((prev) =>
-        prev.map((h, i) => i === index ? { ...h, translated: msg, pending: false, error: true } : h)
+        prev.map((h, i) => i === index ? { ...h, translated: msg, status: "error" as const } : h)
       );
       showError(msg);
     }
@@ -221,7 +221,7 @@ export function useHistoryActions({
   }, [history.length, setHistory]);
 
   const shareHistory = useCallback(async (format: "text" | "csv" | "json" = "text") => {
-    const exportable = history.filter((item) => !item.error && !item.pending);
+    const exportable = history.filter((item) => item.status === "ok");
     if (exportable.length === 0) return;
 
     let message: string;
@@ -245,7 +245,7 @@ export function useHistoryActions({
   }, [history]);
 
   const showExportPicker = useCallback(() => {
-    const exportable = history.filter((item) => !item.error && !item.pending);
+    const exportable = history.filter((item) => item.status === "ok");
     if (exportable.length === 0) return;
     Alert.alert("Export Format", "Choose a format for your translations", [
       { text: "Text", onPress: () => shareHistory("text") },

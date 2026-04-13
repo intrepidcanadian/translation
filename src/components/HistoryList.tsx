@@ -18,6 +18,7 @@ import SwipeableRow from "./SwipeableRow";
 import TranslationBubble from "./TranslationBubble";
 import ChatBubble from "./ChatBubble";
 import { Platform } from "react-native";
+import { useHistoryActionsContext } from "../contexts/HistoryActionsContext";
 
 interface HistoryListProps {
   history: HistoryItem[];
@@ -32,7 +33,6 @@ interface HistoryListProps {
   };
   fontScale: number;
   showRomanization: boolean;
-  fontSize: string;
   confidenceThreshold: number;
   conversationMode: boolean;
   selectMode: boolean;
@@ -52,25 +52,10 @@ interface HistoryListProps {
   lastDetectedLang: string | null | undefined;
   skeletonAnim: Animated.Value;
   autoScroll: boolean;
-  // Phrase of the day
   phraseOfTheDay: {
     potd: { phrase: OfflinePhrase; category: PhraseCategory };
     categoryInfo?: { key: PhraseCategory; label: string; icon: string };
   } | null;
-  // Callbacks
-  onSearchChange: (query: string) => void;
-  onToggleFavoritesOnly: () => void;
-  onLoadMoreHistory: () => void;
-  onToggleSelectItem: (index: number) => void;
-  onDeleteHistoryItem: (index: number) => void;
-  onCopyToClipboard: (text: string) => void;
-  onSpeakText: (text: string, langCode: string) => void;
-  onToggleFavorite: (index: number) => void;
-  onRetryTranslation: (index: number) => void;
-  onCompareTranslation: (original: string, translated: string) => void;
-  onCorrection: (data: { index: number; original: string; translated: string }) => void;
-  onWordLongPress: (word: string, srcLang: string, tgtLang: string) => void;
-  onShowPassenger?: (index: number) => void;
 }
 
 // Memoized select mode row to avoid re-renders when selectMode is active
@@ -143,7 +128,6 @@ function HistoryList({
   dynamicFontSizes,
   fontScale,
   showRomanization,
-  fontSize,
   confidenceThreshold,
   conversationMode,
   selectMode,
@@ -164,20 +148,23 @@ function HistoryList({
   skeletonAnim,
   autoScroll,
   phraseOfTheDay,
-  onSearchChange,
-  onToggleFavoritesOnly,
-  onLoadMoreHistory,
-  onToggleSelectItem,
-  onDeleteHistoryItem,
-  onCopyToClipboard,
-  onSpeakText,
-  onToggleFavorite,
-  onRetryTranslation,
-  onCompareTranslation,
-  onCorrection,
-  onWordLongPress,
-  onShowPassenger,
 }: HistoryListProps) {
+  const {
+    onDeleteHistoryItem,
+    onCopyToClipboard,
+    onSpeakText,
+    onToggleFavorite,
+    onRetryTranslation,
+    onCompareTranslation,
+    onCorrection,
+    onWordLongPress,
+    onShowPassenger,
+    onShareCard,
+    onToggleSelectItem,
+    onSearchChange,
+    onToggleFavoritesOnly,
+    onLoadMoreHistory,
+  } = useHistoryActionsContext();
   const listRef = useRef<FlatList>(null);
 
   const keyExtractor = useCallback(
@@ -269,6 +256,7 @@ function HistoryList({
               onWordLongPress={onWordLongPress}
               onShowPassenger={onShowPassenger}
               onDismiss={onDeleteHistoryItem}
+              onShareCard={onShareCard}
               searchQuery={searchQuery}
             />
           )}
@@ -299,6 +287,7 @@ function HistoryList({
       onCorrection,
       onWordLongPress,
       onShowPassenger,
+      onShareCard,
     ]
   );
 
@@ -597,6 +586,11 @@ function HistoryList({
             </Text>
           </View>
         )}
+        <View style={styles.gestureHints}>
+          <Text style={[styles.gestureHintText, { color: colors.dimText }]}>
+            Swipe up for phrasebook  ·  Swipe down to speak
+          </Text>
+        </View>
       </View>
     );
   }, [isListening, liveText, colors, phraseOfTheDay, targetLang.code]);
@@ -742,5 +736,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontStyle: "italic",
     textAlign: "center",
+  },
+  gestureHints: {
+    marginTop: 20,
+    alignItems: "center",
+  },
+  gestureHintText: {
+    fontSize: 11,
+    fontWeight: "500",
+    letterSpacing: 0.3,
   },
 });

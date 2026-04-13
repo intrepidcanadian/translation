@@ -1,5 +1,5 @@
-import React, { useCallback } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Share } from "react-native";
+import React, { useCallback, useState } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, Share, LayoutAnimation, Platform, UIManager } from "react-native";
 import AlignedRomanization from "./AlignedRomanization";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
 import { highlightMatches } from "../utils/highlightText";
@@ -30,6 +30,8 @@ interface TranslationBubbleProps {
   onCorrection: (data: { index: number; original: string; translated: string }) => void;
   onWordLongPress: (word: string, targetLang: string, sourceLang: string) => void;
   onShowPassenger?: (index: number) => void;
+  onDismiss?: (index: number) => void;
+  onShareCard?: (index: number) => void;
   searchQuery?: string;
 }
 
@@ -51,22 +53,25 @@ function TranslationBubble({
   onCompare,
   onCorrection,
   onShowPassenger,
+  onDismiss,
+  onShareCard,
   onWordLongPress,
   searchQuery,
 }: TranslationBubbleProps) {
+  const [showMoreActions, setShowMoreActions] = useState(false);
   const timeStr = formatRelativeTime(item.timestamp);
   const originalWordCount = React.useMemo(() => item.original.trim().split(/\s+/).filter(Boolean).length, [item.original]);
   const translatedWordCount = React.useMemo(() => item.translated.trim().split(/\s+/).filter(Boolean).length, [item.translated]);
 
   // Memoize word-split segments to avoid re-creating arrays on every render
   const translatedWordSegments = React.useMemo(() => {
-    if (item.error || item.pending || !item.sourceLangCode || !item.targetLangCode) return null;
+    if (item.status === "error" || item.status === "pending" || !item.sourceLangCode || !item.targetLangCode) return null;
     return item.translated.split(/(\s+)/).map((segment: string, si: number) => {
       if (/\s+/.test(segment)) return { key: si, text: segment, isWord: false as const };
       const cleaned = segment.replace(/[^\p{L}\p{N}]/gu, "");
       return { key: si, text: segment, isWord: true as const, cleaned };
     });
-  }, [item.translated, item.error, item.pending, item.sourceLangCode, item.targetLangCode]);
+  }, [item.translated, item.status === "error", item.status === "pending", item.sourceLangCode, item.targetLangCode]);
 
   const handleShare = useCallback(() => {
     const srcName = item.sourceLangCode ? LANGUAGE_MAP.get(item.sourceLangCode)?.name : null;
@@ -83,8 +88,28 @@ function TranslationBubble({
     Share.share({ message: card }).catch((err) => logger.warn("Translation", "Share failed", err));
   }, [item.original, item.translated, item.sourceLangCode, item.targetLangCode]);
 
+  const toggleMoreActions = useCallback(() => {
+    if (Platform.OS === "android") {
+      UIManager.setLayoutAnimationEnabledExperimental?.(true);
+    }
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setShowMoreActions((prev) => !prev);
+  }, []);
+
   return (
     <View style={styles.historyItem}>
+      {/* Dismiss button in top-right corner */}
+      {onDismiss && (
+        <TouchableOpacity
+          style={styles.dismissButton}
+          onPress={() => onDismiss(realIndex)}
+          accessibilityRole="button"
+          accessibilityLabel="Remove this translation"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Text style={[styles.dismissIcon, { color: colors.mutedText }]}>✕</Text>
+        </TouchableOpacity>
+      )}
       <TouchableOpacity
         onPress={() => onCopy(item.original)}
         style={[styles.bubble, { backgroundColor: colors.bubbleBg }]}
@@ -111,24 +136,24 @@ function TranslationBubble({
           <Text style={styles.copiedBadge}>Copied!</Text>
         )}
       </TouchableOpacity>
-      <View style={[styles.bubble, styles.translatedBubble, { backgroundColor: colors.translatedBubbleBg, borderLeftColor: item.error ? colors.errorBorder : item.pending ? colors.offlineText : colors.primary }]}>
+      <View style={[styles.bubble, styles.translatedBubble, { backgroundColor: colors.translatedBubbleBg, borderLeftColor: item.status === "error" ? colors.errorBorder : item.status === "pending" ? colors.offlineText : colors.primary }]}>
         <TouchableOpacity
-          onPress={() => !item.pending && !item.error && onCopy(item.translated)}
+          onPress={() => item.status !== "pending" && item.status !== "error" && onCopy(item.translated)}
           accessibilityRole="button"
-          accessibilityLabel={item.error ? `Translation failed: ${item.translated}` : item.pending ? `Queued for translation when online` : `Translation: ${item.translated}. Tap to copy. Long-press a word for alternatives.`}
-          disabled={item.pending || item.error}
+          accessibilityLabel={item.status === "error" ? `Translation failed: ${item.translated}` : item.status === "pending" ? `Queued for translation when online` : `Translation: ${item.translated}. Tap to copy. Long-press a word for alternatives.`}
+          disabled={item.status === "pending" || item.status === "error"}
         >
-          {item.pending && (
+          {item.status === "pending" && (
             <Text style={[styles.pendingBadge, { color: colors.offlineText }]}>
               Queued offline
             </Text>
           )}
-          {item.error && (
+          {item.status === "error" && (
             <Text style={[styles.pendingBadge, { color: colors.errorText }]}>
               Failed
             </Text>
           )}
-          <Text selectable={!item.pending && !item.error} style={[styles.translatedTextHistory, { color: item.error ? colors.errorText : item.pending ? colors.dimText : colors.translatedText }, dynamicFontSizes.translated, (item.pending || item.error) && { fontStyle: "italic" }]}>
+          <Text selectable={item.status !== "pending" && item.status !== "error"} style={[styles.translatedTextHistory, { color: item.status === "error" ? colors.errorText : item.status === "pending" ? colors.dimText : colors.translatedText }, dynamicFontSizes.translated, (item.status === "pending" || item.status === "error") && { fontStyle: "italic" }]}>
             {translatedWordSegments
               ? translatedWordSegments.map((seg) =>
                   !seg.isWord ? seg.text : (
@@ -146,10 +171,10 @@ function TranslationBubble({
               : item.translated
             }
           </Text>
-          {showRomanization && !item.error && !item.pending && item.targetLangCode && (
+          {showRomanization && item.status !== "error" && item.status !== "pending" && item.targetLangCode && (
             <AlignedRomanization text={item.translated} langCode={item.targetLangCode} textColor={colors.translatedText} romanColor={colors.mutedText} />
           )}
-          {confidenceThreshold > 0 && item.confidence != null && Math.round(item.confidence * 100) < confidenceThreshold && !item.error && !item.pending && (
+          {confidenceThreshold > 0 && item.confidence != null && Math.round(item.confidence * 100) < confidenceThreshold && item.status !== "error" && item.status !== "pending" && (
             <Text style={[styles.lowConfidenceBadge, { color: colors.warningText, backgroundColor: colors.warningBg }]}>
               ⚠ Low confidence ({Math.round(item.confidence * 100)}%) — consider verifying
             </Text>
@@ -158,17 +183,19 @@ function TranslationBubble({
             <Text style={[styles.copiedBadge, { color: colors.successText }]}>Copied!</Text>
           )}
         </TouchableOpacity>
+        {/* Primary actions row — always visible */}
         <View style={styles.bubbleActions}>
-          {!item.error && !item.pending && (
+          {item.status !== "error" && item.status !== "pending" && (
             <Text style={[styles.wordCountBubble, { color: colors.dimText }]}>
-              {originalWordCount} → {translatedWordCount} words
+              {originalWordCount} → {translatedWordCount}
               {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
+              {timeStr ? ` · ${timeStr}` : ""}
             </Text>
           )}
-          {timeStr ? (
+          {item.status === "error" && timeStr ? (
             <Text style={[styles.timestampText, { color: colors.dimText }]}>{timeStr}</Text>
           ) : null}
-          {item.error ? (
+          {item.status === "error" ? (
             <TouchableOpacity
               style={styles.retryButton}
               onPress={() => onRetry(realIndex)}
@@ -180,10 +207,10 @@ function TranslationBubble({
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={styles.speakButton}
+              style={styles.actionButton}
               onPress={() => onSpeak(item.translated, targetSpeechCode)}
               accessibilityRole="button"
-              accessibilityLabel={speakingText === item.translated ? "Stop speaking" : `Speak translation: ${item.translated}`}
+              accessibilityLabel={speakingText === item.translated ? "Stop speaking" : `Speak translation`}
             >
               <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
                 {speakingText === item.translated ? "⏹" : "🔊"}
@@ -191,7 +218,7 @@ function TranslationBubble({
             </TouchableOpacity>
           )}
           <TouchableOpacity
-            style={styles.favoriteButton}
+            style={styles.actionButton}
             onPress={() => onToggleFavorite(realIndex)}
             accessibilityRole="button"
             accessibilityLabel={item.favorited ? "Remove from favorites" : "Add to favorites"}
@@ -200,47 +227,61 @@ function TranslationBubble({
               {item.favorited ? "★" : "☆"}
             </Text>
           </TouchableOpacity>
-          {!item.error && !item.pending && (
+          {/* Overflow toggle for secondary actions */}
+          {item.status !== "error" && item.status !== "pending" && (
             <TouchableOpacity
-              style={styles.speakButton}
-              onPress={() => onCompare(item.original, item.translated)}
+              style={styles.actionButton}
+              onPress={toggleMoreActions}
               accessibilityRole="button"
-              accessibilityLabel="Compare translations from different engines"
+              accessibilityLabel={showMoreActions ? "Hide more actions" : "Show more actions"}
             >
-              <Text style={[styles.compareIcon, { color: colors.dimText }]}>⇔</Text>
-            </TouchableOpacity>
-          )}
-          {!item.error && !item.pending && (
-            <TouchableOpacity
-              style={styles.speakButton}
-              onPress={() => onCorrection({ index: realIndex, original: item.original, translated: item.translated })}
-              accessibilityRole="button"
-              accessibilityLabel="Suggest a better translation"
-            >
-              <Text style={[{ fontSize: 14, color: colors.dimText }]}>✏️</Text>
-            </TouchableOpacity>
-          )}
-          {!item.error && !item.pending && onShowPassenger && (
-            <TouchableOpacity
-              style={styles.speakButton}
-              onPress={() => onShowPassenger(realIndex)}
-              accessibilityRole="button"
-              accessibilityLabel="Show translation to passenger in fullscreen"
-            >
-              <Text style={[{ fontSize: 14, color: colors.dimText }]}>👁️</Text>
-            </TouchableOpacity>
-          )}
-          {!item.error && !item.pending && (
-            <TouchableOpacity
-              style={styles.speakButton}
-              onPress={handleShare}
-              accessibilityRole="button"
-              accessibilityLabel="Share this translation"
-            >
-              <Text style={[{ fontSize: 14, color: colors.dimText }]}>↗</Text>
+              <Text style={[styles.moreIcon, { color: colors.dimText }]}>•••</Text>
             </TouchableOpacity>
           )}
         </View>
+        {/* Secondary actions — shown on overflow tap */}
+        {showMoreActions && item.status !== "error" && item.status !== "pending" && (
+          <View style={[styles.secondaryActions, { borderTopColor: colors.border }]}>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => onCompare(item.original, item.translated)}
+              accessibilityRole="button"
+              accessibilityLabel="Compare translations"
+            >
+              <Text style={[styles.secondaryButtonIcon, { color: colors.dimText }]}>⇔</Text>
+              <Text style={[styles.secondaryButtonLabel, { color: colors.dimText }]}>Compare</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={() => onCorrection({ index: realIndex, original: item.original, translated: item.translated })}
+              accessibilityRole="button"
+              accessibilityLabel="Suggest correction"
+            >
+              <Text style={[styles.secondaryButtonIcon, { color: colors.dimText }]}>✏️</Text>
+              <Text style={[styles.secondaryButtonLabel, { color: colors.dimText }]}>Correct</Text>
+            </TouchableOpacity>
+            {onShowPassenger && (
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={() => onShowPassenger(realIndex)}
+                accessibilityRole="button"
+                accessibilityLabel="Show to passenger"
+              >
+                <Text style={[styles.secondaryButtonIcon, { color: colors.dimText }]}>👁️</Text>
+                <Text style={[styles.secondaryButtonLabel, { color: colors.dimText }]}>Show</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              onPress={onShareCard ? () => onShareCard(realIndex) : handleShare}
+              accessibilityRole="button"
+              accessibilityLabel="Share translation"
+            >
+              <Text style={[styles.secondaryButtonIcon, { color: colors.dimText }]}>↗</Text>
+              <Text style={[styles.secondaryButtonLabel, { color: colors.dimText }]}>Share</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -251,6 +292,22 @@ export default React.memo(TranslationBubble);
 const styles = StyleSheet.create({
   historyItem: {
     marginBottom: 16,
+    position: "relative",
+  },
+  dismissButton: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    zIndex: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dismissIcon: {
+    fontSize: 14,
+    fontWeight: "600",
   },
   bubble: {
     borderRadius: 16,
@@ -308,10 +365,9 @@ const styles = StyleSheet.create({
   },
   bubbleActions: {
     flexDirection: "row",
-    alignSelf: "flex-end",
     alignItems: "center",
-    marginTop: 6,
-    gap: 12,
+    marginTop: 8,
+    gap: 14,
   },
   wordCountBubble: {
     fontSize: 10,
@@ -323,7 +379,7 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     marginRight: 4,
   },
-  speakButton: {
+  actionButton: {
     padding: 4,
   },
   speakIcon: {
@@ -332,14 +388,13 @@ const styles = StyleSheet.create({
   speakIconActive: {
     opacity: 0.6,
   },
-  favoriteButton: {
-    padding: 4,
-  },
   favoriteIcon: {
     fontSize: 18,
   },
-  favoriteIconActive: {
-    color: "#ffd700",
+  moreIcon: {
+    fontSize: 14,
+    fontWeight: "800",
+    letterSpacing: 1,
   },
   retryButton: {
     flexDirection: "row",
@@ -356,8 +411,24 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
   },
-  compareIcon: {
+  secondaryActions: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    paddingTop: 8,
+    marginTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  secondaryButton: {
+    alignItems: "center",
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    gap: 2,
+  },
+  secondaryButtonIcon: {
     fontSize: 16,
-    fontWeight: "700",
+  },
+  secondaryButtonLabel: {
+    fontSize: 10,
+    fontWeight: "500",
   },
 });

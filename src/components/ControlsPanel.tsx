@@ -115,7 +115,7 @@ function ControlsPanel({
       )}
 
       {conversationMode ? (
-        <View style={styles.convoControls}>
+        <View style={styles.convoControlsOuter}>
           <View style={styles.quickActionRow}>
             <TouchableOpacity
               style={[styles.splitScreenBtn, { backgroundColor: colors.cardBg, borderColor: colors.primary }]}
@@ -138,45 +138,47 @@ function ControlsPanel({
               <Text style={[styles.splitScreenLabel, { color: "#ff9f43" }]}>Visual Cards</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.convoMicCol}>
-            <View style={styles.micButtonWrapper}>
-              {isListening && activeSpeaker === "A" && (
-                <Animated.View style={[styles.pulseRing, { backgroundColor: colors.destructiveBg, transform: [{ scale: pulseAnim }], opacity: pulseOpacity }]} />
-              )}
-              <TouchableOpacity
-                style={[styles.micButton, styles.micButtonSmall, { backgroundColor: colors.primary, shadowColor: colors.primary }, isListening && activeSpeaker === "A" && { backgroundColor: colors.destructiveBg, shadowColor: colors.destructiveBg }]}
-                onPress={isListening ? onStopListening : () => onStartListeningAs("A")}
-                activeOpacity={0.7}
-                disabled={isListening && activeSpeaker !== "A"}
-                accessibilityRole="button"
-                accessibilityLabel={isListening && activeSpeaker === "A" ? `Stop listening in ${sourceLangName}` : `Speak ${sourceLangName}`}
-                accessibilityHint={isListening ? "Stops speech recognition" : `Starts listening for ${sourceLangName} speech to translate`}
-                accessibilityState={{ busy: isListening && activeSpeaker === "A" }}
-              >
-                <Text style={styles.micIcon} importantForAccessibility="no">🎙️</Text>
-              </TouchableOpacity>
+          <View style={styles.convoMicRow}>
+            <View style={styles.convoMicCol}>
+              <View style={styles.micButtonWrapper}>
+                {isListening && activeSpeaker === "A" && (
+                  <Animated.View style={[styles.pulseRing, { backgroundColor: colors.destructiveBg, transform: [{ scale: pulseAnim }], opacity: pulseOpacity }]} />
+                )}
+                <TouchableOpacity
+                  style={[styles.micButton, styles.micButtonSmall, { backgroundColor: colors.primary, shadowColor: colors.primary }, isListening && activeSpeaker === "A" && { backgroundColor: colors.destructiveBg, shadowColor: colors.destructiveBg }]}
+                  onPress={isListening ? onStopListening : () => onStartListeningAs("A")}
+                  activeOpacity={0.7}
+                  disabled={isListening && activeSpeaker !== "A"}
+                  accessibilityRole="button"
+                  accessibilityLabel={isListening && activeSpeaker === "A" ? `Stop listening in ${sourceLangName}` : `Speak ${sourceLangName}`}
+                  accessibilityHint={isListening ? "Stops speech recognition" : `Starts listening for ${sourceLangName} speech to translate`}
+                  accessibilityState={{ busy: isListening && activeSpeaker === "A" }}
+                >
+                  <Text style={styles.micIcon} importantForAccessibility="no">🎙️</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.convoLabel, { color: colors.mutedText }]}>{sourceLangName}</Text>
             </View>
-            <Text style={[styles.convoLabel, { color: colors.mutedText }]}>{sourceLangName}</Text>
-          </View>
-          <View style={styles.convoMicCol}>
-            <View style={styles.micButtonWrapper}>
-              {isListening && activeSpeaker === "B" && (
-                <Animated.View style={[styles.pulseRing, { backgroundColor: colors.destructiveBg, transform: [{ scale: pulseAnim }], opacity: pulseOpacity }]} />
-              )}
-              <TouchableOpacity
-                style={[styles.micButton, styles.micButtonSmall, { backgroundColor: colors.primary, shadowColor: colors.primary }, isListening && activeSpeaker === "B" && { backgroundColor: colors.destructiveBg, shadowColor: colors.destructiveBg }]}
-                onPress={isListening ? onStopListening : () => onStartListeningAs("B")}
-                activeOpacity={0.7}
-                disabled={isListening && activeSpeaker !== "B"}
-                accessibilityRole="button"
-                accessibilityLabel={isListening && activeSpeaker === "B" ? `Stop listening in ${targetLangName}` : `Speak ${targetLangName}`}
-                accessibilityHint={isListening ? "Stops speech recognition" : `Starts listening for ${targetLangName} speech to translate`}
-                accessibilityState={{ busy: isListening && activeSpeaker === "B" }}
-              >
-                <Text style={styles.micIcon} importantForAccessibility="no">🎙️</Text>
-              </TouchableOpacity>
+            <View style={styles.convoMicCol}>
+              <View style={styles.micButtonWrapper}>
+                {isListening && activeSpeaker === "B" && (
+                  <Animated.View style={[styles.pulseRing, { backgroundColor: colors.destructiveBg, transform: [{ scale: pulseAnim }], opacity: pulseOpacity }]} />
+                )}
+                <TouchableOpacity
+                  style={[styles.micButton, styles.micButtonSmall, { backgroundColor: colors.primary, shadowColor: colors.primary }, isListening && activeSpeaker === "B" && { backgroundColor: colors.destructiveBg, shadowColor: colors.destructiveBg }]}
+                  onPress={isListening ? onStopListening : () => onStartListeningAs("B")}
+                  activeOpacity={0.7}
+                  disabled={isListening && activeSpeaker !== "B"}
+                  accessibilityRole="button"
+                  accessibilityLabel={isListening && activeSpeaker === "B" ? `Stop listening in ${targetLangName}` : `Speak ${targetLangName}`}
+                  accessibilityHint={isListening ? "Stops speech recognition" : `Starts listening for ${targetLangName} speech to translate`}
+                  accessibilityState={{ busy: isListening && activeSpeaker === "B" }}
+                >
+                  <Text style={styles.micIcon} importantForAccessibility="no">🎙️</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={[styles.convoLabel, { color: colors.mutedText }]}>{targetLangName}</Text>
             </View>
-            <Text style={[styles.convoLabel, { color: colors.mutedText }]}>{targetLangName}</Text>
           </View>
         </View>
       ) : (
@@ -283,8 +285,9 @@ const styles = StyleSheet.create({
   listeningIndicator: { flexDirection: "row", alignItems: "center", marginTop: 12, gap: 6 },
   listeningDot: { color: "#ff4757", fontSize: 10 },
   listeningLabel: { color: "#ff4757", fontSize: 13, fontWeight: "600" },
-  convoControls: { flexDirection: "row", justifyContent: "center", alignItems: "flex-end", gap: 24 },
-  quickActionRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  convoControlsOuter: { alignItems: "center", gap: 12, width: "100%" },
+  convoMicRow: { flexDirection: "row", justifyContent: "center", alignItems: "flex-end", gap: 40 },
+  quickActionRow: { flexDirection: "row", gap: 10, width: "100%" },
   splitScreenBtn: { alignItems: "center", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5, flex: 1 },
   splitScreenIcon: { fontSize: 20, fontWeight: "700" },
   splitScreenLabel: { fontSize: 10, fontWeight: "600", marginTop: 2 },

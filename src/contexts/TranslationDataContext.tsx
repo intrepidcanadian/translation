@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import type { HistoryItem } from "../types";
+import { migrateHistoryItem, type HistoryItem } from "../types";
 import { logger } from "../services/logger";
 
 const HISTORY_KEY = "translation_history";
@@ -36,7 +36,8 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
       .then((val) => {
         if (val) {
           try {
-            const data = JSON.parse(val) as HistoryItem[];
+            const raw = JSON.parse(val) as Record<string, unknown>[];
+            const data = raw.map(migrateHistoryItem);
             allHistoryRef.current = data;
             const startIdx = Math.max(0, data.length - HISTORY_PAGE_SIZE);
             setHistory(data.slice(startIdx));

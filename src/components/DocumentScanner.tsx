@@ -7,6 +7,7 @@ import {
   Platform,
   Share,
   Alert,
+  Animated,
 } from "react-native";
 import {
   Camera,
@@ -97,6 +98,36 @@ export default function DocumentScanner({
   const [noteSaved, setNoteSaved] = useState(false);
 
   const mode = getScannerMode(selectedMode);
+
+  // Phase transition animations
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(0)).current;
+
+  const animatePhaseChange = useCallback((newPhase: Phase) => {
+    // Fade out current phase
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start(() => {
+      setPhase(newPhase);
+      // Set slide start position based on destination
+      slideAnim.setValue(newPhase === "results" ? 30 : newPhase === "camera" ? -30 : 0);
+      // Fade + slide in new phase
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  }, [fadeAnim, slideAnim]);
 
   useEffect(() => {
     if (visible && !hasPermission) {
@@ -196,7 +227,7 @@ export default function DocumentScanner({
     if (!cameraRef.current) return;
     impactMedium();
 
-    setPhase("processing");
+    animatePhaseChange("processing");
     setError(null);
     setNoteSaved(false);
 
@@ -215,7 +246,7 @@ export default function DocumentScanner({
 
       if (!result.blocks.length) {
         setError("No text detected. Try again with a clearer photo.");
-        setPhase("camera");
+        animatePhaseChange("camera");
         return;
       }
 
@@ -306,13 +337,13 @@ export default function DocumentScanner({
         } catch (err) { logger.warn("OCR", "Translated text analysis failed", err); }
       }
 
-      setPhase("results");
+      animatePhaseChange("results");
       notifySuccess();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Analysis failed");
-      setPhase("camera");
+      animatePhaseChange("camera");
     }
-  }, [sourceLangCode, targetLangCode, translationProvider, selectedMode]);
+  }, [sourceLangCode, targetLangCode, translationProvider, selectedMode, animatePhaseChange]);
 
   if (!visible) return null;
 
@@ -345,48 +376,58 @@ export default function DocumentScanner({
     );
   }
 
+  const phaseStyle = { opacity: fadeAnim, transform: [{ translateY: slideAnim }] };
+
   if (phase === "processing") {
-    return <ProcessingPhase modeIcon={mode.icon} processingStep={processingStep} />;
+    return (
+      <Animated.View style={[styles.container, phaseStyle]}>
+        <ProcessingPhase modeIcon={mode.icon} processingStep={processingStep} />
+      </Animated.View>
+    );
   }
 
   if (phase === "results") {
     return (
-      <ResultsPhase
-        colors={colors}
-        modeIcon={mode.icon}
-        modeLabel={mode.label}
-        selectedMode={selectedMode}
-        originalText={originalText}
-        translatedText={translatedText}
-        analysis={analysis}
-        modeFields={modeFields}
-        copiedText={copiedText}
-        noteSaved={noteSaved}
-        onRescan={() => setPhase("camera")}
-        onClose={onClose}
-        onCopy={copyText}
-        onSaveNote={handleSaveNote}
-        onShare={shareResults}
-      />
+      <Animated.View style={[styles.container, phaseStyle]}>
+        <ResultsPhase
+          colors={colors}
+          modeIcon={mode.icon}
+          modeLabel={mode.label}
+          selectedMode={selectedMode}
+          originalText={originalText}
+          translatedText={translatedText}
+          analysis={analysis}
+          modeFields={modeFields}
+          copiedText={copiedText}
+          noteSaved={noteSaved}
+          onRescan={() => animatePhaseChange("camera")}
+          onClose={onClose}
+          onCopy={copyText}
+          onSaveNote={handleSaveNote}
+          onShare={shareResults}
+        />
+      </Animated.View>
     );
   }
 
   return (
-    <CameraPhase
-      cameraRef={cameraRef}
-      device={device}
-      visible={visible && phase === "camera"}
-      selectedMode={selectedMode}
-      modeLabel={mode.label}
-      modeIcon={mode.icon}
-      modeInstruction={mode.instruction}
-      sourceLangCode={sourceLangCode}
-      targetLangCode={targetLangCode}
-      error={error}
-      onSelectMode={setSelectedMode}
-      onCapture={captureAndAnalyze}
-      onClose={onClose}
-    />
+    <Animated.View style={[styles.container, phaseStyle]}>
+      <CameraPhase
+        cameraRef={cameraRef}
+        device={device}
+        visible={visible && phase === "camera"}
+        selectedMode={selectedMode}
+        modeLabel={mode.label}
+        modeIcon={mode.icon}
+        modeInstruction={mode.instruction}
+        sourceLangCode={sourceLangCode}
+        targetLangCode={targetLangCode}
+        error={error}
+        onSelectMode={setSelectedMode}
+        onCapture={captureAndAnalyze}
+        onClose={onClose}
+      />
+    </Animated.View>
   );
 }
 

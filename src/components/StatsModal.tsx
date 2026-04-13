@@ -9,18 +9,7 @@ import {
 } from "react-native";
 import { LANGUAGE_MAP } from "../services/translation";
 import type { ThemeColors } from "../theme";
-
-interface HistoryItem {
-  original: string;
-  translated: string;
-  favorited?: boolean;
-  pending?: boolean;
-  error?: boolean;
-  confidence?: number | null;
-  sourceLangCode?: string;
-  targetLangCode?: string;
-  timestamp?: number;
-}
+import type { HistoryItem } from "../types";
 
 interface StatsModalProps {
   visible: boolean;
@@ -31,7 +20,7 @@ interface StatsModalProps {
 }
 
 export default function StatsModal({ visible, onClose, history, streak, colors }: StatsModalProps) {
-  const validHistory = useMemo(() => history.filter((h) => !h.pending && !h.error), [history]);
+  const validHistory = useMemo(() => history.filter((h) => h.status === "ok"), [history]);
 
   const stats = useMemo(() => {
     const totalTranslations = validHistory.length;

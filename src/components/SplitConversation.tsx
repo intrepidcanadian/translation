@@ -142,6 +142,7 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
         {
           original: final,
           translated,
+          status: "ok" as const,
           speaker,
           confidence: confidenceRef.current,
           sourceLangCode: sourceLang.code,
