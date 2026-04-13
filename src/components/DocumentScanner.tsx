@@ -5,8 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
-  ActivityIndicator,
-  ScrollView,
   Share,
   Alert,
 } from "react-native";
@@ -21,15 +19,17 @@ import TextRecognition, {
 } from "@react-native-ml-kit/text-recognition";
 import { translateText, translateAppleBatch, type TranslationProvider } from "../services/translation";
 import {
-  SCANNER_MODES,
   getScannerMode,
   type ScannerModeKey,
   type ExtractedField,
 } from "../services/scannerModes";
 import { saveNote } from "../services/notes";
 import * as Clipboard from "expo-clipboard";
-import { notifySuccess, impactMedium, selection } from "../services/haptics";
+import { notifySuccess, impactMedium } from "../services/haptics";
 import type { ThemeColors } from "../theme";
+import CameraPhase from "./scanner/CameraPhase";
+import ProcessingPhase from "./scanner/ProcessingPhase";
+import ResultsPhase from "./scanner/ResultsPhase";
 
 interface DocumentAnalysis {
   detectedLanguage: string | null;
@@ -125,7 +125,6 @@ export default function DocumentScanner({
 
   const handleSaveNote = useCallback(async () => {
     if (noteSaved) return;
-    const fields = modeFields.map((f) => ({ label: f.label, value: f.value }));
     const formatted = mode.formatNotes(originalText, translatedText, modeFields);
     const firstLine = translatedText.split("\n")[0]?.slice(0, 60) || "Untitled";
 
@@ -138,7 +137,7 @@ export default function DocumentScanner({
         scanMode: selectedMode,
         sourceLang: sourceLangCode,
         targetLang: targetLangCode,
-        fields,
+        fields: modeFields.map((f) => ({ label: f.label, value: f.value })),
       });
       setNoteSaved(true);
       notifySuccess();
@@ -172,7 +171,6 @@ export default function DocumentScanner({
     sections.push("\n--- ORIGINAL TEXT ---");
     sections.push(originalText);
 
-    // Include NER entities for document mode
     if (selectedMode === "document" && analysis) {
       const entities: string[] = [];
       if (analysis.persons.length > 0) entities.push(`People: ${analysis.persons.join(", ")}`);
@@ -342,301 +340,48 @@ export default function DocumentScanner({
     );
   }
 
-  // ---- PROCESSING PHASE ----
   if (phase === "processing") {
-    return (
-      <View style={styles.container}>
-        <View style={styles.centerContent}>
-          <Text style={styles.modeIcon}>{mode.icon}</Text>
-          <ActivityIndicator size="large" color="#6c63ff" />
-          <Text style={styles.processingStep}>{processingStep}</Text>
-          <Text style={styles.processingHint}>All processing runs on-device</Text>
-        </View>
-      </View>
-    );
+    return <ProcessingPhase modeIcon={mode.icon} processingStep={processingStep} />;
   }
 
-  // ---- RESULTS PHASE ----
   if (phase === "results") {
-    const hasEntities = analysis && (
-      analysis.persons.length > 0 ||
-      analysis.organizations.length > 0 ||
-      analysis.places.length > 0
-    );
-
     return (
-      <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
-        {/* Header */}
-        <View style={[styles.resultsHeader, { backgroundColor: colors.cardBg, borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={() => setPhase("camera")} accessibilityLabel="Scan again">
-            <Text style={[styles.headerAction, { color: colors.primary }]}>Rescan</Text>
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.titleText }]}>
-            {mode.icon} {mode.label}
-          </Text>
-          <TouchableOpacity onPress={onClose} accessibilityLabel="Close scanner">
-            <Text style={[styles.headerAction, { color: colors.primary }]}>Done</Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView style={styles.resultsScroll} contentContainerStyle={styles.resultsContent}>
-          {/* Stats bar */}
-          {analysis && (
-            <View style={[styles.statsBar, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-              {analysis.detectedLanguage && (
-                <View style={styles.statChip}>
-                  <Text style={[styles.statChipLabel, { color: colors.dimText }]}>Language</Text>
-                  <Text style={[styles.statChipValue, { color: colors.primary }]}>{analysis.detectedLanguage.toUpperCase()}</Text>
-                </View>
-              )}
-              <View style={styles.statChip}>
-                <Text style={[styles.statChipLabel, { color: colors.dimText }]}>Words</Text>
-                <Text style={[styles.statChipValue, { color: colors.primary }]}>{analysis.wordCount}</Text>
-              </View>
-              <View style={styles.statChip}>
-                <Text style={[styles.statChipLabel, { color: colors.dimText }]}>Sentences</Text>
-                <Text style={[styles.statChipValue, { color: colors.primary }]}>{analysis.sentenceCount}</Text>
-              </View>
-            </View>
-          )}
-
-          {/* Mode-specific extracted fields */}
-          {modeFields.length > 0 && (
-            <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.titleText }]}>
-                {selectedMode === "receipt" ? "Receipt Details" :
-                 selectedMode === "businessCard" ? "Contact Info" :
-                 selectedMode === "medicine" ? "Medication Details" :
-                 selectedMode === "menu" ? "Menu Analysis" :
-                 selectedMode === "textbook" ? "Content Summary" :
-                 "Key Information"}
-              </Text>
-              {modeFields.map((field, i) => (
-                <FieldRow key={i} field={field} colors={colors} onCopy={copyText} copiedText={copiedText} />
-              ))}
-            </View>
-          )}
-
-          {/* NER entities (document mode or when entities found) */}
-          {hasEntities && (
-            <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.titleText }]}>People, Places & Organizations</Text>
-              {analysis!.persons.length > 0 && (
-                <EntityRow icon="P" label="People" items={analysis!.persons} colors={colors} iconColor="#f472b6" />
-              )}
-              {analysis!.organizations.length > 0 && (
-                <EntityRow icon="O" label="Orgs" items={analysis!.organizations} colors={colors} iconColor="#a78bfa" />
-              )}
-              {analysis!.places.length > 0 && (
-                <EntityRow icon="L" label="Places" items={analysis!.places} colors={colors} iconColor="#34d399" />
-              )}
-            </View>
-          )}
-
-          {/* Translated text */}
-          <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Translation</Text>
-              <TouchableOpacity onPress={() => copyText(translatedText)} accessibilityLabel="Copy translation">
-                <Text style={[styles.copyAction, { color: colors.primary }]}>
-                  {copiedText === translatedText ? "Copied!" : "Copy"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={[styles.documentText, { color: colors.translatedText }]} selectable>
-              {translatedText}
-            </Text>
-          </View>
-
-          {/* Original text */}
-          <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Original Text</Text>
-              <TouchableOpacity onPress={() => copyText(originalText)} accessibilityLabel="Copy original text">
-                <Text style={[styles.copyAction, { color: colors.primary }]}>
-                  {copiedText === originalText ? "Copied!" : "Copy"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={[styles.documentText, { color: colors.secondaryText }]} selectable>
-              {originalText}
-            </Text>
-          </View>
-
-          {/* Action buttons */}
-          <View style={styles.actionRow}>
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: noteSaved ? "#4ade80" : colors.primary }]}
-              onPress={handleSaveNote}
-              accessibilityLabel="Save as note"
-            >
-              <Text style={styles.actionButtonText}>
-                {noteSaved ? "Saved!" : "Save as Note"}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: colors.primary }]}
-              onPress={shareResults}
-              accessibilityLabel="Share report"
-            >
-              <Text style={styles.actionButtonText}>Share Report</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={{ height: 40 }} />
-        </ScrollView>
-      </View>
+      <ResultsPhase
+        colors={colors}
+        modeIcon={mode.icon}
+        modeLabel={mode.label}
+        selectedMode={selectedMode}
+        originalText={originalText}
+        translatedText={translatedText}
+        analysis={analysis}
+        modeFields={modeFields}
+        copiedText={copiedText}
+        noteSaved={noteSaved}
+        onRescan={() => setPhase("camera")}
+        onClose={onClose}
+        onCopy={copyText}
+        onSaveNote={handleSaveNote}
+        onShare={shareResults}
+      />
     );
   }
 
-  // ---- CAMERA PHASE ----
   return (
-    <View style={styles.container}>
-      <Camera
-        ref={cameraRef}
-        style={StyleSheet.absoluteFill}
-        device={device}
-        isActive={visible && phase === "camera"}
-        photo={true}
-        preview={true}
-      />
-
-      {/* Document framing guide */}
-      <View style={styles.frameGuide}>
-        <View style={[styles.frameCorner, styles.frameTL]} />
-        <View style={[styles.frameCorner, styles.frameTR]} />
-        <View style={[styles.frameCorner, styles.frameBL]} />
-        <View style={[styles.frameCorner, styles.frameBR]} />
-      </View>
-
-      {/* Top bar */}
-      <View style={styles.topBar}>
-        <TouchableOpacity style={styles.topButton} onPress={onClose} accessibilityLabel="Close scanner">
-          <Text style={styles.topButtonText}>X</Text>
-        </TouchableOpacity>
-        <View style={styles.docBadge}>
-          <Text style={styles.docBadgeText}>{mode.icon} {mode.label}</Text>
-        </View>
-        <View style={{ width: 44 }} />
-      </View>
-
-      {/* Mode selector pills */}
-      <View style={styles.modeBar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modeBarContent}>
-          {SCANNER_MODES.map((m) => (
-            <TouchableOpacity
-              key={m.key}
-              style={[
-                styles.modePill,
-                selectedMode === m.key && styles.modePillActive,
-              ]}
-              onPress={() => {
-                setSelectedMode(m.key);
-                selection();
-              }}
-              accessibilityLabel={`${m.label} scanner mode`}
-            >
-              <Text style={styles.modePillIcon}>{m.icon}</Text>
-              <Text style={[
-                styles.modePillText,
-                selectedMode === m.key && styles.modePillTextActive,
-              ]}>
-                {m.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {/* Error banner */}
-      {error && (
-        <View style={styles.errorBanner}>
-          <Text style={styles.errorBannerText}>{error}</Text>
-        </View>
-      )}
-
-      {/* Bottom capture area */}
-      <View style={styles.bottomArea}>
-        <Text style={styles.instructionText}>{mode.instruction}</Text>
-        <TouchableOpacity
-          style={styles.captureButton}
-          onPress={captureAndAnalyze}
-          activeOpacity={0.7}
-          accessibilityLabel={`Capture and analyze ${mode.label.toLowerCase()}`}
-        >
-          <View style={styles.captureInner} />
-        </TouchableOpacity>
-        <Text style={styles.hintText}>
-          {sourceLangCode.toUpperCase()} {"->"} {targetLangCode.toUpperCase()} | On-device AI
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-// Field display row for mode-specific extracted fields
-function FieldRow({
-  field,
-  colors,
-  onCopy,
-  copiedText,
-}: {
-  field: ExtractedField;
-  colors: ThemeColors;
-  onCopy: (text: string) => void;
-  copiedText: string | null;
-}) {
-  return (
-    <TouchableOpacity
-      style={entityStyles.row}
-      onPress={() => onCopy(field.value)}
-      accessibilityLabel={`${field.label}: ${field.value}. Tap to copy`}
-    >
-      <View style={[entityStyles.iconBadge, { backgroundColor: field.color + "22" }]}>
-        <Text style={[entityStyles.iconText, { color: field.color }]}>{field.icon}</Text>
-      </View>
-      <View style={entityStyles.content}>
-        <Text style={[entityStyles.label, { color: colors.dimText }]}>{field.label}</Text>
-        <Text style={[entityStyles.valueText, { color: colors.primaryText }]} numberOfLines={2}>
-          {copiedText === field.value ? "Copied!" : field.value}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-// Entity display row component (NER results)
-function EntityRow({
-  icon,
-  label,
-  items,
-  colors,
-  iconColor,
-}: {
-  icon: string;
-  label: string;
-  items: string[];
-  colors: ThemeColors;
-  iconColor: string;
-}) {
-  return (
-    <View style={entityStyles.row}>
-      <View style={[entityStyles.iconBadge, { backgroundColor: iconColor + "22" }]}>
-        <Text style={[entityStyles.iconText, { color: iconColor }]}>{icon}</Text>
-      </View>
-      <View style={entityStyles.content}>
-        <Text style={[entityStyles.label, { color: colors.dimText }]}>{label}</Text>
-        <View style={entityStyles.chips}>
-          {items.map((item, i) => (
-            <View key={i} style={[entityStyles.chip, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
-              <Text style={[entityStyles.chipText, { color: colors.primaryText }]} numberOfLines={1}>
-                {item}
-              </Text>
-            </View>
-          ))}
-        </View>
-      </View>
-    </View>
+    <CameraPhase
+      cameraRef={cameraRef}
+      device={device}
+      visible={visible && phase === "camera"}
+      selectedMode={selectedMode}
+      modeLabel={mode.label}
+      modeIcon={mode.icon}
+      modeInstruction={mode.instruction}
+      sourceLangCode={sourceLangCode}
+      targetLangCode={targetLangCode}
+      error={error}
+      onSelectMode={setSelectedMode}
+      onCapture={captureAndAnalyze}
+      onClose={onClose}
+    />
   );
 }
 
@@ -669,56 +414,6 @@ function basicAnalysis(text: string): DocumentAnalysis {
   };
 }
 
-const entityStyles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginTop: 12,
-    gap: 10,
-  },
-  iconBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 2,
-  },
-  iconText: {
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  content: {
-    flex: 1,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  valueText: {
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  chips: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 6,
-  },
-  chip: {
-    borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    maxWidth: "90%",
-  },
-  chipText: {
-    fontSize: 14,
-  },
-});
-
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
@@ -730,10 +425,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 32,
-  },
-  modeIcon: {
-    fontSize: 48,
-    marginBottom: 16,
   },
   errorText: {
     color: "#fff",
@@ -761,272 +452,5 @@ const styles = StyleSheet.create({
     color: "#6c63ff",
     fontSize: 16,
     fontWeight: "600",
-  },
-  // Processing
-  processingStep: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
-    marginTop: 24,
-    textAlign: "center",
-  },
-  processingHint: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 13,
-    marginTop: 8,
-  },
-  // Camera phase
-  topBar: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingTop: Platform.OS === "ios" ? 54 : 40,
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  topButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  topButtonText: {
-    color: "#fff",
-    fontSize: 20,
-    fontWeight: "700",
-  },
-  docBadge: {
-    backgroundColor: "rgba(108,99,255,0.8)",
-    borderRadius: 16,
-    paddingVertical: 6,
-    paddingHorizontal: 16,
-  },
-  docBadgeText: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  // Mode selector
-  modeBar: {
-    position: "absolute",
-    top: Platform.OS === "ios" ? 108 : 94,
-    left: 0,
-    right: 0,
-  },
-  modeBarContent: {
-    paddingHorizontal: 12,
-    gap: 8,
-  },
-  modePill: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    gap: 6,
-  },
-  modePillActive: {
-    backgroundColor: "rgba(108,99,255,0.85)",
-  },
-  modePillIcon: {
-    fontSize: 16,
-  },
-  modePillText: {
-    color: "rgba(255,255,255,0.7)",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  modePillTextActive: {
-    color: "#fff",
-  },
-  // Frame guide
-  frameGuide: {
-    position: "absolute",
-    top: "18%",
-    left: "8%",
-    right: "8%",
-    bottom: "25%",
-  },
-  frameCorner: {
-    position: "absolute",
-    width: 30,
-    height: 30,
-    borderColor: "#6c63ff",
-  },
-  frameTL: {
-    top: 0,
-    left: 0,
-    borderTopWidth: 3,
-    borderLeftWidth: 3,
-    borderTopLeftRadius: 8,
-  },
-  frameTR: {
-    top: 0,
-    right: 0,
-    borderTopWidth: 3,
-    borderRightWidth: 3,
-    borderTopRightRadius: 8,
-  },
-  frameBL: {
-    bottom: 0,
-    left: 0,
-    borderBottomWidth: 3,
-    borderLeftWidth: 3,
-    borderBottomLeftRadius: 8,
-  },
-  frameBR: {
-    bottom: 0,
-    right: 0,
-    borderBottomWidth: 3,
-    borderRightWidth: 3,
-    borderBottomRightRadius: 8,
-  },
-  // Error
-  errorBanner: {
-    position: "absolute",
-    top: Platform.OS === "ios" ? 150 : 136,
-    left: 20,
-    right: 20,
-    backgroundColor: "rgba(255,71,87,0.9)",
-    borderRadius: 12,
-    padding: 12,
-  },
-  errorBannerText: {
-    color: "#fff",
-    fontSize: 14,
-    textAlign: "center",
-  },
-  // Bottom
-  bottomArea: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    paddingBottom: Platform.OS === "ios" ? 44 : 30,
-    paddingTop: 16,
-    backgroundColor: "rgba(0,0,0,0.6)",
-  },
-  instructionText: {
-    color: "rgba(255,255,255,0.8)",
-    fontSize: 15,
-    fontWeight: "500",
-    marginBottom: 16,
-  },
-  captureButton: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 4,
-    borderColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  captureInner: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    backgroundColor: "#6c63ff",
-  },
-  hintText: {
-    color: "rgba(255,255,255,0.5)",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  // Results phase
-  resultsHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingTop: Platform.OS === "ios" ? 54 : 40,
-    paddingBottom: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-  },
-  headerAction: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  resultsScroll: {
-    flex: 1,
-  },
-  resultsContent: {
-    padding: 16,
-  },
-  statsBar: {
-    flexDirection: "row",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    justifyContent: "space-around",
-  },
-  statChip: {
-    alignItems: "center",
-  },
-  statChipLabel: {
-    fontSize: 11,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  statChipValue: {
-    fontSize: 20,
-    fontWeight: "800",
-    marginTop: 2,
-  },
-  section: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-  sectionHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 8,
-  },
-  copyAction: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  documentText: {
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  actionRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginTop: 4,
-  },
-  actionButton: {
-    flex: 1,
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  actionButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
   },
 });
