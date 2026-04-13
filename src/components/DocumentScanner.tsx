@@ -227,7 +227,8 @@ export default function DocumentScanner({
         try {
           const AppleTranslation = require("../../../modules/apple-translation");
           docAnalysis = await AppleTranslation.analyzeDocument(fullText);
-        } catch {
+        } catch (err) {
+          console.warn("Apple NER analysis failed, using basic:", err);
           docAnalysis = basicAnalysis(fullText);
         }
       } else {
@@ -249,7 +250,8 @@ export default function DocumentScanner({
         try {
           const results = await translateAppleBatch(paragraphs, srcLang, targetLangCode);
           translated = results.join("\n");
-        } catch {
+        } catch (err) {
+          console.warn("Batch translation failed, falling back to sequential:", err);
           const results: string[] = [];
           for (const para of paragraphs) {
             const res = await translateText(para, srcLang, targetLangCode, {

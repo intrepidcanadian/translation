@@ -185,7 +185,8 @@ export async function isAppleTranslationAvailable(): Promise<boolean> {
   try {
     const AppleTranslation = require("../../modules/apple-translation");
     return await AppleTranslation.isAvailable();
-  } catch {
+  } catch (err) {
+    console.warn("Apple Translation availability check failed:", err);
     return false;
   }
 }
@@ -196,7 +197,8 @@ export async function detectLanguageOnDevice(text: string): Promise<string | nul
   try {
     const AppleTranslation = require("../../modules/apple-translation");
     return await AppleTranslation.detectLanguage(text);
-  } catch {
+  } catch (err) {
+    console.warn("On-device language detection failed:", err);
     return null;
   }
 }
@@ -277,7 +279,8 @@ export async function translateText(
     if (provider !== "mymemory") {
       try {
         result = await translateMyMemory(trimmed, sourceLang, targetLang, signal);
-      } catch {
+      } catch (fallbackErr) {
+        console.warn("MyMemory fallback also failed:", fallbackErr);
         throw err; // Throw original error if fallback also fails
       }
     } else {

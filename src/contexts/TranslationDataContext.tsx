@@ -210,7 +210,8 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
         });
         processed++;
         consecutiveFailures = 0;
-      } catch {
+      } catch (err) {
+        console.warn("Offline queue translation failed:", err);
         failed.push(item);
         consecutiveFailures++;
       }

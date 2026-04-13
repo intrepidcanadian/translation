@@ -10,7 +10,6 @@ import {
   StatusBar,
   Platform,
   Alert,
-  Linking,
   Animated,
   Keyboard,
   KeyboardAvoidingView,
@@ -24,13 +23,10 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-import {
-  ExpoSpeechRecognitionModule,
-  useSpeechRecognitionEvent,
-} from "expo-speech-recognition";
 import * as Clipboard from "expo-clipboard";
 import * as Speech from "expo-speech";
 import { impactLight, impactMedium, notifySuccess, notifyWarning } from "../services/haptics";
+import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
 import LanguagePicker from "../components/LanguagePicker";
 import ComparisonModal from "../components/ComparisonModal";
 import WordAlternativesModal from "../components/WordAlternativesModal";
@@ -51,7 +47,8 @@ import {
 import { getColors } from "../theme";
 import { PHRASE_CATEGORIES, getPhraseOfTheDay, type OfflinePhrase } from "../services/offlinePhrases";
 import { needsRomanization } from "../services/romanization";
-import { FONT_SIZE_SCALES, type TranslationProvider } from "../components/SettingsModal";
+import { FONT_SIZE_SCALES } from "../components/SettingsModal";
+import type { TranslationProvider } from "../services/translation";
 import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
@@ -75,27 +72,61 @@ export default function TranslateScreen() {
     chatText: { fontSize: Math.round(15 * fontScale) },
   }), [fontScale]);
 
-  const [isListening, setIsListening] = useState(false);
-  const [liveText, setLiveText] = useState("");
-  const [finalText, setFinalText] = useState("");
-  const [translatedText, setTranslatedText] = useState("");
-  const [isTranslating, setIsTranslating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [conversationMode, setConversationMode] = useState(false);
   const activeSpeakerRef = useRef<"A" | "B">("A");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showOnlineBanner, setShowOnlineBanner] = useState(false);
+  const wasOfflineRef = useRef(false);
+
+  const errorDismissTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showError = useCallback((msg: string) => {
+    if (errorDismissTimeout.current) clearTimeout(errorDismissTimeout.current);
+    setErrorMessage(msg);
+    errorDismissTimeout.current = setTimeout(() => setErrorMessage(""), 4000);
+  }, []);
+
+  const onTranslationComplete = useCallback((original: string, translated: string, speaker: "A" | "B" | undefined, confidence?: number, detectedLang?: string) => {
+    setHistory((prev) => [
+      ...prev,
+      { original, translated, speaker, confidence, detectedLang, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() },
+    ]);
+    maybeRequestReview();
+    updateStreak();
+  }, [setHistory, sourceLang.code, targetLang.code, maybeRequestReview, updateStreak]);
+
+  const speech = useSpeechRecognition({
+    sourceLangCode: sourceLang.code,
+    sourceSpeechCode: sourceLang.speechCode,
+    targetLangCode: targetLang.code,
+    targetSpeechCode: targetLang.speechCode,
+    conversationMode,
+    activeSpeakerRef,
+    offlineSpeech: settings.offlineSpeech,
+    silenceTimeout: settings.silenceTimeout,
+    speechRate: settings.speechRate,
+    autoPlayTTS: settings.autoPlayTTS,
+    reduceMotion,
+    translationProvider: settings.translationProvider,
+    glossaryLookup,
+    updateWidgetData,
+    onTranslationComplete,
+    onShowError: showError,
+  });
+
+  const { isListening, liveText, setLiveText, translatedText, isTranslating, setIsTranslating, lastDetectedLang, pulseAnim, pulseOpacity, skeletonAnim, startListening: startListeningBase, startListeningAs, stopListening, abortControllerRef } = speech;
+
+  const startListening = useCallback(async () => {
+    setErrorMessage("");
+    setSearchQuery("");
+    startListeningBase();
+  }, [startListeningBase]);
 
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [showSplitScreen, setShowSplitScreen] = useState(false);
   const [showPlayback, setShowPlayback] = useState(false);
   const listRef = useRef<FlatList>(null);
-  const translationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  const errorDismissTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastTranslatedRef = useRef("");
-  const finalTextRef = useRef("");
-  const lastConfidenceRef = useRef<number | undefined>(undefined);
-  const lastDetectedLangRef = useRef<string | undefined>(undefined);
-  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
@@ -124,58 +155,12 @@ export default function TranslateScreen() {
   const [typedText, setTypedText] = useState("");
   const [typedPreview, setTypedPreview] = useState("");
   const typedTranslateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-
-  // Pulse animation for mic button
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const pulseOpacity = useRef(new Animated.Value(0)).current;
-  const skeletonAnim = useRef(new Animated.Value(0.3)).current;
-
-  useEffect(() => {
-    if (isListening && !reduceMotion) {
-      const pulse = Animated.loop(
-        Animated.parallel([
-          Animated.sequence([
-            Animated.timing(pulseAnim, { toValue: 1.6, duration: 1000, useNativeDriver: true }),
-            Animated.timing(pulseAnim, { toValue: 1, duration: 0, useNativeDriver: true }),
-          ]),
-          Animated.sequence([
-            Animated.timing(pulseOpacity, { toValue: 0.5, duration: 0, useNativeDriver: true }),
-            Animated.timing(pulseOpacity, { toValue: 0, duration: 1000, useNativeDriver: true }),
-          ]),
-        ])
-      );
-      pulse.start();
-      return () => pulse.stop();
-    } else {
-      pulseAnim.setValue(1);
-      pulseOpacity.setValue(0);
-    }
-  }, [isListening, reduceMotion, pulseAnim, pulseOpacity]);
-
-  useEffect(() => {
-    if (isTranslating && !reduceMotion) {
-      const shimmer = Animated.loop(
-        Animated.sequence([
-          Animated.timing(skeletonAnim, { toValue: 0.7, duration: 800, useNativeDriver: true }),
-          Animated.timing(skeletonAnim, { toValue: 0.3, duration: 800, useNativeDriver: true }),
-        ])
-      );
-      shimmer.start();
-      return () => shimmer.stop();
-    } else {
-      skeletonAnim.setValue(reduceMotion ? 0.5 : 0.3);
-    }
-  }, [isTranslating, reduceMotion, skeletonAnim]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (translationTimeout.current) clearTimeout(translationTimeout.current);
       if (errorDismissTimeout.current) clearTimeout(errorDismissTimeout.current);
       if (undoTimeout.current) clearTimeout(undoTimeout.current);
-      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      abortControllerRef.current?.abort();
       Speech.stop();
     };
   }, []);
@@ -199,12 +184,6 @@ export default function TranslateScreen() {
     },
     [speakingText, settings.speechRate]
   );
-
-  const showError = useCallback((msg: string) => {
-    if (errorDismissTimeout.current) clearTimeout(errorDismissTimeout.current);
-    setErrorMessage(msg);
-    errorDismissTimeout.current = setTimeout(() => setErrorMessage(""), 4000);
-  }, []);
 
   const submitCorrection = useCallback((correctedText: string) => {
     if (!correctionPrompt || !correctedText.trim()) return;
@@ -234,7 +213,8 @@ export default function TranslateScreen() {
     try {
       const alts = await getWordAlternatives(word, srcLang, tgtLang);
       setWordAltData((prev) => prev ? { ...prev, alternatives: alts, loading: false } : null);
-    } catch {
+    } catch (err) {
+      console.warn("Word alternatives lookup failed:", err);
       setWordAltData((prev) => prev ? { ...prev, loading: false } : null);
     }
   }, []);
@@ -265,7 +245,8 @@ export default function TranslateScreen() {
             ),
           };
         });
-      } catch {
+      } catch (err) {
+        console.warn("Compare translation failed:", err);
         setCompareData((prev) => {
           if (!prev) return prev;
           return {
@@ -279,106 +260,17 @@ export default function TranslateScreen() {
     }
   }, [settings.translationProvider, sourceLang.code, targetLang.code]);
 
-  // Debounced translation
-  const debouncedTranslate = useCallback(
-    (text: string) => {
-      if (translationTimeout.current) clearTimeout(translationTimeout.current);
-      if (!text.trim() || text.trim() === lastTranslatedRef.current) return;
-
-      translationTimeout.current = setTimeout(async () => {
-        abortControllerRef.current?.abort();
-        const controller = new AbortController();
-        abortControllerRef.current = controller;
-
-        const fromCode = (conversationMode && activeSpeakerRef.current === "B") ? targetLang.code : sourceLang.code;
-        const toCode = (conversationMode && activeSpeakerRef.current === "B") ? sourceLang.code : targetLang.code;
-
-        setIsTranslating(true);
-        try {
-          const glossaryMatch = glossaryLookup(text.trim(), fromCode, toCode);
-          const result = glossaryMatch
-            ? { translatedText: glossaryMatch, confidence: 1.0 }
-            : await translateText(text.trim(), fromCode, toCode, { signal: controller.signal, provider: settings.translationProvider });
-          if (!controller.signal.aborted) {
-            setTranslatedText(result.translatedText);
-            lastTranslatedRef.current = text.trim();
-            lastConfidenceRef.current = result.confidence;
-            lastDetectedLangRef.current = result.detectedLanguage;
-            updateWidgetData(text.trim(), result.translatedText, fromCode, toCode);
-          }
-        } catch (err) {
-          if (controller.signal.aborted) return;
-          const msg = err instanceof Error ? err.message : "Translation failed";
-          showError(msg);
-        } finally {
-          if (!controller.signal.aborted) setIsTranslating(false);
-        }
-      }, 300);
-    },
-    [sourceLang.code, targetLang.code, conversationMode, showError, settings.translationProvider, glossaryLookup, updateWidgetData]
-  );
-
-  // Speech recognition events
-  useSpeechRecognitionEvent("start", () => setIsListening(true));
-
-  useSpeechRecognitionEvent("end", () => {
-    setIsListening(false);
-    if (silenceTimerRef.current) { clearTimeout(silenceTimerRef.current); silenceTimerRef.current = null; }
-
-    if (finalText.trim() && translatedText.trim()) {
-      const speaker = conversationMode ? activeSpeakerRef.current : undefined;
-      setHistory((prev) => [
-        ...prev,
-        { original: finalText.trim(), translated: translatedText.trim(), speaker, confidence: lastConfidenceRef.current, detectedLang: lastDetectedLangRef.current, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() },
-      ]);
-      maybeRequestReview();
-      updateStreak();
-      if (settings.autoPlayTTS) {
-        const ttsLang = (conversationMode && speaker === "B") ? sourceLang.speechCode : targetLang.speechCode;
-        Speech.speak(translatedText.trim(), { language: ttsLang, rate: settings.speechRate });
-      }
+  // Detect connectivity restored
+  useEffect(() => {
+    if (isOffline) {
+      wasOfflineRef.current = true;
+    } else if (wasOfflineRef.current) {
+      wasOfflineRef.current = false;
+      setShowOnlineBanner(true);
+      const timer = setTimeout(() => setShowOnlineBanner(false), 3000);
+      return () => clearTimeout(timer);
     }
-    setLiveText("");
-    setFinalText("");
-    setTranslatedText("");
-    lastTranslatedRef.current = "";
-    finalTextRef.current = "";
-    lastConfidenceRef.current = undefined;
-    lastDetectedLangRef.current = undefined;
-  });
-
-  useSpeechRecognitionEvent("result", (event) => {
-    const transcript = event.results[0]?.transcript || "";
-    const isFinal = event.isFinal;
-
-    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-    if (settings.silenceTimeout > 0) {
-      silenceTimerRef.current = setTimeout(() => ExpoSpeechRecognitionModule.stop(), settings.silenceTimeout * 1000);
-    }
-
-    if (isFinal) {
-      const updated = finalTextRef.current ? `${finalTextRef.current} ${transcript}` : transcript;
-      finalTextRef.current = updated;
-      setFinalText(updated);
-      setLiveText(updated);
-      debouncedTranslate(updated);
-    } else {
-      const combined = finalTextRef.current ? `${finalTextRef.current} ${transcript}` : transcript;
-      setLiveText(combined);
-      debouncedTranslate(combined);
-    }
-  });
-
-  useSpeechRecognitionEvent("error", (event) => {
-    const errorMap: Record<string, string> = {
-      "no-speech": "No speech detected. Try speaking louder.",
-      "audio-capture": "Microphone unavailable. Check your device settings.",
-      "not-allowed": "Microphone permission denied.",
-      "network": "Network error during speech recognition.",
-    };
-    showError(errorMap[event.error] || `Speech error: ${event.error}`);
-    setIsListening(false);
-  });
+  }, [isOffline]);
 
   // Auto-scroll
   useEffect(() => {
@@ -386,47 +278,6 @@ export default function TranslateScreen() {
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     }
   }, [history, liveText, translatedText, settings.autoScroll]);
-
-  const startListening = async () => {
-    impactMedium();
-    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    if (!result.granted) {
-      Alert.alert(
-        "Microphone Permission Required",
-        "Live Translator needs microphone access to translate speech. Please enable it in Settings.",
-        [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open Settings", onPress: () => Linking.openSettings() },
-        ]
-      );
-      return;
-    }
-    setErrorMessage("");
-    setSearchQuery("");
-
-    const speechLang = (conversationMode && activeSpeakerRef.current === "B")
-      ? targetLang.speechCode
-      : (sourceLang.code === "autodetect" ? "en-US" : sourceLang.speechCode);
-
-    ExpoSpeechRecognitionModule.start({
-      lang: speechLang,
-      interimResults: true,
-      continuous: true,
-      maxAlternatives: 1,
-      requiresOnDeviceRecognition: settings.offlineSpeech,
-      ...(sourceLang.code === "autodetect" ? { addsPunctuation: true } : {}),
-    });
-  };
-
-  const startListeningAs = (speaker: "A" | "B") => {
-    activeSpeakerRef.current = speaker;
-    startListening();
-  };
-
-  const stopListening = () => {
-    impactLight();
-    ExpoSpeechRecognitionModule.stop();
-  };
 
   const clearHistory = () => {
     Alert.alert(
@@ -599,7 +450,8 @@ export default function TranslateScreen() {
         }
         const result = await translateText(text, sourceLang.code, targetLang.code, { provider: settings.translationProvider });
         setTypedPreview(result.translatedText);
-      } catch {
+      } catch (err) {
+        console.warn("Type-ahead translation failed:", err);
         setTypedPreview("");
       }
     }, 500);
@@ -660,6 +512,19 @@ export default function TranslateScreen() {
   }, [history, searchQuery, showFavoritesOnly]);
 
   const hasFavorites = useMemo(() => history.some((item) => item.favorited), [history]);
+
+  const keyExtractor = useCallback(
+    (item: HistoryItem, index: number) => item.timestamp ? `${item.timestamp}-${item.original.slice(0, 10)}` : `${index}-${item.original.slice(0, 20)}`,
+    []
+  );
+
+  // Memoize phrase of the day (only changes when target language changes)
+  const phraseOfTheDay = useMemo(() => {
+    const potd = getPhraseOfTheDay(targetLang.code);
+    if (!potd) return null;
+    const categoryInfo = PHRASE_CATEGORIES.find((c) => c.key === potd.category);
+    return { potd, categoryInfo };
+  }, [targetLang.code]);
 
   const renderHistoryItem = useCallback(({ item, index }: { item: HistoryItem; index: number }) => {
     const isB = item.speaker === "B";
@@ -853,6 +718,21 @@ export default function TranslateScreen() {
               </View>
             )}
 
+            {/* Connection restored banner */}
+            {showOnlineBanner && !isOffline && (
+              <View
+                style={[styles.offlineBanner, { backgroundColor: colors.successBg, borderColor: colors.successText }]}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+                accessibilityLabel="Connection restored"
+              >
+                <Text style={styles.offlineIcon}>✓</Text>
+                <Text style={[styles.offlineText, { color: colors.successText }]}>
+                  Back online{offlineQueue.length > 0 ? ` — processing ${offlineQueue.length} queued translation${offlineQueue.length === 1 ? "" : "s"}` : ""}
+                </Text>
+              </View>
+            )}
+
             {/* Error banner */}
             {errorMessage ? (
               <TouchableOpacity
@@ -873,7 +753,7 @@ export default function TranslateScreen() {
               style={styles.scrollArea}
               contentContainerStyle={styles.scrollContent}
               data={filteredHistory}
-              keyExtractor={(item, index) => item.timestamp ? `${item.timestamp}-${item.original.slice(0, 10)}` : `${index}-${item.original.slice(0, 20)}`}
+              keyExtractor={keyExtractor}
               keyboardDismissMode="on-drag"
               removeClippedSubviews={Platform.OS !== "web"}
               maxToRenderPerBatch={15}
@@ -930,7 +810,7 @@ export default function TranslateScreen() {
                       <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
                       <Text style={[styles.liveLabel, { color: colors.destructiveBg }]}>
                         {isListening ? "● LIVE" : "PROCESSING"}
-                        {sourceLang.code === "autodetect" && lastDetectedLangRef.current ? ` · ${LANGUAGES.find((l) => l.code === lastDetectedLangRef.current)?.name || lastDetectedLangRef.current}` : ""}
+                        {sourceLang.code === "autodetect" && lastDetectedLang ? ` · ${LANGUAGES.find((l) => l.code === lastDetectedLang)?.name || lastDetectedLang}` : ""}
                       </Text>
                       <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
                     </View>
@@ -988,24 +868,19 @@ export default function TranslateScreen() {
                     <Text style={[styles.emptySubtitle, { color: colors.dimText }]}>
                       Speak naturally and see translations appear in real time
                     </Text>
-                    {(() => {
-                      const potd = getPhraseOfTheDay(targetLang.code);
-                      if (!potd) return null;
-                      const categoryInfo = PHRASE_CATEGORIES.find((c) => c.key === potd.category);
-                      return (
-                        <View style={[styles.phraseOfDay, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-                          <Text style={[styles.phraseOfDayLabel, { color: colors.dimText }]}>
-                            {categoryInfo?.icon || "💬"} Phrase of the Day
-                          </Text>
-                          <Text style={[styles.phraseOfDayText, { color: colors.titleText }]}>
-                            {potd.phrase.en}
-                          </Text>
-                          <Text style={[styles.phraseOfDayTranslation, { color: colors.primaryText }]}>
-                            {potd.phrase[targetLang.code as keyof OfflinePhrase] || potd.phrase.es}
-                          </Text>
-                        </View>
-                      );
-                    })()}
+                    {phraseOfTheDay && (
+                      <View style={[styles.phraseOfDay, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                        <Text style={[styles.phraseOfDayLabel, { color: colors.dimText }]}>
+                          {phraseOfTheDay.categoryInfo?.icon || "💬"} Phrase of the Day
+                        </Text>
+                        <Text style={[styles.phraseOfDayText, { color: colors.titleText }]}>
+                          {phraseOfTheDay.potd.phrase.en}
+                        </Text>
+                        <Text style={[styles.phraseOfDayTranslation, { color: colors.primaryText }]}>
+                          {phraseOfTheDay.potd.phrase[targetLang.code as keyof OfflinePhrase] || phraseOfTheDay.potd.phrase.es}
+                        </Text>
+                      </View>
+                    )}
                   </View>
                 ) : null
               }

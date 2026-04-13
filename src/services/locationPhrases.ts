@@ -80,8 +80,8 @@ function getDeviceLanguageCode(): string {
     if (locales.length > 0 && locales[0].languageCode) {
       return locales[0].languageCode;
     }
-  } catch {
-    // Fall through
+  } catch (err) {
+    console.warn("Failed to get device language:", err);
   }
   return "en";
 }
@@ -104,8 +104,8 @@ export async function getLocationContext(): Promise<LocationContext | null> {
     let position: Location.LocationObject | null = null;
     try {
       position = await Location.getLastKnownPositionAsync();
-    } catch {
-      // Last known not available
+    } catch (err) {
+      console.warn("Last known position unavailable:", err);
     }
 
     if (!position) {
@@ -155,8 +155,8 @@ export async function getLocationContext(): Promise<LocationContext | null> {
     cacheTimestamp = Date.now();
 
     return result;
-  } catch {
-    // Location services unavailable or any other error
+  } catch (err) {
+    console.warn("Location services unavailable:", err);
     return null;
   }
 }

@@ -11,9 +11,9 @@ import {
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import { type ThemeMode, type ThemeColors, getColors } from "../theme";
-import { isAppleTranslationAvailable } from "../services/translation";
+import { isAppleTranslationAvailable, type TranslationProvider } from "../services/translation";
 
-export type TranslationProvider = "mymemory" | "apple" | "mlkit";
+export type { TranslationProvider };
 
 export type FontSizeOption = "small" | "medium" | "large" | "xlarge";
 

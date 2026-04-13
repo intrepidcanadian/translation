@@ -132,7 +132,8 @@ function markdownToNote(content: string, filename: string): SavedNote | null {
       id, title, originalText, translatedText, formattedNote,
       scanMode, sourceLang, targetLang, timestamp, fields,
     };
-  } catch {
+  } catch (err) {
+    console.warn("Failed to parse note markdown:", err);
     return null;
   }
 }
@@ -184,7 +185,8 @@ async function rebuildIndex(): Promise<NoteIndex[]> {
     indexCache = entries;
     saveIndexSync(entries);
     return entries;
-  } catch {
+  } catch (err) {
+    console.warn("Failed to rebuild notes index:", err);
     indexCache = [];
     return [];
   }
@@ -237,7 +239,8 @@ export async function loadNoteById(id: string): Promise<SavedNote | null> {
     const note = markdownToNote(content, file.name);
     if (note) noteCache.set(note.id, note);
     return note;
-  } catch {
+  } catch (err) {
+    console.warn("Failed to load note by ID:", err);
     return null;
   }
 }

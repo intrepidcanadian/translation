@@ -280,7 +280,8 @@ export default function GlossaryModal({
                           ? `Imported ${imported} new ${imported === 1 ? "entry" : "entries"}.`
                           : "No new entries found in clipboard."
                       );
-                    } catch {
+                    } catch (err) {
+                      console.warn("Glossary import failed:", err);
                       Alert.alert("Import", "Failed to read clipboard.");
                     }
                   }}

@@ -201,7 +201,8 @@ export default function CameraTranslator({
               try {
                 const res = await translateText(text, sourceLangCode, targetLangCode, translateOptions);
                 translatedTexts.push(res.translatedText);
-              } catch {
+              } catch (err) {
+                console.warn("OCR line translation failed:", err);
                 translatedTexts.push(text);
               }
             }
@@ -215,7 +216,8 @@ export default function CameraTranslator({
               if (firstKey) ocrTranslationCache.delete(firstKey);
             }
           }
-        } catch {
+        } catch (err) {
+          console.warn("Batch OCR translation failed, using originals:", err);
           translatedTexts = uncachedTexts;
         }
       }
@@ -309,8 +311,8 @@ export default function CameraTranslator({
 
       setError(null);
       translateLines(lines);
-    } catch {
-      // Silently handle OCR parse errors
+    } catch (err) {
+      console.warn("OCR frame parse error:", err);
     }
   }, [isPaused, isCaptured, translateLines]);
 
@@ -377,12 +379,14 @@ export default function CameraTranslator({
             try {
               const res = await translateText(text, sourceLangCode, targetLangCode, { provider: translationProvider });
               translations.push(res.translatedText);
-            } catch {
+            } catch (err) {
+              console.warn("Capture line translation failed:", err);
               translations.push(text);
             }
           }
         }
-      } catch {
+      } catch (err) {
+        console.warn("Batch capture translation failed, using originals:", err);
         translations = texts;
       }
 
@@ -438,8 +442,9 @@ export default function CameraTranslator({
         message: `Photo Translation (${sourceLangCode.toUpperCase()} → ${targetLangCode.toUpperCase()}):\n\n${textSummary}`,
         url: capturedUri,
       });
-    } catch {
-      // User cancelled
+    } catch (err) {
+      // User cancelled share or share failed
+      console.warn("Share capture failed:", err);
     }
   }, [capturedUri, capturedBlocks, sourceLangCode, targetLangCode]);
 
