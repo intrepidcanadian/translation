@@ -509,6 +509,27 @@ export default function TranslateScreen() {
 
   const toggleFavoritesOnly = useCallback(() => setShowFavoritesOnly((v) => !v), []);
 
+  const renderSavedPairItem = useCallback(({ item }: { item: { sourceCode: string; targetCode: string } }) => {
+    const isActive = item.sourceCode === sourceLang.code && item.targetCode === targetLang.code;
+    const srcName = LANGUAGES.find((l) => l.code === item.sourceCode)?.name || item.sourceCode;
+    const tgtName = LANGUAGES.find((l) => l.code === item.targetCode)?.name || item.targetCode;
+    const srcFlag = LANGUAGES.find((l) => l.code === item.sourceCode)?.flag || "";
+    const tgtFlag = LANGUAGES.find((l) => l.code === item.targetCode)?.flag || "";
+    return (
+      <TouchableOpacity
+        style={[styles.savedPairPill, { backgroundColor: colors.cardBg, borderColor: isActive ? colors.primary : colors.border }, isActive && styles.savedPairPillActive]}
+        onPress={() => applyPair(item.sourceCode, item.targetCode)}
+        onLongPress={() => removeSavedPair(item.sourceCode, item.targetCode)}
+        accessibilityRole="button"
+        accessibilityLabel={`Switch to ${srcName} to ${tgtName}. Long press to remove.`}
+      >
+        <Text style={[styles.savedPairText, { color: isActive ? colors.primary : colors.mutedText }]}>
+          {srcFlag} {srcName.slice(0, 3)} → {tgtFlag} {tgtName.slice(0, 3)}
+        </Text>
+      </TouchableOpacity>
+    );
+  }, [sourceLang.code, targetLang.code, colors.cardBg, colors.primary, colors.border, colors.mutedText, applyPair, removeSavedPair]);
+
   return (
     <>
       <SafeAreaView style={[styles.safe, { backgroundColor: colors.safeBg }]}>
@@ -599,24 +620,7 @@ export default function TranslateScreen() {
                   showsHorizontalScrollIndicator={false}
                   data={savedPairs}
                   keyExtractor={(item) => `${item.sourceCode}-${item.targetCode}`}
-                  renderItem={({ item }) => {
-                    const isActive = item.sourceCode === sourceLang.code && item.targetCode === targetLang.code;
-                    const srcName = LANGUAGES.find((l) => l.code === item.sourceCode)?.name || item.sourceCode;
-                    const tgtName = LANGUAGES.find((l) => l.code === item.targetCode)?.name || item.targetCode;
-                    return (
-                      <TouchableOpacity
-                        style={[styles.savedPairPill, { backgroundColor: colors.cardBg, borderColor: isActive ? colors.primary : colors.border }, isActive && styles.savedPairPillActive]}
-                        onPress={() => applyPair(item.sourceCode, item.targetCode)}
-                        onLongPress={() => removeSavedPair(item.sourceCode, item.targetCode)}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Switch to ${srcName} to ${tgtName}. Long press to remove.`}
-                      >
-                        <Text style={[styles.savedPairText, { color: isActive ? colors.primary : colors.mutedText }]}>
-                          {srcName.slice(0, 3)} → {tgtName.slice(0, 3)}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  }}
+                  renderItem={renderSavedPairItem}
                 />
               </View>
             )}
