@@ -89,10 +89,21 @@ export default function TranslateScreen() {
   const [conversationMode, setConversationMode] = useState(false);
   const activeSpeakerRef = useRef<"A" | "B">("A");
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [showOnlineBanner, setShowOnlineBanner] = useState(false);
   const wasOfflineRef = useRef(false);
 
   const errorDismissTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Debounce search query to avoid filtering on every keystroke
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setDebouncedSearch("");
+      return;
+    }
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const showError = useCallback((msg: string) => {
     if (errorDismissTimeout.current) clearTimeout(errorDismissTimeout.current);
@@ -509,12 +520,12 @@ export default function TranslateScreen() {
   const filteredHistory = useMemo(() => {
     let filtered = history;
     if (showFavoritesOnly) filtered = filtered.filter((item) => item.favorited);
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase();
+    if (debouncedSearch.trim()) {
+      const q = debouncedSearch.toLowerCase();
       filtered = filtered.filter((item) => item.original.toLowerCase().includes(q) || item.translated.toLowerCase().includes(q));
     }
     return filtered;
-  }, [history, searchQuery, showFavoritesOnly]);
+  }, [history, debouncedSearch, showFavoritesOnly]);
 
   const hasFavorites = useMemo(() => history.some((item) => item.favorited), [history]);
 
