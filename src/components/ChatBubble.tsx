@@ -13,6 +13,7 @@ interface ChatBubbleProps {
   dynamicFontSizes: { chatText: { fontSize: number } };
   showRomanization: boolean;
   fontSizeScale: number;
+  confidenceThreshold: number;
   copiedText: string | null;
   speakingText: string | null;
   speakLang: string;
@@ -30,6 +31,7 @@ function ChatBubble({
   dynamicFontSizes,
   showRomanization,
   fontSizeScale,
+  confidenceThreshold,
   copiedText,
   speakingText,
   speakLang,
@@ -66,6 +68,11 @@ function ChatBubble({
         </TouchableOpacity>
         {showRomanization && item.targetLangCode && (
           <AlignedRomanization text={item.translated} langCode={item.targetLangCode} textColor={colors.translatedText} romanColor={colors.mutedText} fontSize={14 * fontSizeScale} />
+        )}
+        {confidenceThreshold > 0 && item.confidence != null && Math.round(item.confidence * 100) < confidenceThreshold && (
+          <Text style={[styles.lowConfidenceBadge, { color: colors.warningText, backgroundColor: colors.warningBg }]}>
+            ⚠ Low confidence ({Math.round(item.confidence * 100)}%)
+          </Text>
         )}
         {copiedText === item.original || copiedText === item.translated ? (
           <Text style={[styles.copiedBadge, { color: colors.successText }]}>Copied!</Text>
@@ -153,6 +160,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
+    alignSelf: "flex-start",
+    marginTop: 4,
+    overflow: "hidden",
+  },
+  lowConfidenceBadge: {
+    fontSize: 11,
+    fontWeight: "600",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     alignSelf: "flex-start",
     marginTop: 4,
     overflow: "hidden",

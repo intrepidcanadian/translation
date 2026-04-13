@@ -198,6 +198,7 @@ function HistoryList({
               dynamicFontSizes={dynamicFontSizes}
               showRomanization={showRomanization}
               fontSizeScale={fontScale}
+              confidenceThreshold={confidenceThreshold}
               copiedText={copiedText}
               speakingText={speakingText}
               speakLang={speakLang}
