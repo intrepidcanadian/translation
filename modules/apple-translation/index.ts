@@ -14,11 +14,15 @@ export interface DocumentAnalysis {
   wordCount: number;
 }
 
+export type LanguageStatus = "installed" | "supported" | "unsupported";
+
 interface AppleTranslationModuleType {
   translate(text: string, sourceLanguage: string, targetLanguage: string): Promise<string>;
   translateBatch(texts: string[], sourceLanguage: string, targetLanguage: string): Promise<string[]>;
   isAvailable(): Promise<boolean>;
   getSupportedLanguages(): Promise<string[]>;
+  checkLanguageStatus(sourceLanguage: string, targetLanguage: string): Promise<LanguageStatus>;
+  checkLanguageStatusBatch(baseLang: string, targetLanguages: string[]): Promise<Record<string, LanguageStatus>>;
   downloadLanguage(languageCode: string): Promise<void>;
   detectLanguage(text: string): Promise<string | null>;
   extractEntities(text: string): Promise<{ persons: string[]; organizations: string[]; places: string[] }>;
@@ -71,6 +75,30 @@ export async function getSupportedLanguages(): Promise<string[]> {
     return await getModule().getSupportedLanguages();
   } catch {
     return [];
+  }
+}
+
+export async function checkLanguageStatus(
+  sourceLanguage: string,
+  targetLanguage: string
+): Promise<LanguageStatus> {
+  if (!isIOS) return "unsupported";
+  try {
+    return await getModule().checkLanguageStatus(sourceLanguage, targetLanguage);
+  } catch {
+    return "unsupported";
+  }
+}
+
+export async function checkLanguageStatusBatch(
+  baseLang: string,
+  targetLanguages: string[]
+): Promise<Record<string, LanguageStatus>> {
+  if (!isIOS) return {};
+  try {
+    return await getModule().checkLanguageStatusBatch(baseLang, targetLanguages);
+  } catch {
+    return {};
   }
 }
 

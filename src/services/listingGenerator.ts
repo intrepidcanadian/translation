@@ -1,8 +1,15 @@
 // Listing generator service — creates marketplace listings from photo + OCR text
-// Uses template-based generation now, upgradeable to LLM later
+// Uses Apple Neural Engine for smart entity extraction when available,
+// with template-based generation and regex fallback for all platforms
 
 import { translateText, type TranslationProvider } from "./translation";
 import { logger } from "./logger";
+import {
+  analyzeProductText,
+  generateInsights,
+  type SmartListingInsights,
+  type ProductEntities,
+} from "./smartProductAnalysis";
 
 export type ListingCondition = "new" | "like_new" | "good" | "fair" | "parts";
 export type ListingCategory =
@@ -27,7 +34,11 @@ export interface ListingDraft {
   translatedTitle?: string;
   translatedDescription?: string;
   targetLang?: string;
+  // Smart analysis results (Neural Engine powered)
+  insights?: SmartListingInsights;
 }
+
+export type { SmartListingInsights };
 
 const CONDITION_LABELS: Record<ListingCondition, string> = {
   new: "New",
@@ -180,6 +191,106 @@ export function generateListing(
     condition,
     suggestedTags: tags.filter((t, i, arr) => arr.indexOf(t) === i),
   };
+}
+
+// Smart listing generation — uses Apple Neural Engine for entity extraction
+// Falls back to template-based generation if Neural Engine is unavailable
+export async function generateSmartListing(
+  ocrText: string,
+  condition: ListingCondition,
+  userTitle?: string,
+  userCategory?: ListingCategory,
+): Promise<ListingDraft> {
+  try {
+    // Run Neural Engine analysis
+    const entities = await analyzeProductText(ocrText);
+    const insights = generateInsights(ocrText, entities);
+
+    // Use insights for better listing generation
+    const category = userCategory || (insights.suggestedCategory as ListingCategory) || detectCategory(ocrText);
+    const brand = insights.suggestedBrand;
+    const model = insights.suggestedModel;
+    const categoryInfo = CATEGORY_LABELS[category] || CATEGORY_LABELS.other;
+
+    // Build smarter title
+    let title = userTitle || "";
+    if (!title) {
+      const parts: string[] = [];
+      if (brand) parts.push(brand);
+      if (model) parts.push(model);
+      if (parts.length === 0) {
+        const firstLine = ocrText.split("\n").find((l) => l.trim().length > 3 && l.trim().length < 80);
+        if (firstLine) parts.push(firstLine.trim());
+        else parts.push(categoryInfo.label + " Item");
+      }
+      title = parts.join(" ") + (condition !== "new" ? ` - ${CONDITION_LABELS[condition]}` : "");
+    }
+
+    // Build smarter description with extracted specs
+    const descParts: string[] = [];
+    descParts.push(`${categoryInfo.icon} ${categoryInfo.label}`);
+    descParts.push("");
+    if (brand) descParts.push(`Brand: ${brand}`);
+    if (model) descParts.push(`Model: ${model}`);
+    descParts.push(`Condition: ${CONDITION_LABELS[condition]}`);
+
+    // Add Neural Engine-extracted specs
+    if (insights.keySpecs.length > 0) {
+      descParts.push("");
+      descParts.push("Specifications:");
+      for (const spec of insights.keySpecs) {
+        descParts.push(`• ${spec.label}: ${spec.value}`);
+      }
+    }
+
+    // Add detected prices as reference
+    if (insights.detectedPrices.length > 0) {
+      descParts.push("");
+      descParts.push(`Original price: ${insights.detectedPrices[0]}`);
+    }
+
+    // Add remaining OCR details not covered by specs
+    const relevantLines = ocrText
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 5 && l.length < 200);
+
+    if (relevantLines.length > 0) {
+      descParts.push("");
+      descParts.push("Additional Details:");
+      for (const line of relevantLines.slice(0, 6)) {
+        descParts.push(`• ${line}`);
+      }
+    }
+
+    descParts.push("");
+    descParts.push("📸 Photos show actual item condition.");
+
+    // Generate richer tags from entities
+    const tags: string[] = [];
+    if (brand) tags.push(brand.toLowerCase());
+    if (model) tags.push(model.toLowerCase());
+    tags.push(category);
+    tags.push(CONDITION_LABELS[condition].toLowerCase());
+    if (categoryInfo.label !== "Other") tags.push(categoryInfo.label.toLowerCase());
+    // Add spec-based tags (e.g. "64gb", "space gray")
+    for (const spec of insights.keySpecs) {
+      const tagValue = spec.value.toLowerCase().replace(/\s+/g, "");
+      if (tagValue.length > 2 && tagValue.length < 20) tags.push(tagValue);
+    }
+
+    return {
+      title,
+      description: descParts.join("\n"),
+      category,
+      condition,
+      suggestedTags: tags.filter((t, i, arr) => arr.indexOf(t) === i).slice(0, 12),
+      insights,
+    };
+  } catch (err) {
+    logger.warn("Listing", "Smart listing generation failed, falling back to basic", err);
+    return generateListing(ocrText, condition, userTitle, userCategory);
+  }
 }
 
 // Translate a listing to a target language

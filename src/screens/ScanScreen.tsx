@@ -11,9 +11,12 @@ import {
 import { useIsFocused } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import CameraTranslator from "../components/CameraTranslator";
+import DualStreamView from "../components/DualStreamView";
 import DocumentScanner from "../components/DocumentScanner";
 import ProductScanner from "../components/ProductScanner";
 import ListingGenerator from "../components/ListingGenerator";
+import PriceTagConverter from "../components/PriceTagConverter";
+import DutyFreeCatalogScanner from "../components/DutyFreeCatalogScanner";
 import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
@@ -23,7 +26,7 @@ import type { RootTabParamList } from "../navigation/types";
 
 type Props = BottomTabScreenProps<RootTabParamList, "Scan">;
 
-type ScanMode = "live" | "product" | "sell" | ScannerModeKey;
+type ScanMode = "live" | "dual" | "dutyFree" | "priceTag" | "product" | "sell" | ScannerModeKey;
 
 interface ModeItem {
   key: ScanMode;
@@ -33,6 +36,9 @@ interface ModeItem {
 
 const MODE_ITEMS: ModeItem[] = [
   { key: "live", label: "Live", icon: "🔍" },
+  { key: "dual", label: "Dual", icon: "📡" },
+  { key: "dutyFree", label: "Duty-Free", icon: "🛍️" },
+  { key: "priceTag", label: "Price", icon: "💱" },
   { key: "product", label: "Product", icon: "🏷️" },
   { key: "sell", label: "Sell", icon: "💰" },
   ...SCANNER_MODES.map((m) => ({ key: m.key as ScanMode, label: m.label, icon: m.icon })),
@@ -94,6 +100,41 @@ export default function ScanScreen({ route }: Props) {
             targetLangCode={targetLang.code}
             translationProvider={settings.translationProvider}
             colors={colors}
+          />
+        );
+      case "dual":
+        return (
+          <DualStreamView
+            visible={true}
+            onClose={() => setSelectedMode("live")}
+            sourceLangCode={sourceLangCode}
+            sourceSpeechCode={sourceLang.speechCode}
+            targetLangCode={targetLang.code}
+            targetSpeechCode={targetLang.speechCode}
+            translationProvider={settings.translationProvider}
+            speechRate={settings.speechRate}
+            offlineSpeech={settings.offlineSpeech}
+            colors={colors}
+          />
+        );
+      case "dutyFree":
+        return (
+          <DutyFreeCatalogScanner
+            visible={true}
+            onClose={() => setSelectedMode("live")}
+            sourceLangCode={sourceLangCode}
+            targetLangCode={targetLang.code}
+            translationProvider={settings.translationProvider}
+            colors={colors}
+          />
+        );
+      case "priceTag":
+        return (
+          <PriceTagConverter
+            visible={true}
+            onClose={() => setSelectedMode("live")}
+            colors={colors}
+            sourceLangCode={sourceLangCode}
           />
         );
       case "product":

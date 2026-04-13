@@ -40,6 +40,7 @@ interface ControlsPanelProps {
   onStopListening: () => void;
   onStartListeningAs: (speaker: "A" | "B") => void;
   onOpenSplitScreen: () => void;
+  onOpenVisualCards: () => void;
   onTypedTextChange: (text: string) => void;
   onSubmitTypedText: () => void;
   onCopyToClipboard: (text: string) => void;
@@ -73,6 +74,7 @@ function ControlsPanel({
   onStopListening,
   onStartListeningAs,
   onOpenSplitScreen,
+  onOpenVisualCards,
   onTypedTextChange,
   onSubmitTypedText,
   onCopyToClipboard,
@@ -114,16 +116,28 @@ function ControlsPanel({
 
       {conversationMode ? (
         <View style={styles.convoControls}>
-          <TouchableOpacity
-            style={[styles.splitScreenBtn, { backgroundColor: colors.cardBg, borderColor: colors.primary }]}
-            onPress={onOpenSplitScreen}
-            accessibilityRole="button"
-            accessibilityLabel="Open split screen conversation mode"
-            accessibilityHint="Opens a split view for face-to-face translation between two speakers"
-          >
-            <Text style={[styles.splitScreenIcon, { color: colors.primary }]}>⇅</Text>
-            <Text style={[styles.splitScreenLabel, { color: colors.primary }]}>Face to Face</Text>
-          </TouchableOpacity>
+          <View style={styles.quickActionRow}>
+            <TouchableOpacity
+              style={[styles.splitScreenBtn, { backgroundColor: colors.cardBg, borderColor: colors.primary }]}
+              onPress={onOpenSplitScreen}
+              accessibilityRole="button"
+              accessibilityLabel="Open split screen conversation mode"
+              accessibilityHint="Opens a split view for face-to-face translation between two speakers"
+            >
+              <Text style={[styles.splitScreenIcon, { color: colors.primary }]}>⇅</Text>
+              <Text style={[styles.splitScreenLabel, { color: colors.primary }]}>Face to Face</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.splitScreenBtn, { backgroundColor: colors.cardBg, borderColor: "#ff9f43" }]}
+              onPress={onOpenVisualCards}
+              accessibilityRole="button"
+              accessibilityLabel="Open visual communication cards"
+              accessibilityHint="Show pictogram cards for quick crew-passenger communication"
+            >
+              <Text style={[styles.splitScreenIcon, { color: "#ff9f43" }]}>🃏</Text>
+              <Text style={[styles.splitScreenLabel, { color: "#ff9f43" }]}>Visual Cards</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.convoMicCol}>
             <View style={styles.micButtonWrapper}>
               {isListening && activeSpeaker === "A" && (
@@ -270,7 +284,8 @@ const styles = StyleSheet.create({
   listeningDot: { color: "#ff4757", fontSize: 10 },
   listeningLabel: { color: "#ff4757", fontSize: 13, fontWeight: "600" },
   convoControls: { flexDirection: "row", justifyContent: "center", alignItems: "flex-end", gap: 24 },
-  splitScreenBtn: { alignItems: "center", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5, marginBottom: 8 },
+  quickActionRow: { flexDirection: "row", gap: 8, marginBottom: 8 },
+  splitScreenBtn: { alignItems: "center", paddingVertical: 8, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1.5, flex: 1 },
   splitScreenIcon: { fontSize: 20, fontWeight: "700" },
   splitScreenLabel: { fontSize: 10, fontWeight: "600", marginTop: 2 },
   convoMicCol: { alignItems: "center", gap: 8 },

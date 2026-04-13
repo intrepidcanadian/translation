@@ -76,6 +76,54 @@ public class AppleTranslationModule: Module {
       return []
     }
 
+    // Check download status of a language pair: "installed", "supported", "unsupported"
+    AsyncFunction("checkLanguageStatus") { (sourceLanguage: String, targetLanguage: String) -> String in
+      #if canImport(Translation)
+      if #available(iOS 17.4, *) {
+        let sourceLang = Locale.Language(identifier: sourceLanguage)
+        let targetLang = Locale.Language(identifier: targetLanguage)
+        let availability = LanguageAvailability()
+        let status = await availability.status(from: sourceLang, to: targetLang)
+
+        switch status {
+        case .installed:
+          return "installed"
+        case .supported:
+          return "supported" // Available for download but not yet installed
+        @unknown default:
+          return "unsupported"
+        }
+      }
+      #endif
+      return "unsupported"
+    }
+
+    // Check download status for multiple language pairs at once (batch)
+    AsyncFunction("checkLanguageStatusBatch") { (baseLang: String, targetLanguages: [String]) -> [String: String] in
+      #if canImport(Translation)
+      if #available(iOS 17.4, *) {
+        let sourceLang = Locale.Language(identifier: baseLang)
+        let availability = LanguageAvailability()
+        var results: [String: String] = [:]
+
+        for code in targetLanguages {
+          let targetLang = Locale.Language(identifier: code)
+          let status = await availability.status(from: sourceLang, to: targetLang)
+          switch status {
+          case .installed:
+            results[code] = "installed"
+          case .supported:
+            results[code] = "supported"
+          @unknown default:
+            results[code] = "unsupported"
+          }
+        }
+        return results
+      }
+      #endif
+      return [:]
+    }
+
     // Download language model for offline use
     AsyncFunction("downloadLanguage") { (languageCode: String) -> Void in
       #if canImport(Translation)

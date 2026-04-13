@@ -15,6 +15,8 @@ import StatsModal from "../components/StatsModal";
 import OnboardingModal from "../components/OnboardingModal";
 import FlightPrepModal from "../components/FlightPrepModal";
 import VisualCardsModal from "../components/VisualCardsModal";
+import CultureBriefingModal from "../components/CultureBriefingModal";
+import PassengerPreferenceCard from "../components/PassengerPreferenceCard";
 import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useGlossary } from "../contexts/GlossaryContext";
@@ -37,6 +39,8 @@ export default function SettingsScreen() {
   const [showStats, setShowStats] = useState(false);
   const [showFlightPrep, setShowFlightPrep] = useState(false);
   const [showVisualCards, setShowVisualCards] = useState(false);
+  const [showCultureGuide, setShowCultureGuide] = useState(false);
+  const [showPassengerCard, setShowPassengerCard] = useState(false);
 
   const speakText = (text: string) => {
     Speech.speak(text, { language: targetLang.speechCode, rate: settings.speechRate });
@@ -53,6 +57,8 @@ export default function SettingsScreen() {
 
   const menuItems = useMemo(() => [
     { label: "Flight Prep", icon: "✈️", subtitle: "Download language packs for offline use", onPress: () => setShowFlightPrep(true) },
+    { label: "Culture Guide", icon: "🌍", subtitle: "Passenger dietary, service & cultural tips", onPress: () => setShowCultureGuide(true) },
+    { label: "Passenger Card", icon: "🙋", subtitle: "Hand to passenger for preference input", onPress: () => setShowPassengerCard(true) },
     { label: "Visual Cards", icon: "🃏", subtitle: "Pictogram cards for any language", onPress: () => setShowVisualCards(true) },
     { label: "App Settings", icon: "⚙", subtitle: "Theme, haptics, speech, provider", onPress: () => setShowSettingsModal(true) },
     { label: "Phrasebook", icon: "📖", subtitle: "Common phrases in 10 languages", onPress: () => setShowPhrasebook(true) },
@@ -159,6 +165,19 @@ export default function SettingsScreen() {
         colors={colors}
         passengerLang={targetLang.code === "autodetect" ? undefined : targetLang.code}
         speechRate={settings.speechRate}
+      />
+
+      <CultureBriefingModal
+        visible={showCultureGuide}
+        onClose={() => setShowCultureGuide(false)}
+        colors={colors}
+      />
+
+      <PassengerPreferenceCard
+        visible={showPassengerCard}
+        onClose={() => setShowPassengerCard(false)}
+        colors={colors}
+        initialLang={targetLang.code === "autodetect" ? undefined : targetLang.code}
       />
     </SafeAreaView>
   );

@@ -29,6 +29,7 @@ interface TranslationBubbleProps {
   onCompare: (original: string, translated: string) => void;
   onCorrection: (data: { index: number; original: string; translated: string }) => void;
   onWordLongPress: (word: string, targetLang: string, sourceLang: string) => void;
+  onShowPassenger?: (index: number) => void;
   searchQuery?: string;
 }
 
@@ -49,6 +50,7 @@ function TranslationBubble({
   onRetry,
   onCompare,
   onCorrection,
+  onShowPassenger,
   onWordLongPress,
   searchQuery,
 }: TranslationBubbleProps) {
@@ -216,6 +218,16 @@ function TranslationBubble({
               accessibilityLabel="Suggest a better translation"
             >
               <Text style={[{ fontSize: 14, color: colors.dimText }]}>✏️</Text>
+            </TouchableOpacity>
+          )}
+          {!item.error && !item.pending && onShowPassenger && (
+            <TouchableOpacity
+              style={styles.speakButton}
+              onPress={() => onShowPassenger(realIndex)}
+              accessibilityRole="button"
+              accessibilityLabel="Show translation to passenger in fullscreen"
+            >
+              <Text style={[{ fontSize: 14, color: colors.dimText }]}>👁️</Text>
             </TouchableOpacity>
           )}
           {!item.error && !item.pending && (
