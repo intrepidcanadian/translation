@@ -3,6 +3,7 @@
     "name": "Live Translator",
     "slug": "mobiletranslator",
     "version": "1.0.0",
+    "scheme": "livetranslator",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",

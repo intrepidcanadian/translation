@@ -12,6 +12,7 @@ import { SettingsProvider, useSettings } from "./src/contexts/SettingsContext";
 import { LanguageProvider } from "./src/contexts/LanguageContext";
 import { TranslationDataProvider } from "./src/contexts/TranslationDataContext";
 import RootNavigator from "./src/navigation/RootNavigator";
+import { linking } from "./src/navigation/linking";
 import type { RootTabParamList } from "./src/navigation/types";
 
 const navigationRef = createNavigationContainerRef<RootTabParamList>();
@@ -22,7 +23,7 @@ export default function App() {
       <SettingsProvider>
         <LanguageProvider>
           <TranslationDataProvider>
-            <NavigationContainer ref={navigationRef}>
+            <NavigationContainer ref={navigationRef} linking={linking}>
               <QuickActionHandler />
               <RootNavigator />
             </NavigationContainer>

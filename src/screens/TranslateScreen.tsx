@@ -43,10 +43,12 @@ import { getColors } from "../theme";
 import { PHRASE_CATEGORIES, getPhraseOfTheDay } from "../services/offlinePhrases";
 import { FONT_SIZE_SCALES } from "../components/SettingsModal";
 import type { TranslationProvider } from "../services/translation";
+import { useRoute } from "@react-navigation/native";
 import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
 import type { HistoryItem } from "../types";
+import type { RootTabParamList } from "../navigation/types";
 
 export default function TranslateScreen() {
   const { width, height } = useWindowDimensions();
@@ -55,6 +57,21 @@ export default function TranslateScreen() {
   const { settings, reduceMotion, maybeRequestReview } = useSettings();
   const { sourceLang, targetLang, setSourceLang, setTargetLang, swapLanguages, recentLangCodes, trackRecentLang, savedPairs, isCurrentPairSaved, toggleSavePair, applyPair, removeSavedPair } = useLanguage();
   const { history, setHistory, hasMoreHistory, loadMoreHistory, glossaryLookup, isOffline, offlineQueue, addToOfflineQueue, updateStreak, updateWidgetData } = useTranslationData();
+  const route = useRoute<any>();
+
+  // Handle deep link params (e.g. livetranslator://translate/en/es)
+  useEffect(() => {
+    const params = route.params as RootTabParamList["Translate"];
+    if (!params) return;
+    if (params.sourceLang) {
+      const src = LANGUAGES.find((l) => l.code === params.sourceLang);
+      if (src) setSourceLang(src);
+    }
+    if (params.targetLang) {
+      const tgt = LANGUAGES.find((l) => l.code === params.targetLang);
+      if (tgt) setTargetLang(tgt);
+    }
+  }, [route.params, setSourceLang, setTargetLang]);
 
   const colors = useMemo(() => getColors(settings.theme), [settings.theme]);
   const fontScale = FONT_SIZE_SCALES[settings.fontSize];
