@@ -66,7 +66,7 @@ export default function GlossaryModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+      <View accessibilityViewIsModal={true} style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
         <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
           <Text style={[styles.compareTitle, { color: colors.titleText }]}>My Glossary</Text>
           <Text

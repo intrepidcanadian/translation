@@ -98,7 +98,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={[styles.overlay, dynamicStyles.overlay]}>
+      <View accessibilityViewIsModal={true} style={[styles.overlay, dynamicStyles.overlay]}>
         <View style={[styles.content, dynamicStyles.content]}>
           <Text style={[styles.title, dynamicStyles.title]}>Settings</Text>
 

@@ -50,7 +50,7 @@ export default function OnboardingModal({ visible, onComplete, colors }: Onboard
 
   return (
     <Modal visible={visible} animationType="fade" transparent>
-      <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+      <View accessibilityViewIsModal={true} style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
         <View style={[styles.onboardingContent, { backgroundColor: colors.modalBg }]}>
           <View style={styles.onboardingDots}>
             {steps.map((_, i) => (

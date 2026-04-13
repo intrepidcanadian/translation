@@ -147,7 +147,7 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+      <View accessibilityViewIsModal={true} style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
         <View style={[styles.statsContent, { backgroundColor: colors.modalBg }]}>
           <Text style={[styles.compareTitle, { color: colors.titleText }]}>Translation Statistics</Text>
           <FlatList

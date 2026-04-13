@@ -18,7 +18,7 @@ interface WordAlternativesModalProps {
 export default function WordAlternativesModal({ visible, data, onClose, onCopy, copiedText, colors }: WordAlternativesModalProps) {
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+      <View accessibilityViewIsModal={true} style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
         <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
           {data && (
             <>

@@ -82,7 +82,7 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
       </TouchableOpacity>
 
       <Modal visible={visible} animationType="slide" transparent>
-        <View style={[styles.modalOverlay, { backgroundColor: colors.overlayBg }]}>
+        <View accessibilityViewIsModal={true} style={[styles.modalOverlay, { backgroundColor: colors.overlayBg }]}>
           <View style={[styles.modalContent, { backgroundColor: colors.modalBg }]}>
             <Text style={[styles.modalTitle, { color: colors.titleText }]}>Select Language</Text>
             <TextInput

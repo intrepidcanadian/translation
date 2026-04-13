@@ -17,7 +17,7 @@ interface ComparisonModalProps {
 export default function ComparisonModal({ visible, data, onClose, onCopy, copiedText, colors }: ComparisonModalProps) {
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+      <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]} accessibilityViewIsModal={true}>
         <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
           <Text style={[styles.compareTitle, { color: colors.titleText }]}>Compare Translations</Text>
           {data && (
