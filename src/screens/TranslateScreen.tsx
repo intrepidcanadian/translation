@@ -4,13 +4,11 @@ import {
   Text,
   TouchableOpacity,
   FlatList,
-  TextInput,
   StyleSheet,
   SafeAreaView,
   StatusBar,
   Platform,
   Alert,
-  Animated,
   Keyboard,
   KeyboardAvoidingView,
   Share,
@@ -31,11 +29,8 @@ import LanguagePicker from "../components/LanguagePicker";
 import ComparisonModal from "../components/ComparisonModal";
 import WordAlternativesModal from "../components/WordAlternativesModal";
 import CorrectionModal from "../components/CorrectionModal";
-import AlignedRomanization from "../components/AlignedRomanization";
-import SwipeableRow from "../components/SwipeableRow";
-import TranslationBubble from "../components/TranslationBubble";
-import ChatBubble from "../components/ChatBubble";
 import ControlsPanel from "../components/ControlsPanel";
+import HistoryList from "../components/HistoryList";
 import SplitConversation from "../components/SplitConversation";
 import ConversationPlayback from "../components/ConversationPlayback";
 import {
@@ -45,8 +40,7 @@ import {
   type WordAlternative,
 } from "../services/translation";
 import { getColors } from "../theme";
-import { PHRASE_CATEGORIES, getPhraseOfTheDay, type OfflinePhrase } from "../services/offlinePhrases";
-import { needsRomanization } from "../services/romanization";
+import { PHRASE_CATEGORIES, getPhraseOfTheDay } from "../services/offlinePhrases";
 import { FONT_SIZE_SCALES } from "../components/SettingsModal";
 import type { TranslationProvider } from "../services/translation";
 import { useSettings } from "../contexts/SettingsContext";
@@ -126,7 +120,6 @@ export default function TranslateScreen() {
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [showSplitScreen, setShowSplitScreen] = useState(false);
   const [showPlayback, setShowPlayback] = useState(false);
-  const listRef = useRef<FlatList>(null);
 
   const [copiedText, setCopiedText] = useState<string | null>(null);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
@@ -271,13 +264,6 @@ export default function TranslateScreen() {
       return () => clearTimeout(timer);
     }
   }, [isOffline]);
-
-  // Auto-scroll
-  useEffect(() => {
-    if (settings.autoScroll && (history.length > 0 || liveText)) {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
-    }
-  }, [history, liveText, translatedText, settings.autoScroll]);
 
   const clearHistory = () => {
     Alert.alert(
@@ -513,11 +499,6 @@ export default function TranslateScreen() {
 
   const hasFavorites = useMemo(() => history.some((item) => item.favorited), [history]);
 
-  const keyExtractor = useCallback(
-    (item: HistoryItem, index: number) => item.timestamp ? `${item.timestamp}-${item.original.slice(0, 10)}` : `${index}-${item.original.slice(0, 20)}`,
-    []
-  );
-
   // Memoize phrase of the day (only changes when target language changes)
   const phraseOfTheDay = useMemo(() => {
     const potd = getPhraseOfTheDay(targetLang.code);
@@ -526,73 +507,7 @@ export default function TranslateScreen() {
     return { potd, categoryInfo };
   }, [targetLang.code]);
 
-  const renderHistoryItem = useCallback(({ item, index }: { item: HistoryItem; index: number }) => {
-    const isB = item.speaker === "B";
-    const speakLang = isB ? sourceLang.speechCode : targetLang.speechCode;
-    const realIndex = searchQuery.trim() ? history.findIndex((h) => h === item) : index;
-    if (selectMode) {
-      const isSelected = selectedIndices.has(realIndex);
-      return (
-        <TouchableOpacity
-          onPress={() => toggleSelectItem(realIndex)}
-          activeOpacity={0.7}
-          style={styles.selectRow}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: isSelected }}
-          accessibilityLabel={`Select translation: ${item.original}`}
-        >
-          <View style={[styles.selectCheckbox, { borderColor: colors.border }, isSelected && { backgroundColor: colors.primary, borderColor: colors.primary }]}>
-            {isSelected && <Text style={[styles.selectCheckmark, { color: colors.destructiveText }]}>✓</Text>}
-          </View>
-          <View style={styles.selectContent}>
-            <Text style={[{ color: colors.secondaryText, fontSize: 14 }]} numberOfLines={1}>{item.original}</Text>
-            <Text style={[{ color: colors.translatedText, fontSize: 14 }]} numberOfLines={1}>{item.translated}</Text>
-          </View>
-        </TouchableOpacity>
-      );
-    }
-    return (
-      <SwipeableRow onDelete={() => deleteHistoryItem(realIndex)}>
-        {conversationMode && item.speaker ? (
-          <ChatBubble
-            item={item}
-            realIndex={realIndex}
-            colors={colors}
-            dynamicFontSizes={dynamicFontSizes}
-            showRomanization={settings.showRomanization}
-            fontSizeScale={FONT_SIZE_SCALES[settings.fontSize] || 1}
-            copiedText={copiedText}
-            speakingText={speakingText}
-            speakLang={speakLang}
-            sourceLangName={sourceLang.name}
-            targetLangName={targetLang.name}
-            onCopy={copyToClipboard}
-            onSpeak={speakText}
-            onToggleFavorite={toggleFavorite}
-          />
-        ) : (
-          <TranslationBubble
-            item={item}
-            realIndex={realIndex}
-            colors={colors}
-            dynamicFontSizes={dynamicFontSizes}
-            showRomanization={settings.showRomanization}
-            fontSizeScale={fontScale}
-            copiedText={copiedText}
-            speakingText={speakingText}
-            targetSpeechCode={targetLang.speechCode}
-            onCopy={copyToClipboard}
-            onSpeak={speakText}
-            onToggleFavorite={toggleFavorite}
-            onRetry={retryTranslation}
-            onCompare={compareTranslation}
-            onCorrection={setCorrectionPrompt}
-            onWordLongPress={lookupWordAlternatives}
-          />
-        )}
-      </SwipeableRow>
-    );
-  }, [conversationMode, selectMode, selectedIndices, colors, dynamicFontSizes, settings.showRomanization, settings.fontSize, fontScale, copiedText, speakingText, sourceLang, targetLang, searchQuery, history, toggleSelectItem, deleteHistoryItem, copyToClipboard, speakText, toggleFavorite, retryTranslation, compareTranslation, lookupWordAlternatives]);
+  const toggleFavoritesOnly = useCallback(() => setShowFavoritesOnly((v) => !v), []);
 
   return (
     <>
@@ -748,142 +663,45 @@ export default function TranslateScreen() {
             ) : null}
 
             {/* History + live translation */}
-            <FlatList
-              ref={listRef}
-              style={styles.scrollArea}
-              contentContainerStyle={styles.scrollContent}
-              data={filteredHistory}
-              keyExtractor={keyExtractor}
-              keyboardDismissMode="on-drag"
-              removeClippedSubviews={Platform.OS !== "web"}
-              maxToRenderPerBatch={15}
-              windowSize={7}
-              initialNumToRender={10}
-              ListHeaderComponent={
-                history.length > 2 && !isListening ? (
-                  <View>
-                    {hasMoreHistory && (
-                      <TouchableOpacity
-                        style={[styles.loadMoreButton, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
-                        onPress={loadMoreHistory}
-                        accessibilityRole="button"
-                        accessibilityLabel="Load older translations"
-                      >
-                        <Text style={[styles.loadMoreText, { color: colors.primary }]}>Load older translations</Text>
-                      </TouchableOpacity>
-                    )}
-                    <View style={styles.searchRow}>
-                      <TextInput
-                        style={[styles.searchInput, { backgroundColor: colors.bubbleBg, color: colors.primaryText, borderColor: colors.border }]}
-                        placeholder="Search translations..."
-                        placeholderTextColor={colors.placeholderText}
-                        value={searchQuery}
-                        onChangeText={setSearchQuery}
-                        accessibilityLabel="Search translation history"
-                        returnKeyType="search"
-                      />
-                      {searchQuery ? (
-                        <TouchableOpacity style={styles.searchClear} onPress={() => setSearchQuery("")} accessibilityRole="button" accessibilityLabel="Clear search">
-                          <Text style={[styles.searchClearText, { color: colors.mutedText }]}>✕</Text>
-                        </TouchableOpacity>
-                      ) : null}
-                      {hasFavorites ? (
-                        <TouchableOpacity
-                          style={[styles.favFilterButton, { backgroundColor: colors.bubbleBg, borderColor: colors.border }, showFavoritesOnly && { backgroundColor: colors.cardBg, borderColor: colors.favoriteColor }]}
-                          onPress={() => setShowFavoritesOnly((v) => !v)}
-                          accessibilityRole="button"
-                          accessibilityLabel={showFavoritesOnly ? "Show all translations" : "Show favorites only"}
-                          accessibilityState={{ selected: showFavoritesOnly }}
-                        >
-                          <Text style={[styles.favFilterIcon, { color: colors.favoriteColor }]}>{showFavoritesOnly ? "★" : "☆"}</Text>
-                        </TouchableOpacity>
-                      ) : null}
-                    </View>
-                  </View>
-                ) : null
-              }
-              renderItem={renderHistoryItem}
-              ListFooterComponent={
-                liveText ? (
-                  <View style={styles.liveSection} accessibilityLiveRegion="polite">
-                    <View style={styles.liveDivider}>
-                      <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-                      <Text style={[styles.liveLabel, { color: colors.destructiveBg }]}>
-                        {isListening ? "● LIVE" : "PROCESSING"}
-                        {sourceLang.code === "autodetect" && lastDetectedLang ? ` · ${LANGUAGES.find((l) => l.code === lastDetectedLang)?.name || lastDetectedLang}` : ""}
-                      </Text>
-                      <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-                    </View>
-
-                    <View style={[styles.bubble, styles.liveBubble, { backgroundColor: colors.liveBubbleBg, borderColor: colors.border }]}>
-                      <Text style={[styles.liveOriginalText, { color: colors.liveOriginalText }, dynamicFontSizes.liveOriginal]}>{liveText}</Text>
-                      {settings.showRomanization && needsRomanization(sourceLang.code) && (
-                        <AlignedRomanization text={liveText} langCode={sourceLang.code} textColor={colors.liveOriginalText} romanColor={colors.mutedText} fontSize={18} />
-                      )}
-                    </View>
-
-                    {translatedText ? (
-                      <View style={[styles.bubble, styles.liveTranslatedBubble, { backgroundColor: colors.liveTranslatedBubbleBg, borderColor: colors.border, borderLeftColor: colors.primary }]}>
-                        <TouchableOpacity
-                          onPress={() => copyToClipboard(translatedText)}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Live translation: ${translatedText}. Tap to copy.`}
-                        >
-                          <Text style={[styles.liveTranslatedText, { color: colors.liveTranslatedText }, dynamicFontSizes.liveTranslated]}>
-                            {translatedText}
-                          </Text>
-                          {settings.showRomanization && needsRomanization(targetLang.code) && (
-                            <AlignedRomanization text={translatedText} langCode={targetLang.code} textColor={colors.liveTranslatedText} romanColor={colors.mutedText} fontSize={20} />
-                          )}
-                          {copiedText === translatedText && <Text style={[styles.copiedBadge, { color: colors.successText }]}>Copied!</Text>}
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.speakButton}
-                          onPress={() => speakText(translatedText, targetLang.speechCode)}
-                          accessibilityRole="button"
-                          accessibilityLabel={speakingText === translatedText ? "Stop speaking" : `Speak translation: ${translatedText}`}
-                        >
-                          <Text style={[styles.speakIcon, speakingText === translatedText && styles.speakIconActive]}>
-                            {speakingText === translatedText ? "⏹" : "🔊"}
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : isTranslating ? (
-                      <View style={[styles.bubble, styles.liveTranslatedBubble, { backgroundColor: colors.liveTranslatedBubbleBg, borderColor: colors.border, borderLeftColor: colors.primary }]}
-                        accessibilityLabel="Translation loading"
-                        accessibilityRole="progressbar"
-                      >
-                        <Animated.View style={[styles.skeletonLine, styles.skeletonLong, { opacity: skeletonAnim, backgroundColor: colors.skeleton }]} />
-                        <Animated.View style={[styles.skeletonLine, styles.skeletonShort, { opacity: skeletonAnim, backgroundColor: colors.skeleton }]} />
-                      </View>
-                    ) : null}
-                  </View>
-                ) : null
-              }
-              ListEmptyComponent={
-                !isListening && !liveText ? (
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyIcon}>🎙️</Text>
-                    <Text style={[styles.emptyTitle, { color: colors.titleText }]}>Tap to start translating</Text>
-                    <Text style={[styles.emptySubtitle, { color: colors.dimText }]}>
-                      Speak naturally and see translations appear in real time
-                    </Text>
-                    {phraseOfTheDay && (
-                      <View style={[styles.phraseOfDay, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-                        <Text style={[styles.phraseOfDayLabel, { color: colors.dimText }]}>
-                          {phraseOfTheDay.categoryInfo?.icon || "💬"} Phrase of the Day
-                        </Text>
-                        <Text style={[styles.phraseOfDayText, { color: colors.titleText }]}>
-                          {phraseOfTheDay.potd.phrase.en}
-                        </Text>
-                        <Text style={[styles.phraseOfDayTranslation, { color: colors.primaryText }]}>
-                          {phraseOfTheDay.potd.phrase[targetLang.code as keyof OfflinePhrase] || phraseOfTheDay.potd.phrase.es}
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                ) : null
-              }
+            <HistoryList
+              history={history}
+              filteredHistory={filteredHistory}
+              colors={colors}
+              dynamicFontSizes={dynamicFontSizes}
+              fontScale={fontScale}
+              showRomanization={settings.showRomanization}
+              fontSize={settings.fontSize}
+              conversationMode={conversationMode}
+              selectMode={selectMode}
+              selectedIndices={selectedIndices}
+              searchQuery={searchQuery}
+              showFavoritesOnly={showFavoritesOnly}
+              hasFavorites={hasFavorites}
+              hasMoreHistory={hasMoreHistory}
+              copiedText={copiedText}
+              speakingText={speakingText}
+              sourceLang={sourceLang}
+              targetLang={targetLang}
+              isListening={isListening}
+              isTranslating={isTranslating}
+              liveText={liveText}
+              translatedText={translatedText}
+              lastDetectedLang={lastDetectedLang}
+              skeletonAnim={skeletonAnim}
+              autoScroll={settings.autoScroll}
+              phraseOfTheDay={phraseOfTheDay}
+              onSearchChange={setSearchQuery}
+              onToggleFavoritesOnly={toggleFavoritesOnly}
+              onLoadMoreHistory={loadMoreHistory}
+              onToggleSelectItem={toggleSelectItem}
+              onDeleteHistoryItem={deleteHistoryItem}
+              onCopyToClipboard={copyToClipboard}
+              onSpeakText={speakText}
+              onToggleFavorite={toggleFavorite}
+              onRetryTranslation={retryTranslation}
+              onCompareTranslation={compareTranslation}
+              onCorrection={setCorrectionPrompt}
+              onWordLongPress={lookupWordAlternatives}
             />
 
             {/* Undo delete toast */}
@@ -967,49 +785,10 @@ const styles = StyleSheet.create({
   errorBanner: { borderRadius: 12, padding: 12, marginBottom: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1 },
   errorText: { fontSize: 14, flex: 1 },
   errorDismiss: { fontSize: 16, marginLeft: 12, fontWeight: "700" },
-  scrollArea: { flex: 1, marginBottom: 10 },
-  scrollContent: { paddingBottom: 20, flexGrow: 1 },
-  searchRow: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
-  searchInput: { flex: 1, borderRadius: 16, paddingVertical: 8, paddingHorizontal: 14, fontSize: 14, borderWidth: 1 },
-  searchClear: { marginLeft: 8, padding: 4 },
-  searchClearText: { fontSize: 16, fontWeight: "700" },
-  bubble: { borderRadius: 16, padding: 14, marginBottom: 6 },
-  copiedBadge: { color: "#4ade80", fontSize: 12, fontWeight: "700", marginTop: 6 },
-  liveSection: { marginTop: 8 },
-  liveDivider: { flexDirection: "row", alignItems: "center", marginBottom: 12, gap: 10 },
-  dividerLine: { flex: 1, height: 1 },
-  liveLabel: { color: "#ff4757", fontSize: 11, fontWeight: "800", letterSpacing: 2 },
-  liveBubble: { borderWidth: 1 },
-  liveOriginalText: { fontSize: 18, lineHeight: 26 },
-  liveTranslatedBubble: { borderLeftWidth: 3, borderWidth: 1 },
-  liveTranslatedText: { fontSize: 20, lineHeight: 28, fontWeight: "600" },
-  skeletonLine: { height: 14, borderRadius: 7, marginBottom: 8 },
-  skeletonLong: { width: "80%" },
-  skeletonShort: { width: "50%", marginBottom: 0 },
-  emptyState: { flex: 1, justifyContent: "center", alignItems: "center", paddingBottom: 60 },
-  emptyIcon: { fontSize: 64, marginBottom: 16 },
-  emptyTitle: { fontSize: 22, fontWeight: "700", marginBottom: 8 },
-  emptySubtitle: { fontSize: 15, textAlign: "center", lineHeight: 22, paddingHorizontal: 40 },
-  phraseOfDay: { marginTop: 24, paddingVertical: 16, paddingHorizontal: 20, borderRadius: 12, borderWidth: 1, alignItems: "center", width: "80%" },
-  phraseOfDayLabel: { fontSize: 12, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 },
-  phraseOfDayText: { fontSize: 18, fontWeight: "600", marginBottom: 4, textAlign: "center" },
-  phraseOfDayTranslation: { fontSize: 16, fontStyle: "italic", textAlign: "center" },
-  speakButton: { padding: 4 },
-  speakIcon: { fontSize: 18 },
-  speakIconActive: { opacity: 0.6 },
-  selectRow: { flexDirection: "row", alignItems: "center", paddingVertical: 8, paddingHorizontal: 4, gap: 12 },
-  selectCheckbox: { width: 24, height: 24, borderRadius: 6, borderWidth: 2, alignItems: "center", justifyContent: "center" },
-  selectCheckmark: { color: "#ffffff", fontSize: 14, fontWeight: "700" },
-  selectContent: { flex: 1, gap: 2 },
   undoToast: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderRadius: 12, paddingVertical: 10, paddingHorizontal: 16, marginBottom: 8, borderWidth: 1 },
   undoToastText: { fontSize: 14, fontWeight: "500", flex: 1 },
   undoButton: { marginLeft: 12, paddingVertical: 4, paddingHorizontal: 12 },
   undoButtonText: { fontSize: 14, fontWeight: "700" },
-  loadMoreButton: { alignSelf: "center", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 16, borderWidth: 1, marginBottom: 12 },
-  loadMoreText: { fontSize: 13, fontWeight: "600" },
-  favFilterButton: { marginLeft: 8, padding: 6, borderRadius: 12, borderWidth: 1 },
-  favFilterButtonActive: { backgroundColor: "#2a2a4a", borderColor: "#ffd700" },
-  favFilterIcon: { fontSize: 18, color: "#ffd700" },
   // Landscape overrides
   containerLandscape: { paddingHorizontal: 40, paddingTop: 4 },
   headerRowLandscape: { marginBottom: 8 },
