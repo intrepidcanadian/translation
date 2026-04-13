@@ -122,14 +122,20 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
     setHistoryPage(nextPage);
   }, [history.length, historyPage]);
 
-  // Glossary
-  const glossaryLookup = useCallback((text: string, srcLang: string, tgtLang: string): string | null => {
-    const normalized = text.trim().toLowerCase();
-    const entry = glossary.find(
-      (g) => g.source.toLowerCase() === normalized && g.sourceLang === srcLang && g.targetLang === tgtLang
-    );
-    return entry ? entry.target : null;
+  // Glossary — Map-based O(1) lookup instead of O(n) array scan
+  const glossaryMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const g of glossary) {
+      const key = `${g.sourceLang}|${g.targetLang}|${g.source.toLowerCase()}`;
+      map.set(key, g.target);
+    }
+    return map;
   }, [glossary]);
+
+  const glossaryLookup = useCallback((text: string, srcLang: string, tgtLang: string): string | null => {
+    const key = `${srcLang}|${tgtLang}|${text.trim().toLowerCase()}`;
+    return glossaryMap.get(key) ?? null;
+  }, [glossaryMap]);
 
   const addGlossaryEntry = useCallback((src: string, tgt: string) => {
     if (!src || !tgt) return;
