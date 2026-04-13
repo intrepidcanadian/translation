@@ -35,6 +35,7 @@ import {
   translateText,
   LANGUAGES,
   LANGUAGE_MAP,
+  type Language,
 } from "../services/translation";
 import { logger } from "../services/logger";
 import { PHRASE_CATEGORIES, getPhraseOfTheDay } from "../services/offlinePhrases";
@@ -358,6 +359,17 @@ export default function TranslateScreen() {
   const onOpenPlayback = useCallback(() => dispatchPanel({ type: "SET_PLAYBACK", value: true }), []);
   const onClosePlayback = useCallback(() => dispatchPanel({ type: "SET_PLAYBACK", value: false }), []);
 
+  // Stable callbacks for LanguagePicker (React.memo) — prevents re-renders from inline closures
+  const onSelectSourceLang = useCallback((lang: Language) => {
+    setSourceLang(lang);
+    trackRecentLang(lang.code);
+  }, [setSourceLang, trackRecentLang]);
+
+  const onSelectTargetLang = useCallback((lang: Language) => {
+    setTargetLang(lang);
+    trackRecentLang(lang.code);
+  }, [setTargetLang, trackRecentLang]);
+
   const renderSavedPairItem = useCallback(({ item }: { item: { sourceCode: string; targetCode: string } }) => {
     const isActive = item.sourceCode === sourceLang.code && item.targetCode === targetLang.code;
     const srcLang = LANGUAGE_MAP.get(item.sourceCode);
@@ -425,7 +437,7 @@ export default function TranslateScreen() {
               <LanguagePicker
                 label="From"
                 selected={sourceLang}
-                onSelect={(lang) => { setSourceLang(lang); trackRecentLang(lang.code); }}
+                onSelect={onSelectSourceLang}
                 showAutoDetect
                 recentCodes={recentLangCodes}
                 colors={colors}
@@ -457,7 +469,7 @@ export default function TranslateScreen() {
               <LanguagePicker
                 label="To"
                 selected={targetLang}
-                onSelect={(lang) => { setTargetLang(lang); trackRecentLang(lang.code); }}
+                onSelect={onSelectTargetLang}
                 recentCodes={recentLangCodes}
                 colors={colors}
               />

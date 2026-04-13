@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -26,7 +26,7 @@ function isSectionHeader(item: ListItem): item is { type: "section"; title: stri
   return "type" in item && item.type === "section";
 }
 
-export default function LanguagePicker({ label, selected, onSelect, showAutoDetect, recentCodes = [], colors }: Props) {
+function LanguagePicker({ label, selected, onSelect, showAutoDetect, recentCodes = [], colors }: Props) {
   const [visible, setVisible] = useState(false);
   const [search, setSearch] = useState("");
 
@@ -62,10 +62,62 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
     ];
   }, [search, allLanguages, recentCodes]);
 
-  const closeModal = () => {
+  const closeModal = useCallback(() => {
     setVisible(false);
     setSearch("");
-  };
+  }, []);
+
+  const keyExtractor = useCallback(
+    (item: ListItem) =>
+      isSectionHeader(item) ? `section-${item.title}` : item.code,
+    []
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: ListItem }) => {
+      if (isSectionHeader(item)) {
+        return (
+          <View style={[styles.sectionHeader, { backgroundColor: colors.sectionBg }]}>
+            <Text style={[styles.sectionHeaderText, { color: colors.primary }]}>{item.title}</Text>
+          </View>
+        );
+      }
+      const isItemSelected = item.code === selected.code;
+      return (
+        <TouchableOpacity
+          style={[
+            styles.langItem,
+            { borderBottomColor: colors.borderLight },
+            isItemSelected && { backgroundColor: colors.cardBg },
+          ]}
+          onPress={() => {
+            onSelect(item);
+            closeModal();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`${item.name}`}
+          accessibilityState={{ selected: isItemSelected }}
+        >
+          <Text
+            style={[
+              styles.langText,
+              { color: colors.secondaryText },
+              isItemSelected && { color: colors.primary, fontWeight: "700" },
+            ]}
+          >
+            {item.flag} {item.name}
+          </Text>
+          <Text style={[styles.langCode, { color: colors.dimText }]}>{item.code.toUpperCase()}</Text>
+        </TouchableOpacity>
+      );
+    },
+    [selected.code, colors.sectionBg, colors.primary, colors.borderLight, colors.cardBg, colors.secondaryText, colors.dimText, onSelect, closeModal]
+  );
+
+  const emptyComponent = useMemo(
+    () => <Text style={[styles.noResults, { color: colors.dimText }]}>No languages found</Text>,
+    [colors.dimText]
+  );
 
   return (
     <View style={styles.container}>
@@ -97,50 +149,10 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
             />
             <FlatList
               data={listData}
-              keyExtractor={(item, index) =>
-                isSectionHeader(item) ? `section-${item.title}` : item.code
-              }
+              keyExtractor={keyExtractor}
               keyboardShouldPersistTaps="handled"
-              ListEmptyComponent={
-                <Text style={[styles.noResults, { color: colors.dimText }]}>No languages found</Text>
-              }
-              renderItem={({ item }) => {
-                if (isSectionHeader(item)) {
-                  return (
-                    <View style={[styles.sectionHeader, { backgroundColor: colors.sectionBg }]}>
-                      <Text style={[styles.sectionHeaderText, { color: colors.primary }]}>{item.title}</Text>
-                    </View>
-                  );
-                }
-                const isSelected = item.code === selected.code;
-                return (
-                  <TouchableOpacity
-                    style={[
-                      styles.langItem,
-                      { borderBottomColor: colors.borderLight },
-                      isSelected && { backgroundColor: colors.cardBg },
-                    ]}
-                    onPress={() => {
-                      onSelect(item);
-                      closeModal();
-                    }}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${item.name}`}
-                    accessibilityState={{ selected: isSelected }}
-                  >
-                    <Text
-                      style={[
-                        styles.langText,
-                        { color: colors.secondaryText },
-                        isSelected && { color: colors.primary, fontWeight: "700" },
-                      ]}
-                    >
-                      {item.flag} {item.name}
-                    </Text>
-                    <Text style={[styles.langCode, { color: colors.dimText }]}>{item.code.toUpperCase()}</Text>
-                  </TouchableOpacity>
-                );
-              }}
+              ListEmptyComponent={emptyComponent}
+              renderItem={renderItem}
             />
             <TouchableOpacity
               style={[styles.closeButton, { borderTopColor: colors.borderLight }]}
@@ -156,6 +168,8 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
     </View>
   );
 }
+
+export default React.memo(LanguagePicker);
 
 const styles = StyleSheet.create({
   container: {

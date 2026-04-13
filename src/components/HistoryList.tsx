@@ -183,7 +183,7 @@ function HistoryList({
   const keyExtractor = useCallback(
     (item: HistoryItem, index: number) =>
       item.timestamp
-        ? `${item.timestamp}-${item.original.slice(0, 10)}`
+        ? `${item.timestamp}-${index}-${item.original.slice(0, 16)}`
         : `${index}-${item.original.slice(0, 20)}`,
     []
   );
@@ -202,7 +202,8 @@ function HistoryList({
   // Auto-scroll when new items arrive
   React.useEffect(() => {
     if (autoScroll && (history.length > 0 || liveText)) {
-      setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+      const timer = setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
+      return () => clearTimeout(timer);
     }
   }, [history, liveText, translatedText, autoScroll]);
 
@@ -227,7 +228,7 @@ function HistoryList({
       }
 
       return (
-        <SwipeableRow onDelete={() => onDeleteHistoryItem(realIndex)}>
+        <SwipeableRow onDelete={() => onDeleteHistoryItem(realIndex)} colors={colors}>
           {conversationMode && item.speaker ? (
             <ChatBubble
               item={item}
@@ -267,6 +268,7 @@ function HistoryList({
               onCorrection={onCorrection}
               onWordLongPress={onWordLongPress}
               onShowPassenger={onShowPassenger}
+              onDismiss={onDeleteHistoryItem}
               searchQuery={searchQuery}
             />
           )}

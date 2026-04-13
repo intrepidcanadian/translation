@@ -27,6 +27,11 @@ const APP_PROVIDERS = [
   TranslationDataProvider,
 ];
 
+const QuickActionHandler = React.memo(function QuickActionHandler() {
+  useQuickActions(navigationRef);
+  return null;
+});
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -38,9 +43,4 @@ export default function App() {
       </ComposeProviders>
     </ErrorBoundary>
   );
-}
-
-function QuickActionHandler() {
-  useQuickActions(navigationRef);
-  return null;
 }

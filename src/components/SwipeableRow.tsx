@@ -12,6 +12,17 @@ export default function SwipeableRow({ onDelete, children, colors }: SwipeableRo
   const translateX = useRef(new Animated.Value(0)).current;
   const THRESHOLD = -80;
 
+  // Keep a stable ref to onDelete so the PanResponder always calls the latest callback
+  const onDeleteRef = useRef(onDelete);
+  onDeleteRef.current = onDelete;
+
+  // Derive opacity from translateX so the red delete bg only appears when swiping
+  const deleteOpacity = translateX.interpolate({
+    inputRange: [-120, -20, 0],
+    outputRange: [1, 0.6, 0],
+    extrapolate: "clamp",
+  });
+
   const panResponder = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gestureState) =>
@@ -27,7 +38,7 @@ export default function SwipeableRow({ onDelete, children, colors }: SwipeableRo
             toValue: -400,
             duration: 200,
             useNativeDriver: true,
-          }).start(() => onDelete());
+          }).start(() => onDeleteRef.current());
         } else {
           Animated.spring(translateX, {
             toValue: 0,
@@ -41,10 +52,10 @@ export default function SwipeableRow({ onDelete, children, colors }: SwipeableRo
 
   return (
     <View style={styles.container}>
-      <View style={[styles.deleteBackground, colors && { backgroundColor: colors.destructiveBg }]}>
+      <Animated.View style={[styles.deleteBackground, colors && { backgroundColor: colors.destructiveBg }, { opacity: deleteOpacity }]}>
         <Text style={[styles.deleteText, colors && { color: colors.destructiveText }]}>Delete</Text>
         <Text style={styles.deleteIcon}>🗑</Text>
-      </View>
+      </Animated.View>
       <Animated.View
         style={{ transform: [{ translateX }] }}
         {...panResponder.panHandlers}
@@ -66,7 +77,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 0,
     top: 0,
-    bottom: 0,
+    bottom: 6,
     width: 120,
     backgroundColor: "#ff4757",
     borderRadius: 16,
