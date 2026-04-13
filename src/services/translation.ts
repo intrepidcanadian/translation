@@ -10,6 +10,44 @@ const MYMEMORY_API = "https://api.mymemory.translated.net/get";
 const CACHE_MAX_SIZE = 200;
 const translationCache = new Map<string, string>();
 
+// Circuit breaker: stops calling a failing provider after consecutive failures
+const CIRCUIT_BREAKER_THRESHOLD = 3;
+const CIRCUIT_BREAKER_RESET_MS = 30_000; // 30s cooldown before retrying
+const circuitState = new Map<string, { failures: number; openedAt: number | null }>();
+
+function getCircuit(provider: string) {
+  if (!circuitState.has(provider)) {
+    circuitState.set(provider, { failures: 0, openedAt: null });
+  }
+  return circuitState.get(provider)!;
+}
+
+function isCircuitOpen(provider: string): boolean {
+  const circuit = getCircuit(provider);
+  if (!circuit.openedAt) return false;
+  // Auto-reset after cooldown (half-open → allow one attempt)
+  if (Date.now() - circuit.openedAt >= CIRCUIT_BREAKER_RESET_MS) {
+    circuit.openedAt = null;
+    circuit.failures = 0;
+    return false;
+  }
+  return true;
+}
+
+function recordSuccess(provider: string) {
+  const circuit = getCircuit(provider);
+  circuit.failures = 0;
+  circuit.openedAt = null;
+}
+
+function recordFailure(provider: string) {
+  const circuit = getCircuit(provider);
+  circuit.failures++;
+  if (circuit.failures >= CIRCUIT_BREAKER_THRESHOLD) {
+    circuit.openedAt = Date.now();
+  }
+}
+
 function getCacheKey(text: string, sourceLang: string, targetLang: string, provider: string) {
   return `${provider}|${sourceLang}|${targetLang}|${text}`;
 }
@@ -260,6 +298,18 @@ export async function translateText(
   }
 
   const trimmed = text.trim();
+
+  // Circuit breaker: skip provider if it has failed too many times recently
+  if (isCircuitOpen(provider)) {
+    console.warn(`Circuit breaker open for ${provider}, falling back`);
+    if (provider !== "mymemory" && !isCircuitOpen("mymemory")) {
+      const fallback = await translateMyMemory(trimmed, sourceLang, targetLang, signal);
+      recordSuccess("mymemory");
+      return { ...fallback, translatedText: fallback.translatedText };
+    }
+    throw new Error(`Translation service temporarily unavailable. Try again in 30 seconds.`);
+  }
+
   const doTranslate = async (): Promise<TranslationResult> => {
     switch (provider) {
       case "apple":
@@ -274,12 +324,16 @@ export async function translateText(
   let result: TranslationResult;
   try {
     result = await withRetry(doTranslate, 2, signal);
+    recordSuccess(provider);
   } catch (err: any) {
+    recordFailure(provider);
     // Auto-fallback: if on-device provider fails, try MyMemory cloud as fallback
     if (provider !== "mymemory") {
       try {
         result = await translateMyMemory(trimmed, sourceLang, targetLang, signal);
+        recordSuccess("mymemory");
       } catch (fallbackErr) {
+        recordFailure("mymemory");
         console.warn("MyMemory fallback also failed:", fallbackErr);
         throw err; // Throw original error if fallback also fails
       }
