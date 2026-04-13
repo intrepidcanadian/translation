@@ -35,6 +35,19 @@ function safeParseJSON(response: Response): Promise<Record<string, unknown>> {
   return response.json().catch(() => ({}));
 }
 
+// Runtime type guards for external API responses
+function isOFFResponse(data: Record<string, unknown>): data is { status: number; product: OFFProduct } {
+  return typeof data.status === "number" && data.product != null && typeof data.product === "object";
+}
+
+function isOFFSearchResponse(data: Record<string, unknown>): data is { products: OFFProduct[] } {
+  return Array.isArray(data.products) && data.products.length > 0;
+}
+
+function isUPCResponse(data: Record<string, unknown>): data is { items: UPCItem[] } {
+  return Array.isArray(data.items) && data.items.length > 0;
+}
+
 export interface ProductInfo {
   name: string;
   brand?: string;
@@ -62,8 +75,8 @@ export async function lookupBarcode(barcode: string, signal?: AbortSignal): Prom
       { signal, headers: { "User-Agent": "LiveTranslator/1.0" } }
     );
     if (offRes.ok) {
-      const data = await safeParseJSON(offRes) as { status?: number; product?: OFFProduct };
-      if (data.status === 1 && data.product) {
+      const data = await safeParseJSON(offRes);
+      if (isOFFResponse(data) && data.status === 1) {
         const p = data.product;
         const attributes: ProductInfo["attributes"] = [];
         if (p.nutriscore_grade) attributes.push({ label: "Nutri-Score", value: p.nutriscore_grade.toUpperCase() });
@@ -100,8 +113,8 @@ export async function lookupBarcode(barcode: string, signal?: AbortSignal): Prom
       { signal }
     );
     if (upcRes.ok) {
-      const data = await safeParseJSON(upcRes) as { items?: UPCItem[] };
-      if (data.items?.length) {
+      const data = await safeParseJSON(upcRes);
+      if (isUPCResponse(data)) {
         const item = data.items[0];
         const prices: ProductInfo["prices"] = [];
         if (item.offers?.length) {
@@ -150,8 +163,8 @@ export async function searchProductByText(query: string, signal?: AbortSignal): 
       { signal, headers: { "User-Agent": "LiveTranslator/1.0" } }
     );
     if (res.ok) {
-      const data = await safeParseJSON(res) as { products?: OFFProduct[] };
-      if (data.products?.length) {
+      const data = await safeParseJSON(res);
+      if (isOFFSearchResponse(data)) {
         const p = data.products[0];
         return {
           found: true,
@@ -237,8 +250,8 @@ export async function fetchPriceComps(
       { signal },
     );
     if (res.ok) {
-      const data = await safeParseJSON(res) as { items?: UPCItem[] };
-      if (data.items?.length) {
+      const data = await safeParseJSON(res);
+      if (isUPCResponse(data)) {
         const item = data.items[0];
         // Find lowest offer price
         if (item.offers?.length) {

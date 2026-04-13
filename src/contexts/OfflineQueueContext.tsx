@@ -19,6 +19,7 @@ type OnTranslatedCallback = (original: string, translated: string) => void;
 
 interface OfflineQueueContextValue {
   offlineQueue: OfflineQueueItem[];
+  queueLength: number;
   addToOfflineQueue: (item: OfflineQueueItem) => void;
   isOffline: boolean;
   registerOnTranslated: (cb: OnTranslatedCallback) => void;
@@ -102,12 +103,15 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
     }
   }, [netInfo.isConnected, processOfflineQueue]);
 
+  const queueLength = offlineQueue.length;
+
   const value = useMemo(() => ({
     offlineQueue,
+    queueLength,
     addToOfflineQueue,
     isOffline,
     registerOnTranslated,
-  }), [offlineQueue, addToOfflineQueue, isOffline, registerOnTranslated]);
+  }), [offlineQueue, queueLength, addToOfflineQueue, isOffline, registerOnTranslated]);
 
   return (
     <OfflineQueueContext.Provider value={value}>{children}</OfflineQueueContext.Provider>

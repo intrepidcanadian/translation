@@ -56,6 +56,16 @@ function TranslationBubble({
   const originalWordCount = React.useMemo(() => item.original.trim().split(/\s+/).filter(Boolean).length, [item.original]);
   const translatedWordCount = React.useMemo(() => item.translated.trim().split(/\s+/).filter(Boolean).length, [item.translated]);
 
+  // Memoize word-split segments to avoid re-creating arrays on every render
+  const translatedWordSegments = React.useMemo(() => {
+    if (item.error || item.pending || !item.sourceLangCode || !item.targetLangCode) return null;
+    return item.translated.split(/(\s+)/).map((segment: string, si: number) => {
+      if (/\s+/.test(segment)) return { key: si, text: segment, isWord: false as const };
+      const cleaned = segment.replace(/[^\p{L}\p{N}]/gu, "");
+      return { key: si, text: segment, isWord: true as const, cleaned };
+    });
+  }, [item.translated, item.error, item.pending, item.sourceLangCode, item.targetLangCode]);
+
   const handleShare = () => {
     const srcName = item.sourceLangCode ? LANGUAGE_MAP.get(item.sourceLangCode)?.name : null;
     const tgtName = item.targetLangCode ? LANGUAGE_MAP.get(item.targetLangCode)?.name : null;
@@ -117,18 +127,17 @@ function TranslationBubble({
             </Text>
           )}
           <Text selectable={!item.pending && !item.error} style={[styles.translatedTextHistory, { color: item.error ? colors.errorText : item.pending ? colors.dimText : colors.translatedText }, dynamicFontSizes.translated, (item.pending || item.error) && { fontStyle: "italic" }]}>
-            {!item.error && !item.pending && item.sourceLangCode && item.targetLangCode
-              ? item.translated.split(/(\s+)/).map((segment: string, si: number) =>
-                  /\s+/.test(segment) ? segment : (
+            {translatedWordSegments
+              ? translatedWordSegments.map((seg) =>
+                  !seg.isWord ? seg.text : (
                     <Text
-                      key={si}
+                      key={seg.key}
                       onLongPress={() => {
-                        const cleaned = segment.replace(/[^\p{L}\p{N}]/gu, "");
-                        if (cleaned) onWordLongPress(cleaned, item.targetLangCode!, item.sourceLangCode!);
+                        if (seg.cleaned) onWordLongPress(seg.cleaned, item.targetLangCode!, item.sourceLangCode!);
                       }}
                       style={styles.tappableWord}
                     >
-                      {segment}
+                      {seg.text}
                     </Text>
                   )
                 )

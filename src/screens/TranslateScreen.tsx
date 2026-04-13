@@ -91,7 +91,7 @@ export default function TranslateScreen() {
   const { glossaryLookup } = useGlossary();
   const { history, setHistory, hasMoreHistory, loadMoreHistory, updateWidgetData } = useTranslationData();
   const { updateStreak } = useStreak();
-  const { isOffline, offlineQueue, addToOfflineQueue, registerOnTranslated } = useOfflineQueue();
+  const { isOffline, queueLength, addToOfflineQueue, registerOnTranslated } = useOfflineQueue();
   const route = useRoute<{ key: string; name: "Translate"; params?: RootTabParamList["Translate"] }>();
 
   // Register callback for when offline queue items complete translation
@@ -474,7 +474,7 @@ export default function TranslateScreen() {
               >
                 <Text style={styles.offlineIcon}>⚡</Text>
                 <Text style={[styles.offlineText, { color: colors.offlineText }]}>
-                  No connection{offlineQueue.length > 0 ? ` — ${offlineQueue.length} queued` : " — type to queue translations"}
+                  No connection{queueLength > 0 ? ` — ${queueLength} queued` : " — type to queue translations"}
                 </Text>
               </View>
             )}
@@ -489,7 +489,7 @@ export default function TranslateScreen() {
               >
                 <Text style={styles.offlineIcon}>✓</Text>
                 <Text style={[styles.offlineText, { color: colors.successText }]}>
-                  Back online{offlineQueue.length > 0 ? ` — processing ${offlineQueue.length} queued translation${offlineQueue.length === 1 ? "" : "s"}` : ""}
+                  Back online{queueLength > 0 ? ` — processing ${queueLength} queued translation${queueLength === 1 ? "" : "s"}` : ""}
                 </Text>
               </View>
             )}
