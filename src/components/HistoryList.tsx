@@ -70,7 +70,71 @@ interface HistoryListProps {
   onCompareTranslation: (original: string, translated: string) => void;
   onCorrection: (data: { index: number; original: string; translated: string }) => void;
   onWordLongPress: (word: string, srcLang: string, tgtLang: string) => void;
+  onShowPassenger?: (index: number) => void;
 }
+
+// Memoized select mode row to avoid re-renders when selectMode is active
+const SelectRow = React.memo(function SelectRow({
+  item,
+  realIndex,
+  isSelected,
+  colors,
+  onToggleSelectItem,
+}: {
+  item: HistoryItem;
+  realIndex: number;
+  isSelected: boolean;
+  colors: ThemeColors;
+  onToggleSelectItem: (index: number) => void;
+}) {
+  const handlePress = useCallback(() => onToggleSelectItem(realIndex), [onToggleSelectItem, realIndex]);
+  return (
+    <TouchableOpacity
+      onPress={handlePress}
+      activeOpacity={0.7}
+      style={styles.selectRow}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: isSelected }}
+      accessibilityLabel={`Select translation: ${item.original}`}
+    >
+      <View
+        style={[
+          styles.selectCheckbox,
+          { borderColor: colors.border },
+          isSelected && {
+            backgroundColor: colors.primary,
+            borderColor: colors.primary,
+          },
+        ]}
+      >
+        {isSelected && (
+          <Text
+            style={[
+              styles.selectCheckmark,
+              { color: colors.destructiveText },
+            ]}
+          >
+            ✓
+          </Text>
+        )}
+      </View>
+      <View style={styles.selectContent}>
+        <Text
+          style={[{ color: colors.secondaryText, fontSize: 14 }]}
+          numberOfLines={1}
+        >
+          {item.original}
+        </Text>
+        <Text
+          style={[{ color: colors.translatedText, fontSize: 14 }]}
+          numberOfLines={1}
+        >
+          {item.translated}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+});
 
 function HistoryList({
   history,
@@ -112,6 +176,7 @@ function HistoryList({
   onCompareTranslation,
   onCorrection,
   onWordLongPress,
+  onShowPassenger,
 }: HistoryListProps) {
   const listRef = useRef<FlatList>(null);
 
@@ -150,52 +215,14 @@ function HistoryList({
         : index;
 
       if (selectMode) {
-        const isSelected = selectedIndices.has(realIndex);
         return (
-          <TouchableOpacity
-            onPress={() => onToggleSelectItem(realIndex)}
-            activeOpacity={0.7}
-            style={styles.selectRow}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: isSelected }}
-            accessibilityLabel={`Select translation: ${item.original}`}
-          >
-            <View
-              style={[
-                styles.selectCheckbox,
-                { borderColor: colors.border },
-                isSelected && {
-                  backgroundColor: colors.primary,
-                  borderColor: colors.primary,
-                },
-              ]}
-            >
-              {isSelected && (
-                <Text
-                  style={[
-                    styles.selectCheckmark,
-                    { color: colors.destructiveText },
-                  ]}
-                >
-                  ✓
-                </Text>
-              )}
-            </View>
-            <View style={styles.selectContent}>
-              <Text
-                style={[{ color: colors.secondaryText, fontSize: 14 }]}
-                numberOfLines={1}
-              >
-                {item.original}
-              </Text>
-              <Text
-                style={[{ color: colors.translatedText, fontSize: 14 }]}
-                numberOfLines={1}
-              >
-                {item.translated}
-              </Text>
-            </View>
-          </TouchableOpacity>
+          <SelectRow
+            item={item}
+            realIndex={realIndex}
+            isSelected={selectedIndices.has(realIndex)}
+            colors={colors}
+            onToggleSelectItem={onToggleSelectItem}
+          />
         );
       }
 
@@ -239,6 +266,7 @@ function HistoryList({
               onCompare={onCompareTranslation}
               onCorrection={onCorrection}
               onWordLongPress={onWordLongPress}
+              onShowPassenger={onShowPassenger}
               searchQuery={searchQuery}
             />
           )}
@@ -268,6 +296,7 @@ function HistoryList({
       onCompareTranslation,
       onCorrection,
       onWordLongPress,
+      onShowPassenger,
     ]
   );
 

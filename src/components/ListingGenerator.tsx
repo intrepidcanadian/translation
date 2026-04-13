@@ -24,6 +24,7 @@ import * as Clipboard from "expo-clipboard";
 import { impactMedium, notifySuccess, impactLight } from "../services/haptics";
 import {
   generateListing,
+  generateSmartListing,
   translateListing,
   formatListingForShare,
   getCategoryOptions,
@@ -31,6 +32,7 @@ import {
   type ListingDraft,
   type ListingCondition,
   type ListingCategory,
+  type SmartListingInsights,
 } from "../services/listingGenerator";
 import { fetchPriceComps, type PriceCompResult } from "../services/productLookup";
 import { translateText, type TranslationProvider } from "../services/translation";
@@ -56,7 +58,7 @@ function getMLKitScript(langCode: string): TextRecognitionScript {
   }
 }
 
-export default function ListingGenerator({
+function ListingGenerator({
   visible,
   onClose,
   targetLangCode,
@@ -115,12 +117,19 @@ export default function ListingGenerator({
       const fullText = result.blocks.map((b) => b.text).join("\n");
       setOcrText(fullText);
 
-      // Generate listing
-      const listing = generateListing(fullText, condition);
+      // Generate smart listing (uses Neural Engine when available)
+      const listing = await generateSmartListing(fullText, condition);
       setDraft(listing);
       setEditTitle(listing.title);
       setEditDescription(listing.description);
       setCategory(listing.category);
+
+      // Auto-fill price from detected prices
+      if (listing.insights?.detectedPrices.length) {
+        const firstPrice = listing.insights.detectedPrices[0];
+        const numericPrice = firstPrice.replace(/[^0-9.]/g, "");
+        if (numericPrice) setPrice(numericPrice);
+      }
 
       setPhase("editing");
       notifySuccess();
@@ -193,10 +202,14 @@ export default function ListingGenerator({
   }, [draft, editTitle, editDescription, price]);
 
   const handleCopy = useCallback(async (text: string, field: string) => {
-    await Clipboard.setStringAsync(text);
-    impactLight();
-    setCopiedField(field);
-    setTimeout(() => setCopiedField(null), 1500);
+    try {
+      await Clipboard.setStringAsync(text);
+      impactLight();
+      setCopiedField(field);
+      setTimeout(() => setCopiedField(null), 1500);
+    } catch (err) {
+      logger.warn("Listing", "Copy to clipboard failed", err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
   if (!visible) return null;
@@ -276,6 +289,94 @@ export default function ListingGenerator({
           {/* Photo preview */}
           {photoUri && (
             <Image source={{ uri: photoUri }} style={styles.photoPreview} resizeMode="cover" />
+          )}
+
+          {/* AI Insights Card */}
+          {draft.insights && draft.insights.confidence > 0 && (
+            <View style={[styles.insightsCard, { backgroundColor: colors.cardBg, borderColor: colors.primary + "40" }]}>
+              <View style={styles.insightsHeader}>
+                <Text style={styles.insightsIcon}>🧠</Text>
+                <Text style={[styles.insightsTitle, { color: colors.primary }]}>
+                  Neural Engine Analysis
+                </Text>
+                <View style={[styles.confidenceBadge, { backgroundColor: colors.primary + "20" }]}>
+                  <Text style={[styles.confidenceText, { color: colors.primary }]}>
+                    {Math.round(draft.insights.confidence * 100)}%
+                  </Text>
+                </View>
+              </View>
+
+              {/* Detected brand/model */}
+              {(draft.insights.suggestedBrand || draft.insights.suggestedModel) && (
+                <View style={styles.insightsRow}>
+                  {draft.insights.suggestedBrand && (
+                    <TouchableOpacity
+                      style={[styles.insightChip, { backgroundColor: colors.successBg }]}
+                      onPress={() => {
+                        if (draft.insights?.suggestedBrand && !editTitle.includes(draft.insights.suggestedBrand)) {
+                          setEditTitle(draft.insights.suggestedBrand + " " + editTitle);
+                        }
+                      }}
+                    >
+                      <Text style={[styles.insightChipLabel, { color: colors.dimText }]}>Brand</Text>
+                      <Text style={[styles.insightChipValue, { color: colors.successText }]}>
+                        {draft.insights.suggestedBrand}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  {draft.insights.suggestedModel && (
+                    <TouchableOpacity
+                      style={[styles.insightChip, { backgroundColor: colors.successBg }]}
+                      onPress={() => {
+                        if (draft.insights?.suggestedModel && !editTitle.includes(draft.insights.suggestedModel)) {
+                          setEditTitle(editTitle + " " + draft.insights.suggestedModel);
+                        }
+                      }}
+                    >
+                      <Text style={[styles.insightChipLabel, { color: colors.dimText }]}>Model</Text>
+                      <Text style={[styles.insightChipValue, { color: colors.successText }]}>
+                        {draft.insights.suggestedModel}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {/* Detected specs */}
+              {draft.insights.keySpecs.length > 0 && (
+                <View style={styles.specsGrid}>
+                  {draft.insights.keySpecs.slice(0, 6).map((spec, i) => (
+                    <View key={i} style={[styles.specItem, { backgroundColor: colors.sectionBg }]}>
+                      <Text style={[styles.specLabel, { color: colors.dimText }]}>{spec.label}</Text>
+                      <Text style={[styles.specValue, { color: colors.primaryText }]}>{spec.value}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Detected prices */}
+              {draft.insights.detectedPrices.length > 0 && (
+                <View style={styles.insightsRow}>
+                  <Text style={[styles.insightPriceLabel, { color: colors.dimText }]}>Detected prices: </Text>
+                  {draft.insights.detectedPrices.slice(0, 3).map((p, i) => (
+                    <TouchableOpacity
+                      key={i}
+                      style={[styles.priceBubble, { backgroundColor: colors.warningBg }]}
+                      onPress={() => {
+                        const numericPrice = p.replace(/[^0-9.]/g, "");
+                        if (numericPrice) setPrice(numericPrice);
+                      }}
+                    >
+                      <Text style={[styles.priceBubbleText, { color: colors.warningText }]}>{p}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              <Text style={[styles.insightsHint, { color: colors.dimText }]}>
+                Tap chips to add to your listing
+              </Text>
+            </View>
           )}
 
           {/* Category selector */}
@@ -629,4 +730,63 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   backBtnText: { fontSize: 18, fontWeight: "700" },
+
+  // AI Insights card
+  insightsCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+  insightsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  insightsIcon: { fontSize: 18 },
+  insightsTitle: { fontSize: 14, fontWeight: "700", flex: 1 },
+  confidenceBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  confidenceText: { fontSize: 12, fontWeight: "700" },
+  insightsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    alignItems: "center",
+  },
+  insightChip: {
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 2,
+  },
+  insightChipLabel: { fontSize: 10, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
+  insightChipValue: { fontSize: 15, fontWeight: "700" },
+  specsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  specItem: {
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 1,
+  },
+  specLabel: { fontSize: 10, fontWeight: "600", textTransform: "uppercase", letterSpacing: 0.5 },
+  specValue: { fontSize: 13, fontWeight: "600" },
+  insightPriceLabel: { fontSize: 12, fontWeight: "600" },
+  priceBubble: {
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  priceBubbleText: { fontSize: 14, fontWeight: "700" },
+  insightsHint: { fontSize: 11, fontStyle: "italic" },
 });
+
+export default React.memo(ListingGenerator);

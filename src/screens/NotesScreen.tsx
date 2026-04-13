@@ -176,10 +176,14 @@ export default function NotesScreen() {
   }, []);
 
   const handleCopy = useCallback(async (text: string, id: string) => {
-    await Clipboard.setStringAsync(text);
-    notifySuccess();
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 1500);
+    try {
+      await Clipboard.setStringAsync(text);
+      notifySuccess();
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch (err) {
+      logger.warn("Notes", "Copy to clipboard failed", err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
   const handleNotePress = useCallback((note: SavedNote) => {

@@ -26,7 +26,7 @@ interface ConversationPlaybackProps {
   onClose: () => void;
 }
 
-export default function ConversationPlayback({
+function ConversationPlayback({
   visible,
   onClose,
 }: ConversationPlaybackProps) {
@@ -507,3 +507,5 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
 });
+
+export default React.memo(ConversationPlayback);

@@ -74,6 +74,10 @@ function panelReducer(state: PanelState, action: PanelAction): PanelState {
       return { ...state, showSplitScreen: action.value };
     case "SET_PLAYBACK":
       return { ...state, showPlayback: action.value };
+    default: {
+      const _exhaustive: never = action;
+      return state;
+    }
   }
 }
 

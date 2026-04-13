@@ -20,7 +20,9 @@ type LogTag =
   | "Listing"
   | "Location"
   | "Settings"
-  | "Render";
+  | "Render"
+  | "Scanner"
+  | "History";
 
 interface LogEntry {
   level: LogLevel;

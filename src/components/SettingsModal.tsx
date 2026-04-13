@@ -67,7 +67,7 @@ interface Props {
   onUpdate: (settings: Settings) => void;
 }
 
-export default function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
+function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const colors = useMemo(() => getColors(settings.theme), [settings.theme]);
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [lastCrash, setLastCrash] = useState<{ message: string; timestamp: number; stack?: string } | null>(null);
@@ -97,16 +97,24 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
       recentErrors.length > 0 ? `\nRecent errors (${recentErrors.length}):` : "",
       ...recentErrors.slice(-10).map((e) => `  [${e.tag}] ${e.message}`),
     ].filter(Boolean).join("\n");
-    await Clipboard.setStringAsync(report);
-    notifySuccess();
-    setCrashCopied(true);
-    setTimeout(() => setCrashCopied(false), 1500);
+    try {
+      await Clipboard.setStringAsync(report);
+      notifySuccess();
+      setCrashCopied(true);
+      setTimeout(() => setCrashCopied(false), 1500);
+    } catch (err) {
+      logger.warn("Settings", "Copy crash report failed", err instanceof Error ? err.message : String(err));
+    }
   }, [lastCrash]);
 
   const clearCrashReport = useCallback(async () => {
-    await AsyncStorage.removeItem("@live_translator_last_crash");
-    logger.clearRecentErrors();
-    setLastCrash(null);
+    try {
+      await AsyncStorage.removeItem("@live_translator_last_crash");
+      logger.clearRecentErrors();
+      setLastCrash(null);
+    } catch (err) {
+      logger.warn("Settings", "Clear crash report failed", err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
   const toggle = (key: keyof Settings) => {
@@ -610,3 +618,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 });
+
+export default React.memo(SettingsModal);

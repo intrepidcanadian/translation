@@ -63,6 +63,10 @@ function modalReducer(state: ModalState, action: ModalAction): ModalState {
     case "UPDATE_WORD_ALT_RESULTS":
       if (!state.wordAltData) return state;
       return { ...state, wordAltData: { ...state.wordAltData, alternatives: action.alternatives, loading: false } };
+    default: {
+      const _exhaustive: never = action;
+      return state;
+    }
   }
 }
 
@@ -109,10 +113,14 @@ export function useHistoryActions({
   }, []);
 
   const copyToClipboard = useCallback(async (text: string) => {
-    await Clipboard.setStringAsync(text);
-    notifySuccess();
-    setCopiedText(text);
-    setTimeout(() => setCopiedText(null), 1500);
+    try {
+      await Clipboard.setStringAsync(text);
+      notifySuccess();
+      setCopiedText(text);
+      setTimeout(() => setCopiedText(null), 1500);
+    } catch (err) {
+      logger.warn("History", "Copy to clipboard failed", err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
   const speakText = useCallback(

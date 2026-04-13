@@ -84,10 +84,14 @@ export default function NotesViewer({
         text: "Delete All",
         style: "destructive",
         onPress: async () => {
-          await clearAllNotes();
-          notifyWarning();
-          setSelectedNote(null);
-          reload();
+          try {
+            await clearAllNotes();
+            notifyWarning();
+            setSelectedNote(null);
+            reload();
+          } catch (err) {
+            logger.warn("Notes", "Failed to clear all notes", err instanceof Error ? err.message : String(err));
+          }
         },
       },
     ]);
@@ -95,10 +99,14 @@ export default function NotesViewer({
 
   const handleSaveTitle = useCallback(async () => {
     if (!selectedNote || !titleDraft.trim()) return;
-    await updateNoteTitle(selectedNote.id, titleDraft.trim());
-    setSelectedNote({ ...selectedNote, title: titleDraft.trim() });
-    setEditingTitle(false);
-    reload();
+    try {
+      await updateNoteTitle(selectedNote.id, titleDraft.trim());
+      setSelectedNote({ ...selectedNote, title: titleDraft.trim() });
+      setEditingTitle(false);
+      reload();
+    } catch (err) {
+      logger.warn("Notes", "Failed to save title", err instanceof Error ? err.message : String(err));
+    }
   }, [selectedNote, titleDraft, reload]);
 
   const handleShare = useCallback(async (note: SavedNote) => {
@@ -108,10 +116,14 @@ export default function NotesViewer({
   }, []);
 
   const handleCopy = useCallback(async (text: string, id: string) => {
-    await Clipboard.setStringAsync(text);
-    notifySuccess();
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 1500);
+    try {
+      await Clipboard.setStringAsync(text);
+      notifySuccess();
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 1500);
+    } catch (err) {
+      logger.warn("Notes", "Failed to copy to clipboard", err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
   const formatTime = (ts: number): string => {

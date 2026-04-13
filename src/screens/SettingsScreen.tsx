@@ -13,6 +13,8 @@ import PhrasebookModal from "../components/PhrasebookModal";
 import GlossaryModal from "../components/GlossaryModal";
 import StatsModal from "../components/StatsModal";
 import OnboardingModal from "../components/OnboardingModal";
+import FlightPrepModal from "../components/FlightPrepModal";
+import VisualCardsModal from "../components/VisualCardsModal";
 import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useGlossary } from "../contexts/GlossaryContext";
@@ -33,17 +35,25 @@ export default function SettingsScreen() {
   const [showPhrasebook, setShowPhrasebook] = useState(false);
   const [showGlossary, setShowGlossary] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showFlightPrep, setShowFlightPrep] = useState(false);
+  const [showVisualCards, setShowVisualCards] = useState(false);
 
   const speakText = (text: string) => {
     Speech.speak(text, { language: targetLang.speechCode, rate: settings.speechRate });
   };
 
   const copyToClipboard = async (text: string) => {
-    const Clipboard = await import("expo-clipboard");
-    await Clipboard.setStringAsync(text);
+    try {
+      const Clipboard = await import("expo-clipboard");
+      await Clipboard.setStringAsync(text);
+    } catch {
+      // clipboard unavailable — silently ignore on settings screen
+    }
   };
 
   const menuItems = useMemo(() => [
+    { label: "Flight Prep", icon: "✈️", subtitle: "Download language packs for offline use", onPress: () => setShowFlightPrep(true) },
+    { label: "Visual Cards", icon: "🃏", subtitle: "Pictogram cards for any language", onPress: () => setShowVisualCards(true) },
     { label: "App Settings", icon: "⚙", subtitle: "Theme, haptics, speech, provider", onPress: () => setShowSettingsModal(true) },
     { label: "Phrasebook", icon: "📖", subtitle: "Common phrases in 10 languages", onPress: () => setShowPhrasebook(true) },
     { label: "Glossary", icon: "📝", subtitle: `${glossary.length} custom translation${glossary.length === 1 ? "" : "s"}`, onPress: () => setShowGlossary(true) },
@@ -134,6 +144,21 @@ export default function SettingsScreen() {
         onComplete={completeOnboarding}
 
         colors={colors}
+      />
+
+      <FlightPrepModal
+        visible={showFlightPrep}
+        onClose={() => setShowFlightPrep(false)}
+        colors={colors}
+        crewBaseLang={sourceLang.code === "autodetect" ? "en" : sourceLang.code}
+      />
+
+      <VisualCardsModal
+        visible={showVisualCards}
+        onClose={() => setShowVisualCards(false)}
+        colors={colors}
+        passengerLang={targetLang.code === "autodetect" ? undefined : targetLang.code}
+        speechRate={settings.speechRate}
       />
     </SafeAreaView>
   );

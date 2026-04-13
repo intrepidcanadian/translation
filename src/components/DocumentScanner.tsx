@@ -118,10 +118,14 @@ export default function DocumentScanner({
   }, [visible, initialMode]);
 
   const copyText = useCallback(async (text: string) => {
-    await Clipboard.setStringAsync(text);
-    notifySuccess();
-    setCopiedText(text);
-    setTimeout(() => setCopiedText(null), 1500);
+    try {
+      await Clipboard.setStringAsync(text);
+      notifySuccess();
+      setCopiedText(text);
+      setTimeout(() => setCopiedText(null), 1500);
+    } catch (err) {
+      logger.warn("Scanner", "Copy to clipboard failed", err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
   const handleSaveNote = useCallback(async () => {

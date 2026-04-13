@@ -109,10 +109,14 @@ export default function ProductScanner({ visible, onClose, colors }: ProductScan
   });
 
   const copyText = useCallback(async (text: string) => {
-    await Clipboard.setStringAsync(text);
-    notifySuccess();
-    setCopiedText(text);
-    setTimeout(() => setCopiedText(null), 1500);
+    try {
+      await Clipboard.setStringAsync(text);
+      notifySuccess();
+      setCopiedText(text);
+      setTimeout(() => setCopiedText(null), 1500);
+    } catch (err) {
+      logger.warn("Product", "Copy to clipboard failed", err instanceof Error ? err.message : String(err));
+    }
   }, []);
 
   const shareProduct = useCallback(async () => {
