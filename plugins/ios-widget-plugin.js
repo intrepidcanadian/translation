@@ -115,10 +115,11 @@ function withIOSWidget(config) {
       project.addToPbxGroup(widgetGroup.uuid, mainGroup);
 
       // Add source files to build phase
+      // Use just the filename — the group path already provides the directory
       for (const file of sourceFiles) {
         if (file.endsWith(".swift")) {
           project.addSourceFile(
-            `${WIDGET_TARGET_NAME}/${file}`,
+            file,
             { target: target.uuid },
             widgetGroup.uuid
           );
