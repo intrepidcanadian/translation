@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Language, LANGUAGES, LANGUAGE_MAP } from "../services/translation";
 import { impactLight, impactMedium } from "../services/haptics";
+import { logger } from "../services/logger";
 
 const RECENT_LANGS_KEY = "recent_languages";
 const LANG_PAIRS_KEY = "saved_language_pairs";
@@ -40,7 +41,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
         if (results[0][1]) setRecentLangCodes(JSON.parse(results[0][1]));
         if (results[1][1]) setSavedPairs(JSON.parse(results[1][1]));
       })
-      .catch((err) => console.warn("Failed to load language data:", err));
+      .catch((err) => logger.warn("Settings", "Failed to load language data", err));
   }, []);
 
   const trackRecentLang = useCallback((code: string) => {

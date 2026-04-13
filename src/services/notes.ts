@@ -3,6 +3,7 @@
 
 import { Paths, File, Directory } from "expo-file-system";
 import type { ScannerModeKey } from "./scannerModes";
+import { logger } from "./logger";
 
 const NOTES_DIR_NAME = "notes";
 
@@ -133,7 +134,7 @@ function markdownToNote(content: string, filename: string): SavedNote | null {
       scanMode, sourceLang, targetLang, timestamp, fields,
     };
   } catch (err) {
-    console.warn("Failed to parse note markdown:", err);
+    logger.warn("Notes", "Failed to parse note markdown", err);
     return null;
   }
 }
@@ -160,7 +161,7 @@ async function loadIndex(): Promise<NoteIndex[]> {
       indexCache = JSON.parse(content);
       return indexCache!;
     }
-  } catch (err) { console.warn("Failed to load notes index:", err); }
+  } catch (err) { logger.warn("Notes", "Failed to load notes index", err); }
   return rebuildIndex();
 }
 
@@ -177,7 +178,7 @@ async function rebuildIndex(): Promise<NoteIndex[]> {
           const content = await item.text();
           const note = markdownToNote(content, item.name);
           if (note) entries.push(noteToIndex(note));
-        } catch (err) { console.warn("Failed to parse note:", item.name, err); }
+        } catch (err) { logger.warn("Notes", `Failed to parse note: ${item.name}`, err); }
       }
     }
 
@@ -186,7 +187,7 @@ async function rebuildIndex(): Promise<NoteIndex[]> {
     saveIndexSync(entries);
     return entries;
   } catch (err) {
-    console.warn("Failed to rebuild notes index:", err);
+    logger.warn("Notes", "Failed to rebuild notes index", err);
     indexCache = [];
     return [];
   }
@@ -222,7 +223,7 @@ export async function loadNotes(): Promise<SavedNote[]> {
           notes.push(note);
         }
       }
-    } catch (err) { console.warn("Failed to load note:", err); }
+    } catch (err) { logger.warn("Notes", "Failed to load note", err); }
   }
 
   return notes;
@@ -240,7 +241,7 @@ export async function loadNoteById(id: string): Promise<SavedNote | null> {
     if (note) noteCache.set(note.id, note);
     return note;
   } catch (err) {
-    console.warn("Failed to load note by ID:", err);
+    logger.warn("Notes", "Failed to load note by ID", err);
     return null;
   }
 }
@@ -270,7 +271,7 @@ export async function deleteNote(id: string): Promise<void> {
   try {
     const file = getNoteFile(id);
     if (file.exists) file.delete();
-  } catch (err) { console.warn("Failed to delete note file:", id, err); }
+  } catch (err) { logger.warn("Notes", `Failed to delete note file: ${id}`, err); }
 
   noteCache.delete(id);
 
@@ -301,7 +302,7 @@ export async function clearAllNotes(): Promise<void> {
   try {
     const dir = getNotesDir();
     if (dir.exists) dir.delete();
-  } catch (err) { console.warn("Failed to clear notes directory:", err); }
+  } catch (err) { logger.warn("Notes", "Failed to clear notes directory", err); }
   noteCache.clear();
   indexCache = null;
   ensureDir();

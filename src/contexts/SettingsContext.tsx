@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as StoreReview from "expo-store-review";
 import { Settings, DEFAULT_SETTINGS } from "../components/SettingsModal";
 import { setHapticsEnabled } from "../services/haptics";
+import { logger } from "../services/logger";
 
 const SETTINGS_KEY = "app_settings";
 const ONBOARDING_KEY = "onboarding_completed";
@@ -53,7 +54,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         if (ratingResult[1]) ratingPromptedRef.current = true;
         if (countResult[1]) translationCountRef.current = parseInt(countResult[1], 10) || 0;
       })
-      .catch((err) => console.warn("Failed to load settings data:", err));
+      .catch((err) => logger.warn("Settings", "Failed to load settings data", err));
   }, []);
 
   // Keep haptic service in sync with settings

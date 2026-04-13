@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -10,8 +10,12 @@ import {
   Platform,
 } from "react-native";
 import Slider from "@react-native-community/slider";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Clipboard from "expo-clipboard";
 import { type ThemeMode, type ThemeColors, getColors } from "../theme";
 import { isAppleTranslationAvailable, type TranslationProvider } from "../services/translation";
+import { logger } from "../services/logger";
+import { notifySuccess } from "../services/haptics";
 
 export type { TranslationProvider };
 
@@ -66,11 +70,43 @@ interface Props {
 export default function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const colors = useMemo(() => getColors(settings.theme), [settings.theme]);
   const [appleAvailable, setAppleAvailable] = useState(false);
+  const [lastCrash, setLastCrash] = useState<{ message: string; timestamp: number; stack?: string } | null>(null);
+  const [crashCopied, setCrashCopied] = useState(false);
 
   useEffect(() => {
     if (Platform.OS === "ios") {
       isAppleTranslationAvailable().then(setAppleAvailable);
     }
+  }, []);
+
+  // Load last crash report when settings opens
+  useEffect(() => {
+    if (!visible) return;
+    AsyncStorage.getItem("@live_translator_last_crash")
+      .then((val) => { if (val) setLastCrash(JSON.parse(val)); })
+      .catch(() => {});
+  }, [visible]);
+
+  const copyCrashReport = useCallback(async () => {
+    if (!lastCrash) return;
+    const recentErrors = logger.getRecentErrors();
+    const report = [
+      `Crash: ${lastCrash.message}`,
+      `Time: ${new Date(lastCrash.timestamp).toLocaleString()}`,
+      lastCrash.stack ? `Stack: ${lastCrash.stack}` : "",
+      recentErrors.length > 0 ? `\nRecent errors (${recentErrors.length}):` : "",
+      ...recentErrors.slice(-10).map((e) => `  [${e.tag}] ${e.message}`),
+    ].filter(Boolean).join("\n");
+    await Clipboard.setStringAsync(report);
+    notifySuccess();
+    setCrashCopied(true);
+    setTimeout(() => setCrashCopied(false), 1500);
+  }, [lastCrash]);
+
+  const clearCrashReport = useCallback(async () => {
+    await AsyncStorage.removeItem("@live_translator_last_crash");
+    logger.clearRecentErrors();
+    setLastCrash(null);
   }, []);
 
   const toggle = (key: keyof Settings) => {
@@ -448,6 +484,47 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 }
               </Text>
             </View>
+
+            {/* Debug / crash report section */}
+            {(lastCrash || logger.getRecentErrors().length > 0) && (
+              <View style={styles.infoSection}>
+                <Text style={[styles.infoTitle, dynamicStyles.infoTitle]}>Debug</Text>
+                {lastCrash && (
+                  <View style={[styles.crashCard, { backgroundColor: colors.errorBg, borderColor: colors.errorBorder }]}>
+                    <Text style={[styles.crashTitle, { color: colors.errorText }]}>Last Crash</Text>
+                    <Text style={[styles.crashMessage, { color: colors.errorText }]} numberOfLines={3}>
+                      {lastCrash.message}
+                    </Text>
+                    <Text style={[styles.crashTime, { color: colors.dimText }]}>
+                      {new Date(lastCrash.timestamp).toLocaleString()}
+                    </Text>
+                  </View>
+                )}
+                {logger.getRecentErrors().length > 0 && (
+                  <Text style={[styles.infoText, dynamicStyles.infoText]}>
+                    {logger.getRecentErrors().length} recent error{logger.getRecentErrors().length === 1 ? "" : "s"} logged
+                  </Text>
+                )}
+                <View style={styles.crashActions}>
+                  <TouchableOpacity
+                    style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
+                    onPress={copyCrashReport}
+                    accessibilityLabel="Copy crash report to clipboard"
+                  >
+                    <Text style={[styles.crashActionText, { color: colors.primary }]}>
+                      {crashCopied ? "Copied!" : "Copy Report"}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
+                    onPress={clearCrashReport}
+                    accessibilityLabel="Clear crash report"
+                  >
+                    <Text style={[styles.crashActionText, { color: colors.dimText }]}>Clear</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </ScrollView>
 
           <TouchableOpacity
@@ -572,6 +649,39 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginBottom: 8,
     paddingHorizontal: 2,
+  },
+  crashCard: {
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+  },
+  crashTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  crashMessage: {
+    fontSize: 12,
+    lineHeight: 16,
+    marginBottom: 4,
+  },
+  crashTime: {
+    fontSize: 11,
+  },
+  crashActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4,
+  },
+  crashActionButton: {
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+  },
+  crashActionText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   offlineList: {
     marginTop: 8,

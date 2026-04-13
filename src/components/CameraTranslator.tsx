@@ -238,6 +238,7 @@ export default function CameraTranslator({
   useEffect(() => {
     clearOCRCache();
     setDetectedBlocks([]);
+    blockOpacities.clear();
     lastOCRTextRef.current = "";
   }, [sourceLangCode, targetLangCode]);
 
@@ -271,6 +272,8 @@ export default function CameraTranslator({
       if (isMountedRef.current && err?.name !== "AbortError") {
         setError(err?.message || "Translation failed");
       }
+      // Clean up stale opacity entries on failure too
+      blockOpacities.clear();
     } finally {
       isTranslatingRef.current = false;
       if (isMountedRef.current) setIsTranslating(false);
@@ -537,6 +540,11 @@ export default function CameraTranslator({
       {/* Live OCR overlays */}
       {!isCaptured && detectedBlocks.map((block) => {
         if (!blockOpacities.has(block.id)) {
+          // Cap map size to prevent unbounded memory growth during long sessions
+          if (blockOpacities.size > 100) {
+            const firstKey = blockOpacities.keys().next().value;
+            if (firstKey !== undefined) blockOpacities.delete(firstKey);
+          }
           const val = new Animated.Value(0);
           blockOpacities.set(block.id, val);
           Animated.timing(val, { toValue: 1, duration: 200, useNativeDriver: true }).start();

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { HistoryItem } from "../types";
+import { logger } from "../services/logger";
 
 const HISTORY_KEY = "translation_history";
 const HISTORY_PAGE_SIZE = 20;
@@ -42,7 +43,7 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
           } catch {}
         }
       })
-      .catch((err) => console.warn("Failed to load history:", err));
+      .catch((err) => logger.warn("Storage", "Failed to load history", err));
   }, []);
 
   // Persist history
@@ -82,7 +83,7 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
               ),
             });
           });
-        }).catch((err: any) => console.warn("Widget update failed:", err));
+        }).catch((err: any) => logger.warn("Widget", "Widget update failed", err));
       } else if (Platform.OS === "ios") {
         import("../../modules/apple-translation").then((AppleTranslation) => {
           AppleTranslation.saveWidgetData({
@@ -91,10 +92,10 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
             sourceLang: from.toUpperCase(),
             targetLang: to.toUpperCase(),
           });
-        }).catch((err: any) => console.warn("iOS widget update failed:", err));
+        }).catch((err: any) => logger.warn("Widget", "iOS widget update failed", err));
       }
     } catch (err) {
-      console.warn("Widget data save failed:", err);
+      logger.warn("Widget", "Widget data save failed", err);
     }
   }, []);
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, memo } from "react";
 import {
   View,
   Text,
@@ -18,7 +18,60 @@ import { getScannerMode } from "../services/scannerModes";
 import * as Clipboard from "expo-clipboard";
 import { notifySuccess, notifyWarning } from "../services/haptics";
 import { useSettings } from "../contexts/SettingsContext";
-import { getColors } from "../theme";
+import { getColors, type ThemeColors } from "../theme";
+import { logger } from "../services/logger";
+
+interface NoteCardProps {
+  item: SavedNote;
+  colors: ThemeColors;
+  onPress: (note: SavedNote) => void;
+  onDelete: (id: string) => void;
+}
+
+const NoteCard = memo(function NoteCard({ item, colors, onPress, onDelete }: NoteCardProps) {
+  const mode = getScannerMode(item.scanMode);
+  return (
+    <TouchableOpacity
+      style={[styles.noteCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
+      onPress={() => onPress(item)}
+      accessibilityLabel={`Note: ${item.title}`}
+    >
+      <View style={styles.noteCardHeader}>
+        <Text style={styles.noteCardIcon}>{mode.icon}</Text>
+        <View style={styles.noteCardMeta}>
+          <Text style={[styles.noteCardTitle, { color: colors.titleText }]} numberOfLines={1}>{item.title}</Text>
+          <Text style={[styles.noteCardSub, { color: colors.dimText }]}>
+            {mode.label} · {item.sourceLang.toUpperCase()} → {item.targetLang.toUpperCase()} · {formatTime(item.timestamp)}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => onDelete(item.id)}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          accessibilityLabel="Delete note"
+        >
+          <Text style={[styles.deleteIcon, { color: colors.dimText }]}>X</Text>
+        </TouchableOpacity>
+      </View>
+      {item.fields.length > 0 && (
+        <View style={styles.noteCardFields}>
+          {item.fields.slice(0, 3).map((f, i) => (
+            <View key={i} style={[styles.fieldChip, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
+              <Text style={[styles.fieldChipText, { color: colors.primaryText }]} numberOfLines={1}>
+                {f.label}: {f.value}
+              </Text>
+            </View>
+          ))}
+          {item.fields.length > 3 && (
+            <Text style={[styles.moreFields, { color: colors.dimText }]}>+{item.fields.length - 3} more</Text>
+          )}
+        </View>
+      )}
+      <Text style={[styles.noteCardPreview, { color: colors.secondaryText }]} numberOfLines={2}>
+        {item.translatedText}
+      </Text>
+    </TouchableOpacity>
+  );
+});
 
 function formatTime(ts: number): string {
   const d = new Date(ts);
@@ -119,7 +172,7 @@ export default function NotesScreen() {
   const handleShare = useCallback(async (note: SavedNote) => {
     try {
       await Share.share({ message: note.formattedNote });
-    } catch (err) { console.warn("Note share failed:", err); }
+    } catch (err) { logger.warn("Notes", "Note share failed", err); }
   }, []);
 
   const handleCopy = useCallback(async (text: string, id: string) => {
@@ -129,50 +182,14 @@ export default function NotesScreen() {
     setTimeout(() => setCopiedId(null), 1500);
   }, []);
 
-  const renderNoteItem = useCallback(({ item }: { item: SavedNote }) => {
-    const mode = getScannerMode(item.scanMode);
-    return (
-      <TouchableOpacity
-        style={[styles.noteCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
-        onPress={() => { setSelectedNote(item); setEditingTitle(false); }}
-        accessibilityLabel={`Note: ${item.title}`}
-      >
-        <View style={styles.noteCardHeader}>
-          <Text style={styles.noteCardIcon}>{mode.icon}</Text>
-          <View style={styles.noteCardMeta}>
-            <Text style={[styles.noteCardTitle, { color: colors.titleText }]} numberOfLines={1}>{item.title}</Text>
-            <Text style={[styles.noteCardSub, { color: colors.dimText }]}>
-              {mode.label} · {item.sourceLang.toUpperCase()} → {item.targetLang.toUpperCase()} · {formatTime(item.timestamp)}
-            </Text>
-          </View>
-          <TouchableOpacity
-            onPress={() => handleDelete(item.id)}
-            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            accessibilityLabel="Delete note"
-          >
-            <Text style={[styles.deleteIcon, { color: colors.dimText }]}>X</Text>
-          </TouchableOpacity>
-        </View>
-        {item.fields.length > 0 && (
-          <View style={styles.noteCardFields}>
-            {item.fields.slice(0, 3).map((f, i) => (
-              <View key={i} style={[styles.fieldChip, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
-                <Text style={[styles.fieldChipText, { color: colors.primaryText }]} numberOfLines={1}>
-                  {f.label}: {f.value}
-                </Text>
-              </View>
-            ))}
-            {item.fields.length > 3 && (
-              <Text style={[styles.moreFields, { color: colors.dimText }]}>+{item.fields.length - 3} more</Text>
-            )}
-          </View>
-        )}
-        <Text style={[styles.noteCardPreview, { color: colors.secondaryText }]} numberOfLines={2}>
-          {item.translatedText}
-        </Text>
-      </TouchableOpacity>
-    );
-  }, [colors, handleDelete]);
+  const handleNotePress = useCallback((note: SavedNote) => {
+    setSelectedNote(note);
+    setEditingTitle(false);
+  }, []);
+
+  const renderNoteItem = useCallback(({ item }: { item: SavedNote }) => (
+    <NoteCard item={item} colors={colors} onPress={handleNotePress} onDelete={handleDelete} />
+  ), [colors, handleDelete, handleNotePress]);
 
   // ---- Note detail view (modal) ----
   if (selectedNote) {

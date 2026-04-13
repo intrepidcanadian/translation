@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import { translateText, translateAppleBatch, type TranslateOptions, type TranslationProvider } from "./translation";
+import { logger } from "./logger";
 
 interface OCRLine {
   text: string;
@@ -62,7 +63,7 @@ export async function translateOCRLines(
             const res = await translateText(text, sourceLangCode, targetLangCode, translateOptions);
             translatedTexts.push(res.translatedText);
           } catch (err) {
-            console.warn("OCR line translation failed:", err);
+            logger.warn("OCR", "OCR line translation failed", err);
             translatedTexts.push(text);
           }
         }
@@ -78,7 +79,7 @@ export async function translateOCRLines(
         }
       }
     } catch (err) {
-      console.warn("Batch OCR translation failed, using originals:", err);
+      logger.warn("OCR", "Batch OCR translation failed, using originals", err);
       translatedTexts = uncachedTexts;
     }
   }
@@ -122,13 +123,13 @@ export async function translateCapturedLines(
         const res = await translateText(text, sourceLangCode, targetLangCode, { provider });
         translations.push(res.translatedText);
       } catch (err) {
-        console.warn("Capture line translation failed:", err);
+        logger.warn("OCR", "Capture line translation failed", err);
         translations.push(text);
       }
     }
     return translations;
   } catch (err) {
-    console.warn("Batch capture translation failed, using originals:", err);
+    logger.warn("OCR", "Batch capture translation failed, using originals", err);
     return texts;
   }
 }

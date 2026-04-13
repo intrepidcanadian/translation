@@ -1,7 +1,8 @@
 import React, { Component, type ErrorInfo, type ReactNode } from "react";
-import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Appearance } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { getColors } from "../theme";
+import { getColors, type ThemeMode } from "../theme";
+import { logger } from "../services/logger";
 
 const LAST_CRASH_KEY = "@live_translator_last_crash";
 
@@ -23,7 +24,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("App crashed:", error, info.componentStack);
+    logger.error("Render", "App crashed", { message: error.message, componentStack: info.componentStack });
 
     // Persist crash info for debugging across sessions
     const crashReport = {
@@ -43,7 +44,8 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      const colors = getColors("dark");
+      const systemTheme: ThemeMode = Appearance.getColorScheme() === "light" ? "light" : "dark";
+      const colors = getColors(systemTheme);
       return (
         <View style={[styles.container, { backgroundColor: colors.bubbleBg }]}>
           <Text style={styles.icon}>⚠️</Text>
@@ -72,7 +74,6 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#1a1a2e",
     padding: 32,
   },
   icon: {
@@ -82,24 +83,20 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: "700",
-    color: "#ffffff",
     marginBottom: 12,
   },
   message: {
     fontSize: 14,
-    color: "#a0a0b8",
     textAlign: "center",
     marginBottom: 32,
     lineHeight: 20,
   },
   button: {
-    backgroundColor: "#6C63FF",
     paddingHorizontal: 32,
     paddingVertical: 14,
     borderRadius: 12,
   },
   buttonText: {
-    color: "#ffffff",
     fontSize: 16,
     fontWeight: "600",
   },

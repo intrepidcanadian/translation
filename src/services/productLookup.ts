@@ -1,4 +1,5 @@
 // Product lookup service — barcode/UPC lookup via Open Food Facts + UPCitemdb, with OCR text search fallback
+import { logger } from "./logger";
 
 export interface ProductInfo {
   name: string;
@@ -55,7 +56,7 @@ export async function lookupBarcode(barcode: string, signal?: AbortSignal): Prom
     }
   } catch (err) {
     if (signal?.aborted) throw err;
-    console.warn("Open Food Facts lookup failed:", err);
+    logger.warn("Product", "Open Food Facts lookup failed", err);
   }
 
   // Try UPCitemdb (general products)
@@ -98,7 +99,7 @@ export async function lookupBarcode(barcode: string, signal?: AbortSignal): Prom
     }
   } catch (err) {
     if (signal?.aborted) throw err;
-    console.warn("UPCitemdb lookup failed:", err);
+    logger.warn("Product", "UPCitemdb lookup failed", err);
   }
 
   return { found: false, searchQuery: barcode };
@@ -133,7 +134,7 @@ export async function searchProductByText(query: string, signal?: AbortSignal): 
     }
   } catch (err) {
     if (signal?.aborted) throw err;
-    console.warn("Product text search failed:", err);
+    logger.warn("Product", "Product text search failed", err);
   }
 
   return { found: false, searchQuery: query };
@@ -219,7 +220,7 @@ export async function fetchPriceComps(
     }
   } catch (err) {
     if (signal?.aborted) throw err;
-    console.warn("Price comp lookup failed:", err);
+    logger.warn("Product", "Price comp lookup failed", err);
   }
 
   return result;

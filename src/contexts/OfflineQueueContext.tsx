@@ -3,6 +3,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useNetInfo } from "@react-native-community/netinfo";
 import { notifySuccess } from "../services/haptics";
 import { translateText } from "../services/translation";
+import { logger } from "../services/logger";
 import { useSettings } from "./SettingsContext";
 
 const OFFLINE_QUEUE_KEY = "offline_translation_queue";
@@ -44,7 +45,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
           } catch {}
         }
       })
-      .catch((err) => console.warn("Failed to load offline queue:", err));
+      .catch((err) => logger.warn("Storage", "Failed to load offline queue", err));
   }, []);
 
   const addToOfflineQueue = useCallback((item: OfflineQueueItem) => {
@@ -78,7 +79,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
         processed++;
         consecutiveFailures = 0;
       } catch (err) {
-        console.warn("Offline queue translation failed:", err);
+        logger.warn("Network", "Offline queue translation failed", err);
         failed.push(item);
         consecutiveFailures++;
       }

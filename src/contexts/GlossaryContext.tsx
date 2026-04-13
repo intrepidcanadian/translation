@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { impactLight, impactMedium } from "../services/haptics";
+import { logger } from "../services/logger";
 import { useLanguage } from "./LanguageContext";
 
 const GLOSSARY_KEY = "user_glossary";
@@ -39,14 +40,14 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
         }
         loaded.current = true;
       })
-      .catch((err) => console.warn("Failed to load glossary:", err));
+      .catch((err) => logger.warn("Glossary", "Failed to load glossary", err));
   }, []);
 
   // Persist glossary changes (skip initial load)
   useEffect(() => {
     if (!loaded.current) return;
     AsyncStorage.setItem(GLOSSARY_KEY, JSON.stringify(glossary)).catch((err) =>
-      console.warn("Failed to save glossary:", err)
+      logger.warn("Glossary", "Failed to save glossary", err)
     );
   }, [glossary]);
 

@@ -2,6 +2,7 @@
 
 import { Platform } from "react-native";
 import { offlineTranslate } from "./offlinePhrases";
+import { logger } from "./logger";
 
 export type TranslationProvider = "mymemory" | "apple" | "mlkit";
 
@@ -224,7 +225,7 @@ export async function isAppleTranslationAvailable(): Promise<boolean> {
     const AppleTranslation = require("../../modules/apple-translation");
     return await AppleTranslation.isAvailable();
   } catch (err) {
-    console.warn("Apple Translation availability check failed:", err);
+    logger.warn("Translation", "Apple Translation availability check failed", err);
     return false;
   }
 }
@@ -236,7 +237,7 @@ export async function detectLanguageOnDevice(text: string): Promise<string | nul
     const AppleTranslation = require("../../modules/apple-translation");
     return await AppleTranslation.detectLanguage(text);
   } catch (err) {
-    console.warn("On-device language detection failed:", err);
+    logger.warn("Translation", "On-device language detection failed", err);
     return null;
   }
 }
@@ -304,7 +305,7 @@ export async function translateText(
 
   // Circuit breaker: skip provider if it has failed too many times recently
   if (isCircuitOpen(provider)) {
-    console.warn(`Circuit breaker open for ${provider}, falling back`);
+    logger.warn("Translation", `Circuit breaker open for ${provider}, falling back`);
     if (provider !== "mymemory" && !isCircuitOpen("mymemory")) {
       const fallback = await translateMyMemory(trimmed, sourceLang, targetLang, signal);
       recordSuccess("mymemory");
@@ -337,7 +338,7 @@ export async function translateText(
         recordSuccess("mymemory");
       } catch (fallbackErr) {
         recordFailure("mymemory");
-        console.warn("MyMemory fallback also failed:", fallbackErr);
+        logger.warn("Translation", "MyMemory fallback also failed", fallbackErr);
         throw err; // Throw original error if fallback also fails
       }
     } else {

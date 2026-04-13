@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { logger } from "../services/logger";
 
 const STREAK_KEY = "usage_streak";
 
@@ -30,7 +31,7 @@ export function StreakProvider({ children }: { children: React.ReactNode }) {
         }
         loaded.current = true;
       })
-      .catch((err) => console.warn("Failed to load streak:", err));
+      .catch((err) => logger.warn("Storage", "Failed to load streak", err));
   }, []);
 
   const updateStreak = useCallback(() => {

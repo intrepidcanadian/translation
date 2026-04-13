@@ -35,6 +35,7 @@ import {
   LANGUAGE_MAP,
 } from "../services/translation";
 import { getColors } from "../theme";
+import { logger } from "../services/logger";
 import { PHRASE_CATEGORIES, getPhraseOfTheDay } from "../services/offlinePhrases";
 import { FONT_SIZE_SCALES } from "../components/SettingsModal";
 import { useRoute } from "@react-navigation/native";
@@ -224,7 +225,7 @@ export default function TranslateScreen() {
         }
       } catch (err: any) {
         if (err?.name !== "AbortError") {
-          console.warn("Type-ahead translation failed:", err);
+          logger.warn("Translation", "Type-ahead translation failed", err);
           if (!controller.signal.aborted) setTypedPreview("");
         }
       }
