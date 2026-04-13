@@ -16,6 +16,7 @@ interface TranslationBubbleProps {
   };
   showRomanization: boolean;
   fontSizeScale: number;
+  confidenceThreshold: number;
   copiedText: string | null;
   speakingText: string | null;
   targetSpeechCode: string;
@@ -35,6 +36,7 @@ function TranslationBubble({
   dynamicFontSizes,
   showRomanization,
   fontSizeScale,
+  confidenceThreshold,
   copiedText,
   speakingText,
   targetSpeechCode,
@@ -110,6 +112,11 @@ function TranslationBubble({
           </Text>
           {showRomanization && !item.error && !item.pending && item.targetLangCode && (
             <AlignedRomanization text={item.translated} langCode={item.targetLangCode} textColor={colors.translatedText} romanColor={colors.mutedText} />
+          )}
+          {confidenceThreshold > 0 && item.confidence != null && Math.round(item.confidence * 100) < confidenceThreshold && !item.error && !item.pending && (
+            <Text style={[styles.lowConfidenceBadge, { color: colors.warningText, backgroundColor: colors.warningBg }]}>
+              ⚠ Low confidence ({Math.round(item.confidence * 100)}%) — consider verifying
+            </Text>
           )}
           {copiedText === item.translated && (
             <Text style={[styles.copiedBadge, { color: colors.successText }]}>Copied!</Text>
@@ -219,6 +226,16 @@ const styles = StyleSheet.create({
   tappableWord: {
     textDecorationLine: "underline",
     textDecorationStyle: "dotted",
+  },
+  lowConfidenceBadge: {
+    fontSize: 11,
+    fontWeight: "600",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: "flex-start",
+    marginTop: 6,
+    overflow: "hidden",
   },
   copiedBadge: {
     color: "#4ade80",

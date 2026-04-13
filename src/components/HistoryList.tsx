@@ -33,6 +33,7 @@ interface HistoryListProps {
   fontScale: number;
   showRomanization: boolean;
   fontSize: string;
+  confidenceThreshold: number;
   conversationMode: boolean;
   selectMode: boolean;
   selectedIndices: Set<number>;
@@ -79,6 +80,7 @@ function HistoryList({
   fontScale,
   showRomanization,
   fontSize,
+  confidenceThreshold,
   conversationMode,
   selectMode,
   selectedIndices,
@@ -213,6 +215,7 @@ function HistoryList({
               dynamicFontSizes={dynamicFontSizes}
               showRomanization={showRomanization}
               fontSizeScale={fontScale}
+              confidenceThreshold={confidenceThreshold}
               copiedText={copiedText}
               speakingText={speakingText}
               targetSpeechCode={targetLang.speechCode}
@@ -236,6 +239,7 @@ function HistoryList({
       dynamicFontSizes,
       showRomanization,
       fontScale,
+      confidenceThreshold,
       copiedText,
       speakingText,
       sourceLang,

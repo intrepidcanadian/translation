@@ -678,6 +678,7 @@ export default function TranslateScreen() {
               fontScale={fontScale}
               showRomanization={settings.showRomanization}
               fontSize={settings.fontSize}
+              confidenceThreshold={settings.confidenceThreshold}
               conversationMode={conversationMode}
               selectMode={selectMode}
               selectedIndices={selectedIndices}

@@ -26,6 +26,8 @@ export const FONT_SIZE_SCALES: Record<FontSizeOption, number> = {
 
 export type SilenceTimeoutOption = 0 | 3 | 5 | 10;
 
+export type ConfidenceThreshold = 0 | 50 | 70 | 85;
+
 export interface Settings {
   hapticsEnabled: boolean;
   autoPlayTTS: boolean;
@@ -37,6 +39,7 @@ export interface Settings {
   showRomanization: boolean;
   offlineSpeech: boolean;
   silenceTimeout: SilenceTimeoutOption;
+  confidenceThreshold: ConfidenceThreshold;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -50,6 +53,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showRomanization: true,
   offlineSpeech: false,
   silenceTimeout: 0,
+  confidenceThreshold: 0,
 };
 
 interface Props {
@@ -230,6 +234,39 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                     ]}
                   >
                     {option === 0 ? "Off" : `${option}s`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Confidence Warning</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Warn when translation quality is below threshold</Text>
+              </View>
+            </View>
+            <View style={styles.fontSizeRow}>
+              {([0, 50, 70, 85] as ConfidenceThreshold[]).map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[
+                    styles.fontSizeOption,
+                    dynamicStyles.fontSizeOption,
+                    settings.confidenceThreshold === option && { backgroundColor: colors.primary },
+                  ]}
+                  onPress={() => onUpdate({ ...settings, confidenceThreshold: option })}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Confidence warning threshold: ${option === 0 ? "off" : `${option}%`}`}
+                  accessibilityState={{ selected: settings.confidenceThreshold === option }}
+                >
+                  <Text
+                    style={[
+                      styles.fontSizeLabel,
+                      dynamicStyles.fontSizeLabel,
+                      settings.confidenceThreshold === option && { color: colors.destructiveText },
+                    ]}
+                  >
+                    {option === 0 ? "Off" : `${option}%`}
                   </Text>
                 </TouchableOpacity>
               ))}
