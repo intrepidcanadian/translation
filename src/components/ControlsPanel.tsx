@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   View,
   Text,
@@ -77,6 +77,8 @@ function ControlsPanel({
   onSubmitTypedText,
   onCopyToClipboard,
 }: ControlsPanelProps) {
+  const wordCount = useMemo(() => typedText.trim().split(/\s+/).filter(Boolean).length, [typedText]);
+
   return (
     <View style={[styles.controls, isLandscape && styles.controlsLandscape]}>
       {history.length > 0 && !isListening && (
@@ -225,7 +227,7 @@ function ControlsPanel({
                 {typedText.length}/500
               </Text>
               <Text style={[styles.wordCountText, { color: colors.dimText }]}>
-                {typedText.trim().split(/\s+/).filter(Boolean).length} {typedText.trim().split(/\s+/).filter(Boolean).length === 1 ? "word" : "words"}
+                {wordCount} {wordCount === 1 ? "word" : "words"}
               </Text>
             </View>
           )}

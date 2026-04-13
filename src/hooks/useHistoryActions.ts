@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useReducer, useRef, useCallback, useEffect } from "react";
 import { Alert, Share, LayoutAnimation } from "react-native";
 import * as Speech from "expo-speech";
 import * as Clipboard from "expo-clipboard";
@@ -7,6 +7,64 @@ import { translateText, getWordAlternatives, type WordAlternative } from "../ser
 import type { TranslationProvider } from "../services/translation";
 import { logger } from "../services/logger";
 import type { HistoryItem } from "../types";
+
+// Consolidated modal state to reduce independent re-renders
+type ModalState = {
+  compareData: {
+    original: string;
+    results: Array<{ provider: string; text: string; loading?: boolean }>;
+  } | null;
+  correctionPrompt: {
+    index: number;
+    original: string;
+    translated: string;
+  } | null;
+  wordAltData: {
+    word: string;
+    sourceLang: string;
+    targetLang: string;
+    alternatives: WordAlternative[];
+    loading: boolean;
+  } | null;
+};
+
+type ModalAction =
+  | { type: "SET_COMPARE"; data: ModalState["compareData"] }
+  | { type: "UPDATE_COMPARE_RESULT"; provider: string; text: string; loading: boolean }
+  | { type: "SET_CORRECTION"; data: ModalState["correctionPrompt"] }
+  | { type: "SET_WORD_ALT"; data: ModalState["wordAltData"] }
+  | { type: "UPDATE_WORD_ALT_RESULTS"; alternatives: WordAlternative[] };
+
+const INITIAL_MODAL_STATE: ModalState = {
+  compareData: null,
+  correctionPrompt: null,
+  wordAltData: null,
+};
+
+function modalReducer(state: ModalState, action: ModalAction): ModalState {
+  switch (action.type) {
+    case "SET_COMPARE":
+      return { ...state, compareData: action.data };
+    case "UPDATE_COMPARE_RESULT":
+      if (!state.compareData) return state;
+      return {
+        ...state,
+        compareData: {
+          ...state.compareData,
+          results: state.compareData.results.map((r) =>
+            r.provider === action.provider ? { ...r, text: action.text, loading: action.loading } : r
+          ),
+        },
+      };
+    case "SET_CORRECTION":
+      return { ...state, correctionPrompt: action.data };
+    case "SET_WORD_ALT":
+      return { ...state, wordAltData: action.data };
+    case "UPDATE_WORD_ALT_RESULTS":
+      if (!state.wordAltData) return state;
+      return { ...state, wordAltData: { ...state.wordAltData, alternatives: action.alternatives, loading: false } };
+  }
+}
 
 interface UseHistoryActionsOptions {
   history: HistoryItem[];
@@ -34,24 +92,13 @@ export function useHistoryActions({
   const [deletedItem, setDeletedItem] = useState<{ item: HistoryItem; index: number } | null>(null);
   const undoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [compareData, setCompareData] = useState<{
-    original: string;
-    results: Array<{ provider: string; text: string; loading?: boolean }>;
-  } | null>(null);
+  const [modalState, dispatchModal] = useReducer(modalReducer, INITIAL_MODAL_STATE);
+  const { compareData, correctionPrompt, wordAltData } = modalState;
 
-  const [correctionPrompt, setCorrectionPrompt] = useState<{
-    index: number;
-    original: string;
-    translated: string;
-  } | null>(null);
-
-  const [wordAltData, setWordAltData] = useState<{
-    word: string;
-    sourceLang: string;
-    targetLang: string;
-    alternatives: WordAlternative[];
-    loading: boolean;
-  } | null>(null);
+  // Stable setters for parent compatibility
+  const setCompareData = useCallback((data: ModalState["compareData"]) => dispatchModal({ type: "SET_COMPARE", data }), []);
+  const setCorrectionPrompt = useCallback((data: ModalState["correctionPrompt"]) => dispatchModal({ type: "SET_CORRECTION", data }), []);
+  const setWordAltData = useCallback((data: ModalState["wordAltData"]) => dispatchModal({ type: "SET_WORD_ALT", data }), []);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -258,14 +305,14 @@ export function useHistoryActions({
   }, [correctionPrompt, setHistory]);
 
   const lookupWordAlternatives = useCallback(async (word: string, srcLang: string, tgtLang: string) => {
-    setWordAltData({ word, sourceLang: srcLang, targetLang: tgtLang, alternatives: [], loading: true });
+    dispatchModal({ type: "SET_WORD_ALT", data: { word, sourceLang: srcLang, targetLang: tgtLang, alternatives: [], loading: true } });
     impactMedium();
     try {
       const alts = await getWordAlternatives(word, srcLang, tgtLang);
-      setWordAltData((prev) => prev ? { ...prev, alternatives: alts, loading: false } : null);
+      dispatchModal({ type: "UPDATE_WORD_ALT_RESULTS", alternatives: alts });
     } catch (err) {
       logger.warn("Translation", "Word alternatives lookup failed", err);
-      setWordAltData((prev) => prev ? { ...prev, loading: false } : null);
+      dispatchModal({ type: "UPDATE_WORD_ALT_RESULTS", alternatives: [] });
     }
   }, []);
 
@@ -281,31 +328,15 @@ export function useHistoryActions({
       { provider: currentLabel, text: currentTranslation },
       ...providers.map((p) => ({ provider: p.label, text: "", loading: true })),
     ];
-    setCompareData({ original, results: initialResults });
+    dispatchModal({ type: "SET_COMPARE", data: { original, results: initialResults } });
 
     for (const p of providers) {
       try {
         const result = await translateText(original, sourceLangCode, targetLangCode, { provider: p.key });
-        setCompareData((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            results: prev.results.map((r) =>
-              r.provider === p.label ? { ...r, text: result.translatedText, loading: false } : r
-            ),
-          };
-        });
+        dispatchModal({ type: "UPDATE_COMPARE_RESULT", provider: p.label, text: result.translatedText, loading: false });
       } catch (err) {
         logger.warn("Translation", "Compare translation failed", err);
-        setCompareData((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            results: prev.results.map((r) =>
-              r.provider === p.label ? { ...r, text: "Failed to load", loading: false } : r
-            ),
-          };
-        });
+        dispatchModal({ type: "UPDATE_COMPARE_RESULT", provider: p.label, text: "Failed to load", loading: false });
       }
     }
   }, [translationProvider, sourceLangCode, targetLangCode]);

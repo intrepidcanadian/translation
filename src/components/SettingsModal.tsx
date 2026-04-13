@@ -84,7 +84,7 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
     if (!visible) return;
     AsyncStorage.getItem("@live_translator_last_crash")
       .then((val) => { if (val) setLastCrash(JSON.parse(val)); })
-      .catch(() => {});
+      .catch((err) => logger.warn("Settings", "Failed to load crash report", err));
   }, [visible]);
 
   const copyCrashReport = useCallback(async () => {
@@ -122,14 +122,12 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
     rowBorder: { borderBottomColor: colors.borderLight },
     switchTrack: { false: colors.border, true: colors.primary },
     sliderMax: colors.border,
-    fontSizeOption: { backgroundColor: colors.cardBg },
-    fontSizeLabel: { color: colors.mutedText },
+    // fontSizeOption and fontSizeLabel now handled by OptionPicker
     infoTitle: { color: colors.mutedText },
     infoText: { color: colors.dimText },
     closeButton: { borderTopColor: colors.borderLight },
     closeText: { color: colors.primary },
-    themeOption: { backgroundColor: colors.cardBg },
-    themeLabel: { color: colors.mutedText },
+    // themeOption and themeLabel now handled by OptionPicker
   }), [colors]);
 
   return (
@@ -145,32 +143,14 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>App color scheme</Text>
               </View>
             </View>
-            <View style={styles.fontSizeRow}>
-              {(["dark", "light"] as ThemeMode[]).map((option) => (
-                <TouchableOpacity
-                  key={option}
-                  style={[
-                    styles.fontSizeOption,
-                    dynamicStyles.themeOption,
-                    settings.theme === option && { backgroundColor: colors.primary },
-                  ]}
-                  onPress={() => onUpdate({ ...settings, theme: option })}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Theme: ${option}`}
-                  accessibilityState={{ selected: settings.theme === option }}
-                >
-                  <Text
-                    style={[
-                      styles.fontSizeLabel,
-                      dynamicStyles.themeLabel,
-                      settings.theme === option && { color: colors.destructiveText },
-                    ]}
-                  >
-                    {option === "dark" ? "Dark" : "Light"}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <OptionPicker
+              options={["dark", "light"] as ThemeMode[]}
+              selected={settings.theme}
+              onSelect={(value) => onUpdate({ ...settings, theme: value })}
+              labelFn={(v) => v === "dark" ? "Dark" : "Light"}
+              accessibilityPrefix="Theme"
+              colors={colors}
+            />
 
             <View style={[styles.row, dynamicStyles.rowBorder]}>
               <View style={styles.rowText}>
@@ -248,32 +228,14 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Stop listening after silence (0 = manual stop)</Text>
               </View>
             </View>
-            <View style={styles.fontSizeRow}>
-              {([0, 3, 5, 10] as SilenceTimeoutOption[]).map((option) => (
-                <TouchableOpacity
-                  key={option}
-                  style={[
-                    styles.fontSizeOption,
-                    dynamicStyles.fontSizeOption,
-                    settings.silenceTimeout === option && { backgroundColor: colors.primary },
-                  ]}
-                  onPress={() => onUpdate({ ...settings, silenceTimeout: option })}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Auto-stop after silence: ${option === 0 ? "off" : `${option} seconds`}`}
-                  accessibilityState={{ selected: settings.silenceTimeout === option }}
-                >
-                  <Text
-                    style={[
-                      styles.fontSizeLabel,
-                      dynamicStyles.fontSizeLabel,
-                      settings.silenceTimeout === option && { color: colors.destructiveText },
-                    ]}
-                  >
-                    {option === 0 ? "Off" : `${option}s`}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <OptionPicker
+              options={[0, 3, 5, 10] as SilenceTimeoutOption[]}
+              selected={settings.silenceTimeout}
+              onSelect={(value) => onUpdate({ ...settings, silenceTimeout: value })}
+              labelFn={(v) => v === 0 ? "Off" : `${v}s`}
+              accessibilityPrefix="Auto-stop after silence"
+              colors={colors}
+            />
 
             <View style={[styles.row, dynamicStyles.rowBorder]}>
               <View style={styles.rowText}>
@@ -281,32 +243,14 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Warn when translation quality is below threshold</Text>
               </View>
             </View>
-            <View style={styles.fontSizeRow}>
-              {([0, 50, 70, 85] as ConfidenceThreshold[]).map((option) => (
-                <TouchableOpacity
-                  key={option}
-                  style={[
-                    styles.fontSizeOption,
-                    dynamicStyles.fontSizeOption,
-                    settings.confidenceThreshold === option && { backgroundColor: colors.primary },
-                  ]}
-                  onPress={() => onUpdate({ ...settings, confidenceThreshold: option })}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Confidence warning threshold: ${option === 0 ? "off" : `${option}%`}`}
-                  accessibilityState={{ selected: settings.confidenceThreshold === option }}
-                >
-                  <Text
-                    style={[
-                      styles.fontSizeLabel,
-                      dynamicStyles.fontSizeLabel,
-                      settings.confidenceThreshold === option && { color: colors.destructiveText },
-                    ]}
-                  >
-                    {option === 0 ? "Off" : `${option}%`}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <OptionPicker
+              options={[0, 50, 70, 85] as ConfidenceThreshold[]}
+              selected={settings.confidenceThreshold}
+              onSelect={(value) => onUpdate({ ...settings, confidenceThreshold: value })}
+              labelFn={(v) => v === 0 ? "Off" : `${v}%`}
+              accessibilityPrefix="Confidence warning threshold"
+              colors={colors}
+            />
 
             <View style={[styles.row, dynamicStyles.rowBorder]}>
               <View style={styles.rowText}>
@@ -335,32 +279,14 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
                 <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Adjust translation bubble font size</Text>
               </View>
             </View>
-            <View style={styles.fontSizeRow}>
-              {(["small", "medium", "large", "xlarge"] as FontSizeOption[]).map((option) => (
-                <TouchableOpacity
-                  key={option}
-                  style={[
-                    styles.fontSizeOption,
-                    dynamicStyles.fontSizeOption,
-                    settings.fontSize === option && { backgroundColor: colors.primary },
-                  ]}
-                  onPress={() => onUpdate({ ...settings, fontSize: option })}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Text size: ${option === "xlarge" ? "extra large" : option}`}
-                  accessibilityState={{ selected: settings.fontSize === option }}
-                >
-                  <Text
-                    style={[
-                      styles.fontSizeLabel,
-                      dynamicStyles.fontSizeLabel,
-                      settings.fontSize === option && { color: colors.destructiveText },
-                    ]}
-                  >
-                    {option === "small" ? "S" : option === "medium" ? "M" : option === "large" ? "L" : "XL"}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            <OptionPicker
+              options={["small", "medium", "large", "xlarge"] as FontSizeOption[]}
+              selected={settings.fontSize}
+              onSelect={(value) => onUpdate({ ...settings, fontSize: value })}
+              labelFn={(v) => v === "small" ? "S" : v === "medium" ? "M" : v === "large" ? "L" : "XL"}
+              accessibilityPrefix="Text size"
+              colors={colors}
+            />
 
             <View style={[styles.row, dynamicStyles.rowBorder]}>
               <View style={styles.rowText}>
@@ -369,73 +295,14 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
               </View>
             </View>
 
-            <View style={styles.fontSizeRow}>
-              {appleAvailable && (
-                <TouchableOpacity
-                  style={[
-                    styles.fontSizeOption,
-                    dynamicStyles.fontSizeOption,
-                    settings.translationProvider === "apple" && { backgroundColor: colors.primary },
-                  ]}
-                  onPress={() => onUpdate({ ...settings, translationProvider: "apple" })}
-                  accessibilityRole="button"
-                  accessibilityLabel="Translation provider: Apple on-device (uses Neural Engine)"
-                  accessibilityState={{ selected: settings.translationProvider === "apple" }}
-                >
-                  <Text
-                    style={[
-                      styles.fontSizeLabel,
-                      dynamicStyles.fontSizeLabel,
-                      settings.translationProvider === "apple" && { color: colors.destructiveText },
-                    ]}
-                  >
-                    Apple
-                  </Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={[
-                  styles.fontSizeOption,
-                  dynamicStyles.fontSizeOption,
-                  settings.translationProvider === "mlkit" && { backgroundColor: colors.primary },
-                ]}
-                onPress={() => onUpdate({ ...settings, translationProvider: "mlkit" })}
-                accessibilityRole="button"
-                accessibilityLabel="Translation provider: ML Kit on-device"
-                accessibilityState={{ selected: settings.translationProvider === "mlkit" }}
-              >
-                <Text
-                  style={[
-                    styles.fontSizeLabel,
-                    dynamicStyles.fontSizeLabel,
-                    settings.translationProvider === "mlkit" && { color: colors.destructiveText },
-                  ]}
-                >
-                  ML Kit
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.fontSizeOption,
-                  dynamicStyles.fontSizeOption,
-                  settings.translationProvider === "mymemory" && { backgroundColor: colors.primary },
-                ]}
-                onPress={() => onUpdate({ ...settings, translationProvider: "mymemory" })}
-                accessibilityRole="button"
-                accessibilityLabel="Translation provider: MyMemory cloud API"
-                accessibilityState={{ selected: settings.translationProvider === "mymemory" }}
-              >
-                <Text
-                  style={[
-                    styles.fontSizeLabel,
-                    dynamicStyles.fontSizeLabel,
-                    settings.translationProvider === "mymemory" && { color: colors.destructiveText },
-                  ]}
-                >
-                  Cloud
-                </Text>
-              </TouchableOpacity>
-            </View>
+            <OptionPicker
+              options={(appleAvailable ? ["apple", "mlkit", "mymemory"] : ["mlkit", "mymemory"]) as TranslationProvider[]}
+              selected={settings.translationProvider}
+              onSelect={(value) => onUpdate({ ...settings, translationProvider: value })}
+              labelFn={(v) => v === "apple" ? "Apple" : v === "mlkit" ? "ML Kit" : "Cloud"}
+              accessibilityPrefix="Translation provider"
+              colors={colors}
+            />
             {settings.translationProvider === "apple" && (
               <Text style={[styles.providerHint, { color: colors.dimText }]}>
                 Apple Neural Engine — fast, private translation. No data leaves your device.
@@ -538,6 +405,52 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
         </View>
       </View>
     </Modal>
+  );
+}
+
+// Reusable option picker row — eliminates 5 repeated patterns in settings
+function OptionPicker<T extends string | number>({
+  options,
+  selected,
+  onSelect,
+  labelFn,
+  accessibilityPrefix,
+  colors,
+}: {
+  options: T[];
+  selected: T;
+  onSelect: (value: T) => void;
+  labelFn: (value: T) => string;
+  accessibilityPrefix: string;
+  colors: ReturnType<typeof getColors>;
+}) {
+  return (
+    <View style={styles.fontSizeRow}>
+      {options.map((option) => (
+        <TouchableOpacity
+          key={String(option)}
+          style={[
+            styles.fontSizeOption,
+            { backgroundColor: colors.cardBg },
+            selected === option && { backgroundColor: colors.primary },
+          ]}
+          onPress={() => onSelect(option)}
+          accessibilityRole="button"
+          accessibilityLabel={`${accessibilityPrefix}: ${labelFn(option)}`}
+          accessibilityState={{ selected: selected === option }}
+        >
+          <Text
+            style={[
+              styles.fontSizeLabel,
+              { color: colors.mutedText },
+              selected === option && { color: colors.destructiveText },
+            ]}
+          >
+            {labelFn(option)}
+          </Text>
+        </TouchableOpacity>
+      ))}
+    </View>
   );
 }
 

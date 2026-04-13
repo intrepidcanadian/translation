@@ -336,6 +336,16 @@ export default function TranslateScreen() {
 
   const toggleFavoritesOnly = useCallback(() => dispatchPanel({ type: "TOGGLE_FAVORITES_ONLY" }), []);
 
+  // Stable callbacks for ControlsPanel (React.memo) — prevents re-renders from unstable inline closures
+  const onEnterSelectMode = useCallback(() => setSelectMode(true), [setSelectMode]);
+  const onOpenSplitScreen = useCallback(() => {
+    if (isListening) stopListening();
+    dispatchPanel({ type: "SET_SPLIT_SCREEN", value: true });
+  }, [isListening, stopListening]);
+  const onCloseSplitScreen = useCallback(() => dispatchPanel({ type: "SET_SPLIT_SCREEN", value: false }), []);
+  const onOpenPlayback = useCallback(() => dispatchPanel({ type: "SET_PLAYBACK", value: true }), []);
+  const onClosePlayback = useCallback(() => dispatchPanel({ type: "SET_PLAYBACK", value: false }), []);
+
   const renderSavedPairItem = useCallback(({ item }: { item: { sourceCode: string; targetCode: string } }) => {
     const isActive = item.sourceCode === sourceLang.code && item.targetCode === targetLang.code;
     const srcLang = LANGUAGE_MAP.get(item.sourceCode);
@@ -384,7 +394,7 @@ export default function TranslateScreen() {
               {conversationMode && history.some((h) => h.speaker) && (
                 <TouchableOpacity
                   style={[styles.modeToggle, { backgroundColor: colors.cardBg, right: 60 }]}
-                  onPress={() => dispatchPanel({ type: "SET_PLAYBACK", value: true })}
+                  onPress={onOpenPlayback}
                   accessibilityRole="button"
                   accessibilityLabel="View conversation playback"
                 >
@@ -571,7 +581,7 @@ export default function TranslateScreen() {
               pulseAnim={pulseAnim}
               pulseOpacity={pulseOpacity}
               onClearHistory={clearHistory}
-              onEnterSelectMode={() => setSelectMode(true)}
+              onEnterSelectMode={onEnterSelectMode}
               onExitSelectMode={exitSelectMode}
               onExportSelected={exportSelected}
               onDeleteSelected={deleteSelected}
@@ -579,10 +589,7 @@ export default function TranslateScreen() {
               onStartListening={startListening}
               onStopListening={stopListening}
               onStartListeningAs={startListeningAs}
-              onOpenSplitScreen={() => {
-                if (isListening) stopListening();
-                dispatchPanel({ type: "SET_SPLIT_SCREEN", value: true });
-              }}
+              onOpenSplitScreen={onOpenSplitScreen}
               onTypedTextChange={setTypedText}
               onSubmitTypedText={submitTypedText}
               onCopyToClipboard={copyToClipboard}
@@ -590,8 +597,8 @@ export default function TranslateScreen() {
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
-      <SplitConversation visible={showSplitScreen} onClose={() => dispatchPanel({ type: "SET_SPLIT_SCREEN", value: false })} />
-      <ConversationPlayback visible={showPlayback} onClose={() => dispatchPanel({ type: "SET_PLAYBACK", value: false })} />
+      <SplitConversation visible={showSplitScreen} onClose={onCloseSplitScreen} />
+      <ConversationPlayback visible={showPlayback} onClose={onClosePlayback} />
     </>
   );
 }
