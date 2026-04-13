@@ -1,8 +1,6 @@
 const {
   withEntitlementsPlist,
   withXcodeProject,
-  withInfoPlist,
-  IOSConfig,
 } = require("@expo/config-plugins");
 const path = require("path");
 const fs = require("fs");
@@ -31,24 +29,21 @@ function withIOSWidget(config) {
     const widgetBundleId = mainBundleId + WIDGET_BUNDLE_ID_SUFFIX;
 
     // Copy widget source files to ios directory
-    const iosDir = path.join(config.modRequest.platformProjectRoot);
+    const iosDir = config.modRequest.platformProjectRoot;
     const widgetDir = path.join(iosDir, WIDGET_TARGET_NAME);
 
     if (!fs.existsSync(widgetDir)) {
       fs.mkdirSync(widgetDir, { recursive: true });
     }
 
-    const sourceDir = path.join(
-      config.modRequest.projectRoot,
-      "ios-widget"
-    );
-    const sourceFiles = [
-      "TranslateWidget.swift",
-      "TranslateWidgetBundle.swift",
+    const sourceDir = path.join(config.modRequest.projectRoot, "ios-widget");
+    const swiftFiles = ["TranslateWidget.swift", "TranslateWidgetBundle.swift"];
+    const allFiles = [
+      ...swiftFiles,
       "TranslateWidgetExtension.entitlements",
     ];
 
-    for (const file of sourceFiles) {
+    for (const file of allFiles) {
       const src = path.join(sourceDir, file);
       const dst = path.join(widgetDir, file);
       if (fs.existsSync(src)) {
@@ -88,12 +83,6 @@ function withIOSWidget(config) {
 </plist>`;
     fs.writeFileSync(path.join(widgetDir, "Info.plist"), infoPlist);
 
-    // Add widget extension target to Xcode project
-    const targetUuid = project.generateUuid();
-    const buildConfigurationListUuid = project.generateUuid();
-    const debugBuildConfigUuid = project.generateUuid();
-    const releaseBuildConfigUuid = project.generateUuid();
-
     // Add the extension target
     const target = project.addTarget(
       WIDGET_TARGET_NAME,
@@ -103,26 +92,95 @@ function withIOSWidget(config) {
     );
 
     if (target) {
-      // Add source files to the target
+      // Create a PBX group for widget files — only non-Swift files here;
+      // Swift file refs are added manually below to avoid duplicates
+      const nonSwiftFiles = ["TranslateWidgetExtension.entitlements", "Info.plist"];
       const widgetGroup = project.addPbxGroup(
-        sourceFiles.concat(["Info.plist"]),
+        nonSwiftFiles,
         WIDGET_TARGET_NAME,
         WIDGET_TARGET_NAME
       );
 
-      // Add to main group
+      // Add group to main project group
       const mainGroup = project.getFirstProject().firstProject.mainGroup;
       project.addToPbxGroup(widgetGroup.uuid, mainGroup);
 
-      // Add source files to build phase
-      // Use just the filename — the group path already provides the directory
-      for (const file of sourceFiles) {
-        if (file.endsWith(".swift")) {
-          project.addSourceFile(
-            file,
-            { target: target.uuid },
-            widgetGroup.uuid
-          );
+      // --- Manually add Swift files to the widget target's Sources build phase ---
+      // addTarget() creates the native target but with empty buildPhases.
+      // We must create PBXSourcesBuildPhase, PBXFrameworksBuildPhase,
+      // PBXFileReferences, PBXBuildFiles, and wire them all together.
+
+      const objects = project.hash.project.objects;
+
+      // 1. Create PBXFileReferences for each Swift file
+      const buildFileEntries = [];
+      for (const swiftFile of swiftFiles) {
+        const fileRefUuid = project.generateUuid();
+        objects["PBXFileReference"][fileRefUuid] = {
+          isa: "PBXFileReference",
+          lastKnownFileType: "sourcecode.swift",
+          path: swiftFile,
+          sourceTree: '"<group>"',
+          name: `"${swiftFile}"`,
+        };
+        objects["PBXFileReference"][`${fileRefUuid}_comment`] = swiftFile;
+
+        const buildFileUuid = project.generateUuid();
+        objects["PBXBuildFile"][buildFileUuid] = {
+          isa: "PBXBuildFile",
+          fileRef: fileRefUuid,
+          fileRef_comment: swiftFile,
+        };
+        objects["PBXBuildFile"][`${buildFileUuid}_comment`] = `${swiftFile} in Sources`;
+
+        buildFileEntries.push({
+          value: buildFileUuid,
+          comment: `${swiftFile} in Sources`,
+        });
+
+        // Add file ref to widget group
+        const groupObj = objects["PBXGroup"][widgetGroup.uuid];
+        if (groupObj && groupObj.children) {
+          groupObj.children.push({ value: fileRefUuid, comment: swiftFile });
+        }
+      }
+
+      // 2. Create PBXSourcesBuildPhase with the Swift build files
+      const sourcesBuildPhaseUuid = project.generateUuid();
+      if (!objects["PBXSourcesBuildPhase"]) {
+        objects["PBXSourcesBuildPhase"] = {};
+      }
+      objects["PBXSourcesBuildPhase"][sourcesBuildPhaseUuid] = {
+        isa: "PBXSourcesBuildPhase",
+        buildActionMask: 2147483647,
+        files: buildFileEntries,
+        runOnlyForDeploymentPostprocessing: 0,
+      };
+      objects["PBXSourcesBuildPhase"][`${sourcesBuildPhaseUuid}_comment`] = "Sources";
+
+      // 3. Create PBXFrameworksBuildPhase (required even if empty)
+      const frameworksBuildPhaseUuid = project.generateUuid();
+      if (!objects["PBXFrameworksBuildPhase"]) {
+        objects["PBXFrameworksBuildPhase"] = {};
+      }
+      objects["PBXFrameworksBuildPhase"][frameworksBuildPhaseUuid] = {
+        isa: "PBXFrameworksBuildPhase",
+        buildActionMask: 2147483647,
+        files: [],
+        runOnlyForDeploymentPostprocessing: 0,
+      };
+      objects["PBXFrameworksBuildPhase"][`${frameworksBuildPhaseUuid}_comment`] = "Frameworks";
+
+      // 4. Wire build phases into the widget native target
+      const nativeTargets = objects["PBXNativeTarget"];
+      for (const key in nativeTargets) {
+        const nt = nativeTargets[key];
+        if (nt && nt.name && (nt.name === WIDGET_TARGET_NAME || nt.name === `"${WIDGET_TARGET_NAME}"`)) {
+          nt.buildPhases = [
+            { value: sourcesBuildPhaseUuid, comment: "Sources" },
+            { value: frameworksBuildPhaseUuid, comment: "Frameworks" },
+          ];
+          break;
         }
       }
 
@@ -143,6 +201,8 @@ function withIOSWidget(config) {
           config.buildSettings.TARGETED_DEVICE_FAMILY = '"1,2"';
           config.buildSettings.MARKETING_VERSION = "1.0";
           config.buildSettings.CURRENT_PROJECT_VERSION = "1";
+          config.buildSettings.GENERATE_INFOPLIST_FILE = "NO";
+          config.buildSettings.SKIP_INSTALL = "YES";
         }
       }
     }

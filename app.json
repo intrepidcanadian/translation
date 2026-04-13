@@ -91,7 +91,6 @@
           }
         }
       ],
-      "./modules/apple-translation/expo-module.config.json",
       "./plugins/ios-widget-plugin"
     ],
     "extra": {
