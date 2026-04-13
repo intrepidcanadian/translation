@@ -56,7 +56,7 @@ function TranslationBubble({
         accessibilityRole="button"
         accessibilityLabel={`Original: ${item.original}. Tap to copy.`}
       >
-        <Text style={[styles.originalText, { color: colors.secondaryText }, dynamicFontSizes.original]}>{item.original}</Text>
+        <Text selectable style={[styles.originalText, { color: colors.secondaryText }, dynamicFontSizes.original]}>{item.original}</Text>
         {item.detectedLang && (() => {
           const lang = LANGUAGES.find((l) => l.code === item.detectedLang);
           return lang ? (
@@ -89,7 +89,7 @@ function TranslationBubble({
               Failed
             </Text>
           )}
-          <Text style={[styles.translatedTextHistory, { color: item.error ? colors.errorText : item.pending ? colors.dimText : colors.translatedText }, dynamicFontSizes.translated, (item.pending || item.error) && { fontStyle: "italic" }]}>
+          <Text selectable={!item.pending && !item.error} style={[styles.translatedTextHistory, { color: item.error ? colors.errorText : item.pending ? colors.dimText : colors.translatedText }, dynamicFontSizes.translated, (item.pending || item.error) && { fontStyle: "italic" }]}>
             {!item.error && !item.pending && item.sourceLangCode && item.targetLangCode
               ? item.translated.split(/(\s+)/).map((segment: string, si: number) =>
                   /\s+/.test(segment) ? segment : (

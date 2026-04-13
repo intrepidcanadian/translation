@@ -48,7 +48,7 @@ function ChatBubble({
           {isB ? targetLangName : sourceLangName}
         </Text>
         <TouchableOpacity onPress={() => onCopy(item.original)}>
-          <Text style={[styles.chatOriginal, { color: colors.secondaryText }, dynamicFontSizes.chatText]}>{item.original}</Text>
+          <Text selectable style={[styles.chatOriginal, { color: colors.secondaryText }, dynamicFontSizes.chatText]}>{item.original}</Text>
         </TouchableOpacity>
         {item.detectedLang && (() => {
           const lang = LANGUAGES.find((l) => l.code === item.detectedLang);
@@ -62,7 +62,7 @@ function ChatBubble({
           <AlignedRomanization text={item.original} langCode={item.sourceLangCode} textColor={colors.secondaryText} romanColor={colors.mutedText} fontSize={14 * fontSizeScale} />
         )}
         <TouchableOpacity onPress={() => onCopy(item.translated)}>
-          <Text style={[styles.chatTranslated, { color: colors.translatedText }, dynamicFontSizes.chatText]}>{item.translated}</Text>
+          <Text selectable style={[styles.chatTranslated, { color: colors.translatedText }, dynamicFontSizes.chatText]}>{item.translated}</Text>
         </TouchableOpacity>
         {showRomanization && item.targetLangCode && (
           <AlignedRomanization text={item.translated} langCode={item.targetLangCode} textColor={colors.translatedText} romanColor={colors.mutedText} fontSize={14 * fontSizeScale} />
