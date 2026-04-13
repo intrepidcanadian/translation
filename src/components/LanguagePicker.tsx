@@ -77,7 +77,7 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
         accessibilityLabel={`${label} language: ${selected.name}. Tap to change.`}
         accessibilityHint="Opens a list to choose a different language"
       >
-        <Text style={[styles.buttonText, { color: colors.primaryText }]}>{selected.name}</Text>
+        <Text style={[styles.buttonText, { color: colors.primaryText }]}>{selected.flag} {selected.name}</Text>
         <Text style={[styles.arrow, { color: colors.primary }]} importantForAccessibility="no">▼</Text>
       </TouchableOpacity>
 
@@ -135,7 +135,7 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
                         isSelected && { color: colors.primary, fontWeight: "700" },
                       ]}
                     >
-                      {item.name}
+                      {item.flag} {item.name}
                     </Text>
                     <Text style={[styles.langCode, { color: colors.dimText }]}>{item.code.toUpperCase()}</Text>
                   </TouchableOpacity>

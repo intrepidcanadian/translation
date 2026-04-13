@@ -365,33 +365,35 @@ export interface Language {
   code: string;
   name: string;
   speechCode: string; // BCP-47 code for speech recognition
+  flag: string; // Emoji flag for visual identification
 }
 
 export const AUTO_DETECT_LANGUAGE: Language = {
   code: "autodetect",
   name: "Auto-Detect",
   speechCode: "", // Not used for speech input with auto-detect
+  flag: "🌐",
 };
 
 export const LANGUAGES: Language[] = [
-  { code: "en", name: "English", speechCode: "en-US" },
-  { code: "es", name: "Spanish", speechCode: "es-ES" },
-  { code: "fr", name: "French", speechCode: "fr-FR" },
-  { code: "de", name: "German", speechCode: "de-DE" },
-  { code: "it", name: "Italian", speechCode: "it-IT" },
-  { code: "pt", name: "Portuguese", speechCode: "pt-BR" },
-  { code: "zh", name: "Chinese", speechCode: "zh-CN" },
-  { code: "ja", name: "Japanese", speechCode: "ja-JP" },
-  { code: "ko", name: "Korean", speechCode: "ko-KR" },
-  { code: "ar", name: "Arabic", speechCode: "ar-SA" },
-  { code: "hi", name: "Hindi", speechCode: "hi-IN" },
-  { code: "ru", name: "Russian", speechCode: "ru-RU" },
-  { code: "nl", name: "Dutch", speechCode: "nl-NL" },
-  { code: "sv", name: "Swedish", speechCode: "sv-SE" },
-  { code: "pl", name: "Polish", speechCode: "pl-PL" },
-  { code: "tr", name: "Turkish", speechCode: "tr-TR" },
-  { code: "th", name: "Thai", speechCode: "th-TH" },
-  { code: "vi", name: "Vietnamese", speechCode: "vi-VN" },
-  { code: "uk", name: "Ukrainian", speechCode: "uk-UA" },
-  { code: "cs", name: "Czech", speechCode: "cs-CZ" },
+  { code: "en", name: "English", speechCode: "en-US", flag: "🇺🇸" },
+  { code: "es", name: "Spanish", speechCode: "es-ES", flag: "🇪🇸" },
+  { code: "fr", name: "French", speechCode: "fr-FR", flag: "🇫🇷" },
+  { code: "de", name: "German", speechCode: "de-DE", flag: "🇩🇪" },
+  { code: "it", name: "Italian", speechCode: "it-IT", flag: "🇮🇹" },
+  { code: "pt", name: "Portuguese", speechCode: "pt-BR", flag: "🇧🇷" },
+  { code: "zh", name: "Chinese", speechCode: "zh-CN", flag: "🇨🇳" },
+  { code: "ja", name: "Japanese", speechCode: "ja-JP", flag: "🇯🇵" },
+  { code: "ko", name: "Korean", speechCode: "ko-KR", flag: "🇰🇷" },
+  { code: "ar", name: "Arabic", speechCode: "ar-SA", flag: "🇸🇦" },
+  { code: "hi", name: "Hindi", speechCode: "hi-IN", flag: "🇮🇳" },
+  { code: "ru", name: "Russian", speechCode: "ru-RU", flag: "🇷🇺" },
+  { code: "nl", name: "Dutch", speechCode: "nl-NL", flag: "🇳🇱" },
+  { code: "sv", name: "Swedish", speechCode: "sv-SE", flag: "🇸🇪" },
+  { code: "pl", name: "Polish", speechCode: "pl-PL", flag: "🇵🇱" },
+  { code: "tr", name: "Turkish", speechCode: "tr-TR", flag: "🇹🇷" },
+  { code: "th", name: "Thai", speechCode: "th-TH", flag: "🇹🇭" },
+  { code: "vi", name: "Vietnamese", speechCode: "vi-VN", flag: "🇻🇳" },
+  { code: "uk", name: "Ukrainian", speechCode: "uk-UA", flag: "🇺🇦" },
+  { code: "cs", name: "Czech", speechCode: "cs-CZ", flag: "🇨🇿" },
 ];
