@@ -199,29 +199,40 @@ export default function TranslateScreen() {
     }
   }, [isOffline]);
 
-  // Translate-as-you-type
+  // Translate-as-you-type with AbortController to cancel in-flight requests
+  const typedAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     if (typedTranslateTimer.current) clearTimeout(typedTranslateTimer.current);
+    typedAbortRef.current?.abort();
     const text = typedText.trim();
     if (!text || isListening) {
       setTypedPreview("");
       return;
     }
     typedTranslateTimer.current = setTimeout(async () => {
+      const glossaryMatch = glossaryLookup(text, sourceLang.code, targetLang.code);
+      if (glossaryMatch) {
+        setTypedPreview(glossaryMatch);
+        return;
+      }
+      const controller = new AbortController();
+      typedAbortRef.current = controller;
       try {
-        const glossaryMatch = glossaryLookup(text, sourceLang.code, targetLang.code);
-        if (glossaryMatch) {
-          setTypedPreview(glossaryMatch);
-          return;
+        const result = await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider });
+        if (!controller.signal.aborted) {
+          setTypedPreview(result.translatedText);
         }
-        const result = await translateText(text, sourceLang.code, targetLang.code, { provider: settings.translationProvider });
-        setTypedPreview(result.translatedText);
-      } catch (err) {
-        console.warn("Type-ahead translation failed:", err);
-        setTypedPreview("");
+      } catch (err: any) {
+        if (err?.name !== "AbortError") {
+          console.warn("Type-ahead translation failed:", err);
+          if (!controller.signal.aborted) setTypedPreview("");
+        }
       }
     }, 500);
-    return () => { if (typedTranslateTimer.current) clearTimeout(typedTranslateTimer.current); };
+    return () => {
+      if (typedTranslateTimer.current) clearTimeout(typedTranslateTimer.current);
+      typedAbortRef.current?.abort();
+    };
   }, [typedText, sourceLang.code, targetLang.code, settings.translationProvider, glossaryLookup, isListening]);
 
   const submitTypedText = useCallback(async () => {
