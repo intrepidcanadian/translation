@@ -16,6 +16,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tonylau.livetranslator",
+      "appleTeamId": "QV52UGHY49",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "Allow Live Translator to use speech recognition for live translation.",
         "NSMicrophoneUsageDescription": "Allow Live Translator to access your microphone for real-time speech translation.",
@@ -92,7 +93,8 @@
           }
         }
       ],
-      "./plugins/ios-widget-plugin"
+      "./plugins/ios-widget-plugin",
+      "./plugins/fix-resource-signing"
     ],
     "extra": {
       "eas": {

@@ -199,7 +199,7 @@ function withIOSWidget(config) {
           config.buildSettings.LD_RUNPATH_SEARCH_PATHS = `"$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"`;
           config.buildSettings.PRODUCT_BUNDLE_IDENTIFIER = widgetBundleId;
           config.buildSettings.TARGETED_DEVICE_FAMILY = '"1,2"';
-          config.buildSettings.MARKETING_VERSION = "1.0";
+          config.buildSettings.MARKETING_VERSION = "1.0.0";
           config.buildSettings.CURRENT_PROJECT_VERSION = "1";
           config.buildSettings.GENERATE_INFOPLIST_FILE = "NO";
           config.buildSettings.SKIP_INSTALL = "YES";
