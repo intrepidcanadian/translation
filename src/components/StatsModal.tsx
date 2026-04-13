@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import {
   Modal,
   View,
@@ -31,56 +31,66 @@ interface StatsModalProps {
 }
 
 export default function StatsModal({ visible, onClose, history, streak, colors }: StatsModalProps) {
-  const validHistory = history.filter((h) => !h.pending && !h.error);
-  const totalTranslations = validHistory.length;
-  const totalFavorites = validHistory.filter((h) => h.favorited).length;
-  const totalSourceWords = validHistory.reduce(
-    (sum, h) => sum + h.original.trim().split(/\s+/).filter(Boolean).length, 0
-  );
-  const totalTranslatedWords = validHistory.reduce(
-    (sum, h) => sum + h.translated.trim().split(/\s+/).filter(Boolean).length, 0
-  );
-  const confidenceItems = validHistory.filter((h) => h.confidence != null);
-  const avgConfidence = confidenceItems.length > 0
-    ? confidenceItems.reduce((sum, h) => sum + (h.confidence ?? 0), 0) / confidenceItems.length
-    : null;
+  const validHistory = useMemo(() => history.filter((h) => !h.pending && !h.error), [history]);
 
-  // Most used language pairs
-  const pairCounts: Record<string, number> = {};
-  for (const h of validHistory) {
-    if (h.sourceLangCode && h.targetLangCode) {
-      const key = `${h.sourceLangCode}\u2192${h.targetLangCode}`;
-      pairCounts[key] = (pairCounts[key] || 0) + 1;
+  const stats = useMemo(() => {
+    const totalTranslations = validHistory.length;
+    const totalFavorites = validHistory.filter((h) => h.favorited).length;
+    let totalSourceWords = 0;
+    let totalTranslatedWords = 0;
+    let confidenceSum = 0;
+    let confidenceCount = 0;
+
+    for (const h of validHistory) {
+      totalSourceWords += h.original.trim().split(/\s+/).filter(Boolean).length;
+      totalTranslatedWords += h.translated.trim().split(/\s+/).filter(Boolean).length;
+      if (h.confidence != null) {
+        confidenceSum += h.confidence;
+        confidenceCount++;
+      }
     }
-  }
-  const topPairs = Object.entries(pairCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(([pair, count]) => {
-      const [src, tgt] = pair.split("\u2192");
-      const srcName = LANGUAGE_MAP.get(src)?.name || src;
-      const tgtName = LANGUAGE_MAP.get(tgt)?.name || tgt;
-      return { label: `${srcName} \u2192 ${tgtName}`, count };
-    });
 
-  // Most used target languages
-  const targetCounts: Record<string, number> = {};
-  for (const h of validHistory) {
-    if (h.targetLangCode) {
-      targetCounts[h.targetLangCode] = (targetCounts[h.targetLangCode] || 0) + 1;
+    const avgConfidence = confidenceCount > 0 ? confidenceSum / confidenceCount : null;
+    return { totalTranslations, totalFavorites, totalSourceWords, totalTranslatedWords, avgConfidence };
+  }, [validHistory]);
+
+  const topPairs = useMemo(() => {
+    const pairCounts: Record<string, number> = {};
+    for (const h of validHistory) {
+      if (h.sourceLangCode && h.targetLangCode) {
+        const key = `${h.sourceLangCode}\u2192${h.targetLangCode}`;
+        pairCounts[key] = (pairCounts[key] || 0) + 1;
+      }
     }
-  }
-  const topTargets = Object.entries(targetCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([code, count]) => ({
-      label: LANGUAGE_MAP.get(code)?.name || code,
-      count,
-    }));
+    return Object.entries(pairCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([pair, count]) => {
+        const [src, tgt] = pair.split("\u2192");
+        const srcName = LANGUAGE_MAP.get(src)?.name || src;
+        const tgtName = LANGUAGE_MAP.get(tgt)?.name || tgt;
+        return { label: `${srcName} \u2192 ${tgtName}`, count };
+      });
+  }, [validHistory]);
 
-  // Activity calendar - last 28 days
-  const renderCalendar = () => {
-    if (totalTranslations === 0) return null;
+  const topTargets = useMemo(() => {
+    const targetCounts: Record<string, number> = {};
+    for (const h of validHistory) {
+      if (h.targetLangCode) {
+        targetCounts[h.targetLangCode] = (targetCounts[h.targetLangCode] || 0) + 1;
+      }
+    }
+    return Object.entries(targetCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([code, count]) => ({
+        label: LANGUAGE_MAP.get(code)?.name || code,
+        count,
+      }));
+  }, [validHistory]);
+
+  const calendarData = useMemo(() => {
+    if (validHistory.length === 0) return null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const days: { date: Date; count: number; label: string }[] = [];
@@ -93,6 +103,12 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
       days.push({ date: d, count, label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) });
     }
     const maxCount = Math.max(...days.map((d) => d.count), 1);
+    return { days, maxCount };
+  }, [validHistory]);
+
+  const renderCalendar = () => {
+    if (!calendarData) return null;
+    const { days, maxCount } = calendarData;
     const weekDays = ["S", "M", "T", "W", "T", "F", "S"];
 
     return (
@@ -157,19 +173,19 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
                 {/* Summary cards */}
                 <View style={styles.statsGrid}>
                   <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
-                    <Text style={[styles.statNumber, { color: colors.primary }]}>{totalTranslations}</Text>
+                    <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.totalTranslations}</Text>
                     <Text style={[styles.statLabel, { color: colors.mutedText }]}>Translations</Text>
                   </View>
                   <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
-                    <Text style={[styles.statNumber, { color: colors.primary }]}>{totalFavorites}</Text>
+                    <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.totalFavorites}</Text>
                     <Text style={[styles.statLabel, { color: colors.mutedText }]}>Favorites</Text>
                   </View>
                   <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
-                    <Text style={[styles.statNumber, { color: colors.primary }]}>{totalSourceWords}</Text>
+                    <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.totalSourceWords}</Text>
                     <Text style={[styles.statLabel, { color: colors.mutedText }]}>Words In</Text>
                   </View>
                   <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
-                    <Text style={[styles.statNumber, { color: colors.primary }]}>{totalTranslatedWords}</Text>
+                    <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.totalTranslatedWords}</Text>
                     <Text style={[styles.statLabel, { color: colors.mutedText }]}>Words Out</Text>
                   </View>
                 </View>
@@ -187,13 +203,13 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
 
                 {renderCalendar()}
 
-                {avgConfidence != null && (
+                {stats.avgConfidence != null && (
                   <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
                     <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Avg. Confidence</Text>
                     <View style={styles.confidenceBarOuter}>
-                      <View style={[styles.confidenceBarInner, { width: `${Math.round(avgConfidence * 100)}%`, backgroundColor: colors.primary }]} />
+                      <View style={[styles.confidenceBarInner, { width: `${Math.round(stats.avgConfidence! * 100)}%`, backgroundColor: colors.primary }]} />
                     </View>
-                    <Text style={[styles.confidencePercent, { color: colors.primary }]}>{Math.round(avgConfidence * 100)}%</Text>
+                    <Text style={[styles.confidencePercent, { color: colors.primary }]}>{Math.round(stats.avgConfidence! * 100)}%</Text>
                   </View>
                 )}
 
@@ -225,7 +241,7 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
                   </View>
                 )}
 
-                {totalTranslations === 0 && (
+                {stats.totalTranslations === 0 && (
                   <View style={styles.statsEmptyState}>
                     <Text style={[{ color: colors.mutedText, fontSize: 40, marginBottom: 12 }]}>📭</Text>
                     <Text style={[{ color: colors.mutedText, fontSize: 15, textAlign: "center" as const }]}>

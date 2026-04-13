@@ -1,6 +1,9 @@
 import React, { Component, type ErrorInfo, type ReactNode } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getColors } from "../theme";
+
+const LAST_CRASH_KEY = "@live_translator_last_crash";
 
 interface Props {
   children: ReactNode;
@@ -9,17 +12,29 @@ interface Props {
 interface State {
   hasError: boolean;
   error: Error | null;
+  crashCount: number;
 }
 
 export default class ErrorBoundary extends Component<Props, State> {
-  state: State = { hasError: false, error: null };
+  state: State = { hasError: false, error: null, crashCount: 0 };
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error };
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("App crashed:", error, info.componentStack);
+
+    // Persist crash info for debugging across sessions
+    const crashReport = {
+      message: error.message,
+      stack: error.stack?.slice(0, 500),
+      componentStack: info.componentStack?.slice(0, 500),
+      timestamp: Date.now(),
+    };
+    AsyncStorage.setItem(LAST_CRASH_KEY, JSON.stringify(crashReport)).catch(() => {});
+
+    this.setState((prev) => ({ crashCount: prev.crashCount + 1 }));
   }
 
   handleRetry = () => {

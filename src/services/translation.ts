@@ -290,10 +290,13 @@ export async function translateText(
     return { translatedText: offlineResult, confidence: 1.0 };
   }
 
-  // Check cache first
+  // Check cache first (re-insert on hit for true LRU eviction)
   const cacheKey = getCacheKey(text.trim(), sourceLang, targetLang, provider);
   const cached = translationCache.get(cacheKey);
   if (cached) {
+    // Move to end of Map iteration order so frequently-used entries survive eviction
+    translationCache.delete(cacheKey);
+    translationCache.set(cacheKey, cached);
     return { translatedText: cached };
   }
 

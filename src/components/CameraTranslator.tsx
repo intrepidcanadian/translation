@@ -68,6 +68,92 @@ interface CameraTranslatorProps {
   colors: ThemeColors;
 }
 
+// Memoized overlay for captured text blocks (tappable)
+const CapturedBlockOverlay = React.memo(function CapturedBlockOverlay({
+  block,
+  onPress,
+}: {
+  block: CapturedBlock;
+  onPress: (block: CapturedBlock) => void;
+}) {
+  const fontSize = Math.max(10, block.screenFrame.height * 0.65);
+  return (
+    <TouchableOpacity
+      style={{
+        position: "absolute",
+        top: block.screenFrame.top,
+        left: block.screenFrame.left,
+        width: block.screenFrame.width,
+        minHeight: block.screenFrame.height,
+        backgroundColor: "rgba(255,255,255,0.92)",
+        justifyContent: "center",
+        paddingHorizontal: 2,
+      }}
+      onPress={() => onPress(block)}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${block.translatedText}. Tap for options.`}
+    >
+      <Text
+        style={{ fontSize, color: "#1a1a2e", fontWeight: "600", lineHeight: fontSize * 1.15 }}
+        numberOfLines={2}
+        adjustsFontSizeToFit
+        minimumFontScale={0.5}
+      >
+        {block.translatedText}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
+// Memoized overlay for live OCR detected text blocks
+const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
+  block,
+  overlayMode,
+  animatedOpacity,
+}: {
+  block: DetectedBlock;
+  overlayMode: "bubble" | "replace";
+  animatedOpacity: Animated.Value;
+}) {
+  if (overlayMode === "replace") {
+    const fontSize = Math.max(10, block.frame.height * 0.65);
+    return (
+      <Animated.View
+        style={{
+          position: "absolute",
+          top: block.frame.top,
+          left: block.frame.left,
+          width: block.frame.width,
+          minHeight: block.frame.height,
+          backgroundColor: "rgba(255,255,255,0.92)",
+          justifyContent: "center",
+          paddingHorizontal: 2,
+          opacity: animatedOpacity,
+        }}
+      >
+        <Text
+          style={{ fontSize, color: "#1a1a2e", fontWeight: "600", lineHeight: fontSize * 1.15 }}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.5}
+        >
+          {block.translatedText}
+        </Text>
+      </Animated.View>
+    );
+  }
+
+  return (
+    <View style={[{ position: "absolute", top: block.frame.top, left: block.frame.left, minWidth: block.frame.width, minHeight: block.frame.height, justifyContent: "flex-start", alignItems: "flex-start" }]}>
+      <View style={{ backgroundColor: "rgba(26, 26, 46, 0.88)", borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, borderWidth: 1, borderColor: "rgba(108,99,255,0.5)", maxWidth: 280 }}>
+        <Text style={{ color: "#a8a4ff", fontSize: 14, fontWeight: "700" }} numberOfLines={2}>{block.translatedText}</Text>
+        <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 10, marginTop: 1 }} numberOfLines={1}>{block.originalText}</Text>
+      </View>
+    </View>
+  );
+});
+
 // Map language codes to OCR plugin language options
 function getOCRLanguage(langCode: string): "latin" | "chinese" | "japanese" | "korean" | "devanagari" {
   switch (langCode) {
@@ -450,82 +536,25 @@ export default function CameraTranslator({
 
       {/* Live OCR overlays */}
       {!isCaptured && detectedBlocks.map((block) => {
-        if (overlayMode === "replace") {
-          if (!blockOpacities.has(block.id)) {
-            const val = new Animated.Value(0);
-            blockOpacities.set(block.id, val);
-            Animated.timing(val, { toValue: 1, duration: 200, useNativeDriver: true }).start();
-          }
-          const fontSize = Math.max(10, block.frame.height * 0.65);
-          return (
-            <Animated.View
-              key={block.id}
-              style={{
-                position: "absolute",
-                top: block.frame.top,
-                left: block.frame.left,
-                width: block.frame.width,
-                minHeight: block.frame.height,
-                backgroundColor: "rgba(255,255,255,0.92)",
-                justifyContent: "center",
-                paddingHorizontal: 2,
-                opacity: blockOpacities.get(block.id),
-              }}
-            >
-              <Text
-                style={{ fontSize, color: "#1a1a2e", fontWeight: "600", lineHeight: fontSize * 1.15 }}
-                numberOfLines={2}
-                adjustsFontSizeToFit
-                minimumFontScale={0.5}
-              >
-                {block.translatedText}
-              </Text>
-            </Animated.View>
-          );
+        if (!blockOpacities.has(block.id)) {
+          const val = new Animated.Value(0);
+          blockOpacities.set(block.id, val);
+          Animated.timing(val, { toValue: 1, duration: 200, useNativeDriver: true }).start();
         }
-
         return (
-          <View key={block.id} style={[styles.overlay, { position: "absolute", top: block.frame.top, left: block.frame.left, minWidth: block.frame.width, minHeight: block.frame.height }]}>
-            <View style={styles.overlayBubble}>
-              <Text style={styles.overlayTranslated} numberOfLines={2}>{block.translatedText}</Text>
-              <Text style={styles.overlayOriginal} numberOfLines={1}>{block.originalText}</Text>
-            </View>
-          </View>
+          <DetectedBlockOverlay
+            key={block.id}
+            block={block}
+            overlayMode={overlayMode}
+            animatedOpacity={blockOpacities.get(block.id)!}
+          />
         );
       })}
 
       {/* Captured photo overlays (tappable) */}
-      {isCaptured && capturedBlocks.map((block) => {
-        const fontSize = Math.max(10, block.screenFrame.height * 0.65);
-        return (
-          <TouchableOpacity
-            key={block.id}
-            style={{
-              position: "absolute",
-              top: block.screenFrame.top,
-              left: block.screenFrame.left,
-              width: block.screenFrame.width,
-              minHeight: block.screenFrame.height,
-              backgroundColor: "rgba(255,255,255,0.92)",
-              justifyContent: "center",
-              paddingHorizontal: 2,
-            }}
-            onPress={() => handleBlockTap(block)}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={`${block.translatedText}. Tap for options.`}
-          >
-            <Text
-              style={{ fontSize, color: "#1a1a2e", fontWeight: "600", lineHeight: fontSize * 1.15 }}
-              numberOfLines={2}
-              adjustsFontSizeToFit
-              minimumFontScale={0.5}
-            >
-              {block.translatedText}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
+      {isCaptured && capturedBlocks.map((block) => (
+        <CapturedBlockOverlay key={block.id} block={block} onPress={handleBlockTap} />
+      ))}
 
       {/* Processing overlay */}
       {isProcessingCapture && (
