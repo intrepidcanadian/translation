@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Share } from "react-native";
 import AlignedRomanization from "./AlignedRomanization";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
@@ -66,7 +66,7 @@ function TranslationBubble({
     });
   }, [item.translated, item.error, item.pending, item.sourceLangCode, item.targetLangCode]);
 
-  const handleShare = () => {
+  const handleShare = useCallback(() => {
     const srcName = item.sourceLangCode ? LANGUAGE_MAP.get(item.sourceLangCode)?.name : null;
     const tgtName = item.targetLangCode ? LANGUAGE_MAP.get(item.targetLangCode)?.name : null;
     const langLine = srcName && tgtName ? `${srcName} → ${tgtName}` : "";
@@ -79,7 +79,7 @@ function TranslationBubble({
       "— Live Translator",
     ].filter(Boolean).join("\n");
     Share.share({ message: card }).catch((err) => logger.warn("Translation", "Share failed", err));
-  };
+  }, [item.original, item.translated, item.sourceLangCode, item.targetLangCode]);
 
   return (
     <View style={styles.historyItem}>

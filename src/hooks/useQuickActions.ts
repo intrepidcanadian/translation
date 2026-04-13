@@ -15,6 +15,23 @@ const QUICK_ACTION_ITEMS: QuickActions.Action[] = [
   { id: "saved_notes", title: "Saved Notes", subtitle: "View saved scanned notes", icon: Platform.OS === "ios" ? "symbol:note.text" : undefined },
 ];
 
+/** Wait for navigation to be ready, polling every 50ms up to 3s */
+function waitForNavReady(
+  navRef: NavigationContainerRefWithCurrent<RootTabParamList>,
+  signal: AbortSignal,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (navRef.isReady()) { resolve(true); return; }
+    let elapsed = 0;
+    const interval = setInterval(() => {
+      if (signal.aborted) { clearInterval(interval); resolve(false); return; }
+      elapsed += 50;
+      if (navRef.isReady()) { clearInterval(interval); resolve(true); return; }
+      if (elapsed >= 3000) { clearInterval(interval); resolve(false); }
+    }, 50);
+  });
+}
+
 export function useQuickActions(navigationRef: NavigationContainerRefWithCurrent<RootTabParamList>) {
   const { settings } = useSettings();
   const quickActionRef = useRef<string | null>(null);
@@ -36,8 +53,11 @@ export function useQuickActions(navigationRef: NavigationContainerRefWithCurrent
     const actionId = quickActionRef.current;
     quickActionRef.current = null;
 
-    const timer = setTimeout(async () => {
-      if (!navigationRef.isReady()) return;
+    const controller = new AbortController();
+    (async () => {
+      const ready = await waitForNavReady(navigationRef, controller.signal);
+      if (!ready || controller.signal.aborted) return;
+
       switch (actionId) {
         case "translate_voice":
           navigationRef.navigate("Translate");
@@ -63,7 +83,7 @@ export function useQuickActions(navigationRef: NavigationContainerRefWithCurrent
           navigationRef.navigate("Notes");
           break;
       }
-    }, 500);
-    return () => clearTimeout(timer);
+    })();
+    return () => controller.abort();
   }, [settings.offlineSpeech, navigationRef]);
 }

@@ -123,6 +123,17 @@ function HistoryList({
     []
   );
 
+  // Pre-build a map from filtered items to their real history index
+  // so renderHistoryItem avoids O(n) findIndex per row during search
+  const filteredToRealIndex = useMemo(() => {
+    if (!searchQuery.trim()) return null; // not needed — filtered index === real index
+    const map = new Map<HistoryItem, number>();
+    for (let i = 0; i < history.length; i++) {
+      map.set(history[i], i);
+    }
+    return map;
+  }, [searchQuery, history]);
+
   // Auto-scroll when new items arrive
   React.useEffect(() => {
     if (autoScroll && (history.length > 0 || liveText)) {
@@ -134,8 +145,8 @@ function HistoryList({
     ({ item, index }: { item: HistoryItem; index: number }) => {
       const isB = item.speaker === "B";
       const speakLang = isB ? sourceLang.speechCode : targetLang.speechCode;
-      const realIndex = searchQuery.trim()
-        ? history.findIndex((h) => h === item)
+      const realIndex = filteredToRealIndex
+        ? (filteredToRealIndex.get(item) ?? index)
         : index;
 
       if (selectMode) {
@@ -247,8 +258,7 @@ function HistoryList({
       speakingText,
       sourceLang,
       targetLang,
-      searchQuery,
-      history,
+      filteredToRealIndex,
       onToggleSelectItem,
       onDeleteHistoryItem,
       onCopyToClipboard,

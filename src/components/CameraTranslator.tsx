@@ -322,8 +322,8 @@ export default function CameraTranslator({
           lines.push({
             text: block.text.trim(),
             frame: {
-              top: (block.frame as any).y ?? (block.frame as any).top ?? 0,
-              left: (block.frame as any).x ?? (block.frame as any).left ?? 0,
+              top: block.frame.y ?? block.frame.top ?? 0,
+              left: block.frame.x ?? block.frame.left ?? 0,
               width: block.frame.width ?? 0,
               height: block.frame.height ?? 0,
             },

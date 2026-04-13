@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useMemo } from "react";
 import { ThemeColors, ThemeMode, getColors } from "../theme";
+import { useSettings } from "./SettingsContext";
 
 interface ThemeContextValue {
   colors: ThemeColors;
@@ -19,6 +20,15 @@ export function ThemeProvider({
   return (
     <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
   );
+}
+
+/**
+ * Bridge component that reads the theme from SettingsContext
+ * and provides it via ThemeProvider. Compatible with ComposeProviders.
+ */
+export function ThemeBridge({ children }: { children: React.ReactNode }) {
+  const { settings } = useSettings();
+  return <ThemeProvider theme={settings.theme}>{children}</ThemeProvider>;
 }
 
 export function useTheme(): ThemeContextValue {

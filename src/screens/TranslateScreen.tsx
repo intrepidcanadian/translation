@@ -34,7 +34,6 @@ import {
   LANGUAGES,
   LANGUAGE_MAP,
 } from "../services/translation";
-import { getColors } from "../theme";
 import { logger } from "../services/logger";
 import { PHRASE_CATEGORIES, getPhraseOfTheDay } from "../services/offlinePhrases";
 import { FONT_SIZE_SCALES } from "../components/SettingsModal";
@@ -45,6 +44,7 @@ import { useGlossary } from "../contexts/GlossaryContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
 import { useStreak } from "../contexts/StreakContext";
 import { useOfflineQueue } from "../contexts/OfflineQueueContext";
+import { useTheme } from "../contexts/ThemeContext";
 import type { HistoryItem } from "../types";
 import type { RootTabParamList } from "../navigation/types";
 
@@ -92,6 +92,7 @@ export default function TranslateScreen() {
   const { history, setHistory, hasMoreHistory, loadMoreHistory, updateWidgetData } = useTranslationData();
   const { updateStreak } = useStreak();
   const { isOffline, queueLength, addToOfflineQueue, registerOnTranslated } = useOfflineQueue();
+  const { colors } = useTheme();
   const route = useRoute<{ key: string; name: "Translate"; params?: RootTabParamList["Translate"] }>();
 
   // Register callback for when offline queue items complete translation
@@ -123,7 +124,6 @@ export default function TranslateScreen() {
     }
   }, [route.params, setSourceLang, setTargetLang]);
 
-  const colors = useMemo(() => getColors(settings.theme), [settings.theme]);
   const fontScale = FONT_SIZE_SCALES[settings.fontSize];
   const dynamicFontSizes = useMemo(() => ({
     original: { fontSize: Math.round(16 * fontScale) },
