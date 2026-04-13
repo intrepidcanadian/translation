@@ -18,6 +18,7 @@ import {
   type PhotoFile,
 } from "react-native-vision-camera";
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
+import { logger } from "../services/logger";
 import { Linking } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { impactMedium, notifySuccess, impactLight } from "../services/haptics";
@@ -124,7 +125,7 @@ export default function ListingGenerator({
       setPhase("editing");
       notifySuccess();
     } catch (err) {
-      console.warn("Listing capture failed:", err);
+      logger.warn("Listing", "Listing capture failed", err);
       setPhase("camera");
     }
   }, [condition]);
@@ -152,7 +153,7 @@ export default function ListingGenerator({
         notifySuccess();
       }
     } catch (err) {
-      if (!controller.signal.aborted) console.warn("Listing translation failed:", err);
+      if (!controller.signal.aborted) logger.warn("Listing", "Listing translation failed", err);
     } finally {
       if (!controller.signal.aborted) setIsTranslating(false);
     }
@@ -174,7 +175,7 @@ export default function ListingGenerator({
         impactLight();
       }
     } catch (err) {
-      if (!controller.signal.aborted) console.warn("Price check failed:", err);
+      if (!controller.signal.aborted) logger.warn("Product", "Price check failed", err);
     } finally {
       if (!controller.signal.aborted) setIsCheckingPrice(false);
     }
@@ -187,7 +188,7 @@ export default function ListingGenerator({
     try {
       await Share.share({ message: text });
     } catch (err) {
-      console.warn("Listing share failed:", err);
+      logger.warn("Listing", "Listing share failed", err);
     }
   }, [draft, editTitle, editDescription, price]);
 

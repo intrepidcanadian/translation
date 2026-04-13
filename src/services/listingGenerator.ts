@@ -2,6 +2,7 @@
 // Uses template-based generation now, upgradeable to LLM later
 
 import { translateText, type TranslationProvider } from "./translation";
+import { logger } from "./logger";
 
 export type ListingCondition = "new" | "like_new" | "good" | "fair" | "parts";
 export type ListingCategory =
@@ -200,7 +201,7 @@ export async function translateListing(
       targetLang: targetLangCode,
     };
   } catch (err) {
-    console.warn("Listing translation failed:", err);
+    logger.warn("Listing", "Listing translation failed", err);
     return draft;
   }
 }

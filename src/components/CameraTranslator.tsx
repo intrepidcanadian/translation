@@ -12,6 +12,7 @@ import {
   Alert,
   Share,
 } from "react-native";
+import { logger } from "../services/logger";
 import {
   Camera,
   useCameraDevice,
@@ -268,9 +269,9 @@ export default function CameraTranslator({
           if (!activeIds.has(key)) blockOpacities.delete(key);
         }
       }
-    } catch (err: any) {
-      if (isMountedRef.current && err?.name !== "AbortError") {
-        setError(err?.message || "Translation failed");
+    } catch (err: unknown) {
+      if (isMountedRef.current && !(err instanceof DOMException && err.name === "AbortError")) {
+        setError(err instanceof Error ? err.message : "Translation failed");
       }
       // Clean up stale opacity entries on failure too
       blockOpacities.clear();
@@ -338,7 +339,7 @@ export default function CameraTranslator({
       setError(null);
       translateLines(lines);
     } catch (err) {
-      console.warn("OCR frame parse error:", err);
+      logger.warn("OCR", "OCR frame parse error", err);
     }
   }, [isPaused, isCaptured, translateLines]);
 
@@ -407,8 +408,8 @@ export default function CameraTranslator({
       }));
 
       setCapturedBlocks(blocks);
-    } catch (err: any) {
-      setError(err?.message || "Capture failed");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Capture failed");
       setIsCaptured(false);
       setCapturedUri(null);
     } finally {
@@ -437,7 +438,7 @@ export default function CameraTranslator({
       });
     } catch (err) {
       // User cancelled share or share failed
-      console.warn("Share capture failed:", err);
+      logger.warn("Camera", "Share capture failed", err);
     }
   }, [capturedUri, capturedBlocks, sourceLangCode, targetLangCode]);
 

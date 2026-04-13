@@ -15,6 +15,7 @@ import { useTranslationData } from "../contexts/TranslationDataContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
+import { logger } from "../services/logger";
 import {
   groupIntoSessions,
   ConversationSession,
@@ -188,7 +189,7 @@ export default function ConversationPlayback({
         const { uri } = await Print.printToFileAsync({ html });
         await Sharing.shareAsync(uri);
       } catch (err) {
-        console.warn("Conversation export failed:", err);
+        logger.warn("Translation", "Conversation export failed", err);
       } finally {
         setExporting(false);
       }

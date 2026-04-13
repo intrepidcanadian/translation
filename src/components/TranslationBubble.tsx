@@ -4,6 +4,7 @@ import AlignedRomanization from "./AlignedRomanization";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
 import { highlightMatches } from "../utils/highlightText";
 import { LANGUAGE_MAP } from "../services/translation";
+import { logger } from "../services/logger";
 import type { ThemeColors } from "../theme";
 import type { HistoryItem } from "../types";
 
@@ -52,6 +53,8 @@ function TranslationBubble({
   searchQuery,
 }: TranslationBubbleProps) {
   const timeStr = formatRelativeTime(item.timestamp);
+  const originalWordCount = React.useMemo(() => item.original.trim().split(/\s+/).filter(Boolean).length, [item.original]);
+  const translatedWordCount = React.useMemo(() => item.translated.trim().split(/\s+/).filter(Boolean).length, [item.translated]);
 
   const handleShare = () => {
     const srcName = item.sourceLangCode ? LANGUAGE_MAP.get(item.sourceLangCode)?.name : null;
@@ -65,7 +68,7 @@ function TranslationBubble({
       langLine,
       "— Live Translator",
     ].filter(Boolean).join("\n");
-    Share.share({ message: card }).catch((err) => console.warn("Share failed:", err));
+    Share.share({ message: card }).catch((err) => logger.warn("Translation", "Share failed", err));
   };
 
   return (
@@ -147,7 +150,7 @@ function TranslationBubble({
         <View style={styles.bubbleActions}>
           {!item.error && !item.pending && (
             <Text style={[styles.wordCountBubble, { color: colors.dimText }]}>
-              {item.original.trim().split(/\s+/).filter(Boolean).length} → {item.translated.trim().split(/\s+/).filter(Boolean).length} words
+              {originalWordCount} → {translatedWordCount} words
               {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
             </Text>
           )}

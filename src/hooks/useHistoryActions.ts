@@ -5,6 +5,7 @@ import * as Clipboard from "expo-clipboard";
 import { impactLight, impactMedium, notifySuccess, notifyWarning } from "../services/haptics";
 import { translateText, getWordAlternatives, type WordAlternative } from "../services/translation";
 import type { TranslationProvider } from "../services/translation";
+import { logger } from "../services/logger";
 import type { HistoryItem } from "../types";
 
 interface UseHistoryActionsOptions {
@@ -185,7 +186,7 @@ export function useHistoryActions({
       const lines = exportable.map((item, i) => `${i + 1}. ${item.original}\n   → ${item.translated}`);
       message = `Live Translator - ${exportable.length} translation(s)\n\n${lines.join("\n\n")}`;
     }
-    try { await Share.share({ message }); } catch (err) { console.warn("Share failed:", err); }
+    try { await Share.share({ message }); } catch (err) { logger.warn("Translation", "Share failed", err); }
   }, [history]);
 
   const showExportPicker = useCallback(() => {
@@ -238,7 +239,7 @@ export function useHistoryActions({
     const items = history.filter((_, i) => selectedIndices.has(i));
     const lines = items.map((item, i) => `${i + 1}. ${item.original}\n   → ${item.translated}`);
     const text = `Live Translator - ${items.length} translation(s)\n\n${lines.join("\n\n")}`;
-    Share.share({ message: text }).catch((err) => console.warn("Share selected failed:", err));
+    Share.share({ message: text }).catch((err) => logger.warn("Translation", "Share selected failed", err));
   }, [selectedIndices, history]);
 
   const submitCorrection = useCallback((correctedText: string) => {
@@ -263,7 +264,7 @@ export function useHistoryActions({
       const alts = await getWordAlternatives(word, srcLang, tgtLang);
       setWordAltData((prev) => prev ? { ...prev, alternatives: alts, loading: false } : null);
     } catch (err) {
-      console.warn("Word alternatives lookup failed:", err);
+      logger.warn("Translation", "Word alternatives lookup failed", err);
       setWordAltData((prev) => prev ? { ...prev, loading: false } : null);
     }
   }, []);
@@ -295,7 +296,7 @@ export function useHistoryActions({
           };
         });
       } catch (err) {
-        console.warn("Compare translation failed:", err);
+        logger.warn("Translation", "Compare translation failed", err);
         setCompareData((prev) => {
           if (!prev) return prev;
           return {

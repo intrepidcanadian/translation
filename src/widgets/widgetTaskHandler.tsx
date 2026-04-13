@@ -1,11 +1,12 @@
 import React from "react";
 import type { WidgetTaskHandlerProps } from "react-native-android-widget";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { logger } from "../services/logger";
 import { TranslateWidget } from "./TranslateWidget";
 
 const WIDGET_DATA_KEY = "widget_last_translation";
 
-const nameToWidget: Record<string, React.FC<any>> = {
+const nameToWidget: Record<string, React.FC<Record<string, string>>> = {
   TranslateWidget: TranslateWidget,
 };
 
@@ -26,7 +27,7 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps) {
         if (stored) {
           widgetProps = JSON.parse(stored);
         }
-      } catch (err) { console.warn("Widget data load failed:", err); }
+      } catch (err) { logger.warn("Widget", "Widget data load failed", err); }
 
       props.renderWidget(<Widget {...widgetProps} />);
       break;

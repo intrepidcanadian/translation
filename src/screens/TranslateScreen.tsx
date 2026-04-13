@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useReducer, useRef, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -48,6 +48,40 @@ import { useOfflineQueue } from "../contexts/OfflineQueueContext";
 import type { HistoryItem } from "../types";
 import type { RootTabParamList } from "../navigation/types";
 
+// Consolidated UI panel state to reduce useState count
+type PanelState = {
+  conversationMode: boolean;
+  showFavoritesOnly: boolean;
+  showSplitScreen: boolean;
+  showPlayback: boolean;
+};
+
+type PanelAction =
+  | { type: "TOGGLE_CONVERSATION_MODE" }
+  | { type: "TOGGLE_FAVORITES_ONLY" }
+  | { type: "SET_SPLIT_SCREEN"; value: boolean }
+  | { type: "SET_PLAYBACK"; value: boolean };
+
+function panelReducer(state: PanelState, action: PanelAction): PanelState {
+  switch (action.type) {
+    case "TOGGLE_CONVERSATION_MODE":
+      return { ...state, conversationMode: !state.conversationMode };
+    case "TOGGLE_FAVORITES_ONLY":
+      return { ...state, showFavoritesOnly: !state.showFavoritesOnly };
+    case "SET_SPLIT_SCREEN":
+      return { ...state, showSplitScreen: action.value };
+    case "SET_PLAYBACK":
+      return { ...state, showPlayback: action.value };
+  }
+}
+
+const INITIAL_PANEL_STATE: PanelState = {
+  conversationMode: false,
+  showFavoritesOnly: false,
+  showSplitScreen: false,
+  showPlayback: false,
+};
+
 export default function TranslateScreen() {
   const { width, height } = useWindowDimensions();
   const isLandscape = width > height;
@@ -58,7 +92,7 @@ export default function TranslateScreen() {
   const { history, setHistory, hasMoreHistory, loadMoreHistory, updateWidgetData } = useTranslationData();
   const { updateStreak } = useStreak();
   const { isOffline, offlineQueue, addToOfflineQueue, registerOnTranslated } = useOfflineQueue();
-  const route = useRoute<any>();
+  const route = useRoute<{ key: string; name: "Translate"; params?: RootTabParamList["Translate"] }>();
 
   // Register callback for when offline queue items complete translation
   useEffect(() => {
@@ -77,7 +111,7 @@ export default function TranslateScreen() {
 
   // Handle deep link params (e.g. livetranslator://translate/en/es)
   useEffect(() => {
-    const params = route.params as RootTabParamList["Translate"];
+    const params = route.params;
     if (!params) return;
     if (params.sourceLang) {
       const src = LANGUAGE_MAP.get(params.sourceLang);
@@ -100,7 +134,8 @@ export default function TranslateScreen() {
   }), [fontScale]);
 
   const [errorMessage, setErrorMessage] = useState("");
-  const [conversationMode, setConversationMode] = useState(false);
+  const [panel, dispatchPanel] = useReducer(panelReducer, INITIAL_PANEL_STATE);
+  const { conversationMode, showFavoritesOnly, showSplitScreen, showPlayback } = panel;
   const activeSpeakerRef = useRef<"A" | "B">("A");
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -161,9 +196,7 @@ export default function TranslateScreen() {
     startListeningBase();
   }, [startListeningBase]);
 
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
-  const [showSplitScreen, setShowSplitScreen] = useState(false);
-  const [showPlayback, setShowPlayback] = useState(false);
+  // showFavoritesOnly, showSplitScreen, showPlayback, conversationMode now in panelReducer
 
   const historyActions = useHistoryActions({
     history,
@@ -223,8 +256,8 @@ export default function TranslateScreen() {
         if (!controller.signal.aborted) {
           setTypedPreview(result.translatedText);
         }
-      } catch (err: any) {
-        if (err?.name !== "AbortError") {
+      } catch (err: unknown) {
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
           logger.warn("Translation", "Type-ahead translation failed", err);
           if (!controller.signal.aborted) setTypedPreview("");
         }
@@ -301,7 +334,7 @@ export default function TranslateScreen() {
     return { potd, categoryInfo };
   }, [targetLang.code]);
 
-  const toggleFavoritesOnly = useCallback(() => setShowFavoritesOnly((v) => !v), []);
+  const toggleFavoritesOnly = useCallback(() => dispatchPanel({ type: "TOGGLE_FAVORITES_ONLY" }), []);
 
   const renderSavedPairItem = useCallback(({ item }: { item: { sourceCode: string; targetCode: string } }) => {
     const isActive = item.sourceCode === sourceLang.code && item.targetCode === targetLang.code;
@@ -340,7 +373,7 @@ export default function TranslateScreen() {
               <Text style={[styles.title, isLandscape && styles.titleLandscape, { color: colors.titleText }]}>Live Translator</Text>
               <TouchableOpacity
                 style={[styles.modeToggle, { backgroundColor: colors.cardBg }, conversationMode && { backgroundColor: colors.primary }]}
-                onPress={() => setConversationMode((m) => !m)}
+                onPress={() => dispatchPanel({ type: "TOGGLE_CONVERSATION_MODE" })}
                 accessibilityRole="button"
                 accessibilityLabel={conversationMode ? "Switch to standard mode" : "Switch to conversation mode"}
                 accessibilityHint={conversationMode ? "Returns to single-speaker translation" : "Enables two-speaker face-to-face translation"}
@@ -351,7 +384,7 @@ export default function TranslateScreen() {
               {conversationMode && history.some((h) => h.speaker) && (
                 <TouchableOpacity
                   style={[styles.modeToggle, { backgroundColor: colors.cardBg, right: 60 }]}
-                  onPress={() => setShowPlayback(true)}
+                  onPress={() => dispatchPanel({ type: "SET_PLAYBACK", value: true })}
                   accessibilityRole="button"
                   accessibilityLabel="View conversation playback"
                 >
@@ -548,7 +581,7 @@ export default function TranslateScreen() {
               onStartListeningAs={startListeningAs}
               onOpenSplitScreen={() => {
                 if (isListening) stopListening();
-                setShowSplitScreen(true);
+                dispatchPanel({ type: "SET_SPLIT_SCREEN", value: true });
               }}
               onTypedTextChange={setTypedText}
               onSubmitTypedText={submitTypedText}
@@ -557,8 +590,8 @@ export default function TranslateScreen() {
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
-      <SplitConversation visible={showSplitScreen} onClose={() => setShowSplitScreen(false)} />
-      <ConversationPlayback visible={showPlayback} onClose={() => setShowPlayback(false)} />
+      <SplitConversation visible={showSplitScreen} onClose={() => dispatchPanel({ type: "SET_SPLIT_SCREEN", value: false })} />
+      <ConversationPlayback visible={showPlayback} onClose={() => dispatchPanel({ type: "SET_PLAYBACK", value: false })} />
     </>
   );
 }

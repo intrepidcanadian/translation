@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { notifySuccess } from "../services/haptics";
+import { logger } from "../services/logger";
 import type { ThemeColors } from "../theme";
 
 interface GlossaryEntry {
@@ -218,7 +219,7 @@ export default function GlossaryModal({
                         .join("\n");
                     try {
                       await Share.share({ message: csv });
-                    } catch (err) { console.warn("Glossary export failed:", err); }
+                    } catch (err) { logger.warn("Glossary", "Glossary export failed", err); }
                   }}
                   accessibilityRole="button"
                   accessibilityLabel="Export glossary as CSV"
@@ -281,7 +282,7 @@ export default function GlossaryModal({
                           : "No new entries found in clipboard."
                       );
                     } catch (err) {
-                      console.warn("Glossary import failed:", err);
+                      logger.warn("Glossary", "Glossary import failed", err);
                       Alert.alert("Import", "Failed to read clipboard.");
                     }
                   }}

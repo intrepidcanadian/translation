@@ -75,7 +75,7 @@ async function withRetry<T>(
     if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     try {
       return await fn();
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastError = err instanceof Error ? err : new Error(String(err));
       // Only retry on rate-limit or server errors, not on auth/client errors
       const isRetryable =
@@ -192,9 +192,10 @@ async function translateApple(text: string, sourceLang: string, targetLang: stri
     }
 
     return { translatedText, detectedLanguage, confidence: 1.0 };
-  } catch (err: any) {
-    if (err?.name === "AbortError") throw err;
-    throw new Error(err?.message || "Apple on-device translation failed. Try another provider.");
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    const message = err instanceof Error ? err.message : "Apple on-device translation failed. Try another provider.";
+    throw new Error(message);
   }
 }
 
@@ -254,13 +255,15 @@ async function translateMLKit(text: string, sourceLang: string, targetLang: stri
     const translatedText = await MLKitTranslate.translate(text, srcLang, targetLang);
 
     return { translatedText, confidence: 0.9 };
-  } catch (err: any) {
-    if (err?.name === "AbortError") throw err;
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === "AbortError") throw err;
+    const message = err instanceof Error ? err.message : "";
+    const code = (err as { code?: string })?.code;
     // If ML Kit module isn't installed, give a helpful error
-    if (err?.message?.includes("Cannot find module") || err?.code === "MODULE_NOT_FOUND") {
+    if (message.includes("Cannot find module") || code === "MODULE_NOT_FOUND") {
       throw new Error("ML Kit translation not installed. Run: npx expo install @react-native-ml-kit/translate-text");
     }
-    throw new Error(err?.message || "ML Kit on-device translation failed. The language model may need to download first.");
+    throw new Error(message || "ML Kit on-device translation failed. The language model may need to download first.");
   }
 }
 
@@ -329,7 +332,7 @@ export async function translateText(
   try {
     result = await withRetry(doTranslate, 2, signal);
     recordSuccess(provider);
-  } catch (err: any) {
+  } catch (err: unknown) {
     recordFailure(provider);
     // Auto-fallback: if on-device provider fails, try MyMemory cloud as fallback
     if (provider !== "mymemory") {

@@ -3,6 +3,7 @@
 
 import * as Location from "expo-location";
 import { getLocales } from "expo-localization";
+import { logger } from "./logger";
 import {
   PHRASE_CATEGORIES,
   getPhrasesForCategory,
@@ -81,7 +82,7 @@ function getDeviceLanguageCode(): string {
       return locales[0].languageCode;
     }
   } catch (err) {
-    console.warn("Failed to get device language:", err);
+    logger.warn("Location", "Failed to get device language", err);
   }
   return "en";
 }
@@ -105,7 +106,7 @@ export async function getLocationContext(): Promise<LocationContext | null> {
     try {
       position = await Location.getLastKnownPositionAsync();
     } catch (err) {
-      console.warn("Last known position unavailable:", err);
+      logger.warn("Location", "Last known position unavailable", err);
     }
 
     if (!position) {
@@ -156,7 +157,7 @@ export async function getLocationContext(): Promise<LocationContext | null> {
 
     return result;
   } catch (err) {
-    console.warn("Location services unavailable:", err);
+    logger.warn("Location", "Location services unavailable", err);
     return null;
   }
 }

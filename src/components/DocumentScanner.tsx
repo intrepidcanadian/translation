@@ -18,6 +18,7 @@ import TextRecognition, {
   TextRecognitionScript,
 } from "@react-native-ml-kit/text-recognition";
 import { translateText, translateAppleBatch, type TranslationProvider } from "../services/translation";
+import { logger } from "../services/logger";
 import {
   getScannerMode,
   type ScannerModeKey,
@@ -184,7 +185,7 @@ export default function DocumentScanner({
 
     try {
       await Share.share({ message: sections.join("\n") });
-    } catch (err) { console.warn("Document share failed:", err); }
+    } catch (err) { logger.warn("OCR", "Document share failed", err); }
   }, [mode, originalText, translatedText, analysis, modeFields, selectedMode]);
 
   const captureAndAnalyze = useCallback(async () => {
@@ -226,7 +227,7 @@ export default function DocumentScanner({
           const AppleTranslation = require("../../../modules/apple-translation");
           docAnalysis = await AppleTranslation.analyzeDocument(fullText);
         } catch (err) {
-          console.warn("Apple NER analysis failed, using basic:", err);
+          logger.warn("OCR", "Apple NER analysis failed, using basic", err);
           docAnalysis = basicAnalysis(fullText);
         }
       } else {
@@ -249,7 +250,7 @@ export default function DocumentScanner({
           const results = await translateAppleBatch(paragraphs, srcLang, targetLangCode);
           translated = results.join("\n");
         } catch (err) {
-          console.warn("Batch translation failed, falling back to sequential:", err);
+          logger.warn("Translation", "Batch translation failed, falling back to sequential", err);
           const results: string[] = [];
           for (const para of paragraphs) {
             const res = await translateText(para, srcLang, targetLangCode, {
@@ -298,13 +299,13 @@ export default function DocumentScanner({
               addresses: [...new Set([...prev.addresses, ...translatedAnalysis.addresses])],
             };
           });
-        } catch (err) { console.warn("Translated text analysis failed:", err); }
+        } catch (err) { logger.warn("OCR", "Translated text analysis failed", err); }
       }
 
       setPhase("results");
       notifySuccess();
-    } catch (err: any) {
-      setError(err?.message || "Analysis failed");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Analysis failed");
       setPhase("camera");
     }
   }, [sourceLangCode, targetLangCode, translationProvider, selectedMode]);

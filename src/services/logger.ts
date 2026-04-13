@@ -18,6 +18,7 @@ type LogTag =
   | "Widget"
   | "Glossary"
   | "Listing"
+  | "Location"
   | "Settings"
   | "Render";
 

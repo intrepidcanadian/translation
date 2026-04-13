@@ -11,6 +11,7 @@ import {
   Platform,
   Share,
 } from "react-native";
+import { logger } from "../services/logger";
 import {
   Camera,
   useCameraDevice,
@@ -130,7 +131,7 @@ export default function ProductScanner({ visible, onClose, colors }: ProductScan
     try {
       await Share.share({ message: parts.join("\n") });
     } catch (err) {
-      console.warn("Product share failed:", err);
+      logger.warn("Product", "Product share failed", err);
     }
   }, [product]);
 

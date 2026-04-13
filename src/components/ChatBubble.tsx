@@ -4,6 +4,7 @@ import AlignedRomanization from "./AlignedRomanization";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
 import { highlightMatches } from "../utils/highlightText";
 import { LANGUAGE_MAP } from "../services/translation";
+import { logger } from "../services/logger";
 import type { ThemeColors } from "../theme";
 import type { HistoryItem } from "../types";
 
@@ -45,6 +46,8 @@ function ChatBubble({
   searchQuery,
 }: ChatBubbleProps) {
   const isB = item.speaker === "B";
+  const originalWordCount = React.useMemo(() => item.original.trim().split(/\s+/).filter(Boolean).length, [item.original]);
+  const translatedWordCount = React.useMemo(() => item.translated.trim().split(/\s+/).filter(Boolean).length, [item.translated]);
 
   const handleShare = () => {
     const speakerLabel = isB ? targetLangName : sourceLangName;
@@ -56,7 +59,7 @@ function ChatBubble({
       "",
       "— Live Translator",
     ].join("\n");
-    Share.share({ message: card }).catch((err) => console.warn("Share failed:", err));
+    Share.share({ message: card }).catch((err) => logger.warn("Translation", "Share failed", err));
   };
 
   return (
@@ -103,7 +106,7 @@ function ChatBubble({
         ) : null}
         <View style={styles.bubbleActions}>
           <Text style={[styles.wordCountBubble, { color: colors.dimText }]}>
-            {item.original.trim().split(/\s+/).filter(Boolean).length} → {item.translated.trim().split(/\s+/).filter(Boolean).length} words
+            {originalWordCount} → {translatedWordCount} words
             {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
           </Text>
           {(() => {

@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { loadNotes, deleteNote, updateNoteTitle, clearAllNotes, type SavedNote } from "../services/notes";
 import { getScannerMode } from "../services/scannerModes";
+import { logger } from "../services/logger";
 import * as Clipboard from "expo-clipboard";
 import { notifySuccess, notifyWarning } from "../services/haptics";
 import type { ThemeColors } from "../theme";
@@ -103,7 +104,7 @@ export default function NotesViewer({
   const handleShare = useCallback(async (note: SavedNote) => {
     try {
       await Share.share({ message: note.formattedNote });
-    } catch (err) { console.warn("Note share failed:", err); }
+    } catch (err) { logger.warn("Notes", "Note share failed", err); }
   }, []);
 
   const handleCopy = useCallback(async (text: string, id: string) => {
