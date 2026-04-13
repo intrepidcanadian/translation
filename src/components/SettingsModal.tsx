@@ -379,6 +379,27 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
               </Text>
             )}
 
+            {/* Offline feature indicator */}
+            <View style={styles.infoSection}>
+              <Text style={[styles.infoTitle, dynamicStyles.infoTitle]}>Offline Capabilities</Text>
+              <Text style={[styles.infoText, dynamicStyles.infoText]}>
+                Features that work without internet:
+              </Text>
+              <View style={styles.offlineList}>
+                <OfflineFeatureRow label="Speech Recognition" available={settings.offlineSpeech} hint={settings.offlineSpeech ? "On-device" : "Enable Offline Speech above"} colors={colors} />
+                <OfflineFeatureRow label="Translation (Apple)" available={settings.translationProvider === "apple"} hint={settings.translationProvider === "apple" ? "Neural Engine" : "Select Apple provider"} colors={colors} />
+                <OfflineFeatureRow label="Translation (ML Kit)" available={settings.translationProvider === "mlkit"} hint={settings.translationProvider === "mlkit" ? "On-device models" : "Select ML Kit provider"} colors={colors} />
+                <OfflineFeatureRow label="Phrasebook" available hint="120+ phrases in 10 languages" colors={colors} />
+                <OfflineFeatureRow label="Glossary Lookup" available hint="Your custom translations" colors={colors} />
+                <OfflineFeatureRow label="Camera OCR" available hint="ML Kit text recognition" colors={colors} />
+                <OfflineFeatureRow label="Text-to-Speech" available hint="System voices" colors={colors} />
+                <OfflineFeatureRow label="Translation History" available hint="Stored locally" colors={colors} />
+                <OfflineFeatureRow label="Cloud Translation" available={false} hint="Requires internet" colors={colors} />
+                <OfflineFeatureRow label="Translation Comparison" available={false} hint="Multi-provider, requires internet" colors={colors} />
+                <OfflineFeatureRow label="Word Alternatives" available={false} hint="MyMemory API lookup" colors={colors} />
+              </View>
+            </View>
+
             <View style={styles.infoSection}>
               <Text style={[styles.infoTitle, dynamicStyles.infoTitle]}>About</Text>
               <Text style={[styles.infoText, dynamicStyles.infoText]}>Live Translator v1.0.0</Text>
@@ -405,6 +426,28 @@ export default function SettingsModal({ visible, onClose, settings, onUpdate }: 
     </Modal>
   );
 }
+
+function OfflineFeatureRow({ label, available, hint, colors }: { label: string; available: boolean; hint: string; colors: ReturnType<typeof getColors> }) {
+  return (
+    <View style={offlineStyles.row}>
+      <Text style={[offlineStyles.indicator, { color: available ? "#4ade80" : colors.dimText }]}>
+        {available ? "●" : "○"}
+      </Text>
+      <View style={offlineStyles.textCol}>
+        <Text style={[offlineStyles.label, { color: colors.primaryText }]}>{label}</Text>
+        <Text style={[offlineStyles.hint, { color: colors.dimText }]}>{hint}</Text>
+      </View>
+    </View>
+  );
+}
+
+const offlineStyles = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4 },
+  indicator: { fontSize: 12, width: 16, textAlign: "center" },
+  textCol: { flex: 1 },
+  label: { fontSize: 14, fontWeight: "500" },
+  hint: { fontSize: 11, marginTop: 1 },
+});
 
 const styles = StyleSheet.create({
   overlay: {
@@ -492,6 +535,10 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     marginBottom: 8,
     paddingHorizontal: 2,
+  },
+  offlineList: {
+    marginTop: 8,
+    gap: 2,
   },
   closeButton: {
     padding: 18,
