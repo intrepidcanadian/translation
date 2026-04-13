@@ -291,6 +291,14 @@ function HistoryList({
             accessibilityHint="Filter translations by original or translated text"
             returnKeyType="search"
           />
+          {searchQuery.trim() ? (
+            <Text
+              style={[styles.searchCount, { color: colors.dimText }]}
+              accessibilityLiveRegion="polite"
+            >
+              {filteredHistory.length}
+            </Text>
+          ) : null}
           {searchQuery ? (
             <TouchableOpacity
               style={styles.searchClear}
@@ -339,6 +347,7 @@ function HistoryList({
     );
   }, [
     history.length,
+    filteredHistory.length,
     isListening,
     hasMoreHistory,
     colors,
@@ -578,7 +587,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     borderWidth: 1,
   },
-  searchClear: { marginLeft: 8, padding: 4 },
+  searchCount: { fontSize: 12, fontWeight: "700", marginLeft: 6, minWidth: 20, textAlign: "center" },
+  searchClear: { marginLeft: 4, padding: 4 },
   searchClearText: { fontSize: 16, fontWeight: "700" },
   loadMoreButton: {
     alignSelf: "center",
