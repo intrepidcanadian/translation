@@ -147,19 +147,29 @@ async function translateMyMemory(text: string, sourceLang: string, targetLang: s
     throw new Error(`Translation service error (${response.status}). Try again.`);
   }
 
-  const data = await response.json();
+  let data: Record<string, unknown>;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error("Translation service returned invalid data. Try again.");
+  }
 
   if (data.responseStatus === 429) {
     throw new Error("Too many translation requests. Wait a moment and try again.");
   }
   if (data.responseStatus !== 200) {
-    throw new Error(data.responseDetails || "Translation failed. Try again.");
+    throw new Error((data.responseDetails as string) || "Translation failed. Try again.");
   }
 
-  const match = data.responseData.match;
+  const responseData = data.responseData as Record<string, unknown> | undefined;
+  if (!responseData?.translatedText) {
+    throw new Error("Translation service returned an empty result. Try again.");
+  }
+
+  const match = responseData.match;
   return {
-    translatedText: data.responseData.translatedText,
-    detectedLanguage: data.responseData.detectedLanguage,
+    translatedText: responseData.translatedText as string,
+    detectedLanguage: responseData.detectedLanguage as string | undefined,
     confidence: typeof match === "number" ? match : undefined,
   };
 }
@@ -387,7 +397,12 @@ export async function getWordAlternatives(
   const response = await fetchWithTimeout(url, {}, signal);
   if (!response.ok) return [];
 
-  const data = await response.json();
+  let data: { responseData?: { translatedText?: string; match?: number }; matches?: Array<{ translation?: string; quality?: number; match?: number; "created-by"?: string }> };
+  try {
+    data = await response.json();
+  } catch {
+    return [];
+  }
   const seen = new Set<string>();
   const alternatives: WordAlternative[] = [];
 

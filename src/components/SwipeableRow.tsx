@@ -48,6 +48,9 @@ export default function SwipeableRow({ onDelete, children, colors }: SwipeableRo
       <Animated.View
         style={{ transform: [{ translateX }] }}
         {...panResponder.panHandlers}
+        accessible={true}
+        accessibilityHint="Swipe left to delete this translation"
+        accessibilityRole="button"
       >
         {children}
       </Animated.View>

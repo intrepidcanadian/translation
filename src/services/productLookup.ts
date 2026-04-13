@@ -1,6 +1,40 @@
 // Product lookup service — barcode/UPC lookup via Open Food Facts + UPCitemdb, with OCR text search fallback
 import { logger } from "./logger";
 
+// API response types for external product APIs
+interface OFFProduct {
+  product_name?: string;
+  product_name_en?: string;
+  brands?: string;
+  generic_name?: string;
+  categories?: string;
+  categories_tags?: string[];
+  image_url?: string;
+  image_front_url?: string;
+  nutriscore_grade?: string;
+  ecoscore_grade?: string;
+  nova_group?: number;
+  quantity?: string;
+  ingredients_text?: string;
+  allergens_tags?: string[];
+  countries_tags?: string[];
+  code?: string;
+}
+
+interface UPCItem {
+  title?: string;
+  brand?: string;
+  description?: string;
+  category?: string;
+  images?: string[];
+  weight?: string;
+  offers?: Array<{ price?: string; merchant?: string; domain?: string; link?: string }>;
+}
+
+function safeParseJSON(response: Response): Promise<Record<string, unknown>> {
+  return response.json().catch(() => ({}));
+}
+
 export interface ProductInfo {
   name: string;
   brand?: string;
@@ -28,7 +62,7 @@ export async function lookupBarcode(barcode: string, signal?: AbortSignal): Prom
       { signal, headers: { "User-Agent": "LiveTranslator/1.0" } }
     );
     if (offRes.ok) {
-      const data = await offRes.json();
+      const data = await safeParseJSON(offRes) as { status?: number; product?: OFFProduct };
       if (data.status === 1 && data.product) {
         const p = data.product;
         const attributes: ProductInfo["attributes"] = [];
@@ -66,8 +100,8 @@ export async function lookupBarcode(barcode: string, signal?: AbortSignal): Prom
       { signal }
     );
     if (upcRes.ok) {
-      const data = await upcRes.json();
-      if (data.items?.length > 0) {
+      const data = await safeParseJSON(upcRes) as { items?: UPCItem[] };
+      if (data.items?.length) {
         const item = data.items[0];
         const prices: ProductInfo["prices"] = [];
         if (item.offers?.length) {
@@ -116,8 +150,8 @@ export async function searchProductByText(query: string, signal?: AbortSignal): 
       { signal, headers: { "User-Agent": "LiveTranslator/1.0" } }
     );
     if (res.ok) {
-      const data = await res.json();
-      if (data.products?.length > 0) {
+      const data = await safeParseJSON(res) as { products?: OFFProduct[] };
+      if (data.products?.length) {
         const p = data.products[0];
         return {
           found: true,
@@ -203,15 +237,15 @@ export async function fetchPriceComps(
       { signal },
     );
     if (res.ok) {
-      const data = await res.json();
-      if (data.items?.length > 0) {
+      const data = await safeParseJSON(res) as { items?: UPCItem[] };
+      if (data.items?.length) {
         const item = data.items[0];
         // Find lowest offer price
         if (item.offers?.length) {
           const prices = item.offers
-            .filter((o: any) => o.price && parseFloat(o.price) > 0)
-            .map((o: any) => ({ source: o.merchant || o.domain || "Retailer", price: parseFloat(o.price) }))
-            .sort((a: any, b: any) => a.price - b.price);
+            .filter((o) => o.price && parseFloat(o.price) > 0)
+            .map((o) => ({ source: o.merchant || o.domain || "Retailer", price: parseFloat(o.price!) }))
+            .sort((a, b) => a.price - b.price);
           if (prices.length > 0) {
             result.retailPrice = { source: prices[0].source, price: `$${prices[0].price.toFixed(2)}` };
           }

@@ -29,6 +29,7 @@ const OfflineQueueContext = createContext<OfflineQueueContextValue | null>(null)
 export function OfflineQueueProvider({ children }: { children: React.ReactNode }) {
   const { settings } = useSettings();
   const [offlineQueue, setOfflineQueue] = useState<OfflineQueueItem[]>([]);
+  const offlineQueueRef = useRef<OfflineQueueItem[]>([]);
   const isProcessingQueue = useRef(false);
   const onTranslatedRef = useRef<OnTranslatedCallback | null>(null);
 
@@ -41,8 +42,11 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
         if (val) {
           try {
             const data = JSON.parse(val) as OfflineQueueItem[];
+            offlineQueueRef.current = data;
             setOfflineQueue(data);
-          } catch {}
+          } catch (err) {
+            logger.warn("Storage", "Failed to parse offline queue JSON", err);
+          }
         }
       })
       .catch((err) => logger.warn("Storage", "Failed to load offline queue", err));
@@ -51,6 +55,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
   const addToOfflineQueue = useCallback((item: OfflineQueueItem) => {
     setOfflineQueue((prev) => {
       const updated = [...prev, item];
+      offlineQueueRef.current = updated;
       AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(updated));
       return updated;
     });
@@ -62,8 +67,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
 
   const processOfflineQueue = useCallback(async () => {
     if (isProcessingQueue.current) return;
-    let queue: OfflineQueueItem[] = [];
-    setOfflineQueue((prev) => { queue = prev; return prev; });
+    const queue = offlineQueueRef.current;
     if (queue.length === 0) return;
     isProcessingQueue.current = true;
 
@@ -85,17 +89,18 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
       }
     }
 
+    offlineQueueRef.current = failed;
     setOfflineQueue(failed);
-    AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(failed)).catch(() => {});
+    AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(failed)).catch((e) => logger.warn("Storage", "Failed to persist offline queue", e));
     isProcessingQueue.current = false;
     if (processed > 0) notifySuccess();
-  }, [offlineQueue, settings.translationProvider]);
+  }, [settings.translationProvider]);
 
   useEffect(() => {
-    if (netInfo.isConnected && offlineQueue.length > 0) {
+    if (netInfo.isConnected && offlineQueueRef.current.length > 0) {
       processOfflineQueue();
     }
-  }, [netInfo.isConnected, offlineQueue.length, processOfflineQueue]);
+  }, [netInfo.isConnected, processOfflineQueue]);
 
   const value = useMemo(() => ({
     offlineQueue,

@@ -7,13 +7,13 @@ import {
   ScrollView,
   Platform,
 } from "react-native";
-import { Camera } from "react-native-vision-camera";
+import { Camera, type CameraDevice } from "react-native-vision-camera";
 import { SCANNER_MODES, type ScannerModeKey } from "../../services/scannerModes";
 import { selection } from "../../services/haptics";
 
 interface CameraPhaseProps {
   cameraRef: React.RefObject<Camera | null>;
-  device: any;
+  device: CameraDevice;
   visible: boolean;
   selectedMode: ScannerModeKey;
   modeLabel: string;
@@ -63,7 +63,7 @@ export default function CameraPhase({
 
       {/* Top bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.topButton} onPress={onClose} accessibilityLabel="Close scanner">
+        <TouchableOpacity style={styles.topButton} onPress={onClose} accessibilityLabel="Close scanner" accessibilityHint="Returns to the translation screen" accessibilityRole="button">
           <Text style={styles.topButtonText}>X</Text>
         </TouchableOpacity>
         <View style={styles.docBadge}>
@@ -73,7 +73,7 @@ export default function CameraPhase({
       </View>
 
       {/* Mode selector pills */}
-      <View style={styles.modeBar}>
+      <View style={styles.modeBar} accessibilityRole="tablist" accessibilityLabel="Scanner mode selector">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modeBarContent}>
           {SCANNER_MODES.map((m) => (
             <TouchableOpacity
@@ -86,7 +86,10 @@ export default function CameraPhase({
                 onSelectMode(m.key);
                 selection();
               }}
-              accessibilityLabel={`${m.label} scanner mode`}
+              accessibilityLabel={`${m.label} scanner mode${selectedMode === m.key ? ", selected" : ""}`}
+              accessibilityHint={`Switch to ${m.label.toLowerCase()} scanning mode`}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: selectedMode === m.key }}
             >
               <Text style={styles.modePillIcon}>{m.icon}</Text>
               <Text style={[

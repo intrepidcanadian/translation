@@ -288,12 +288,13 @@ export default function CameraTranslator({
   }, [sourceLangCode, targetLangCode, translationProvider]);
 
   // Handle real-time OCR results from frame processor
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- OCR plugin callback type varies by version
-  const handleOCRResult = useCallback((data: any) => {
+  // OCR plugin callback receives data with varying shape depending on version
+  const handleOCRResult = useCallback((data: unknown) => {
     if (isPaused || isCaptured || !isMountedRef.current) return;
 
     try {
-      const blocks: OCRBlock[] = data?.result?.blocks || data?.blocks || [];
+      const ocrData = data as { result?: { blocks?: OCRBlock[] }; blocks?: OCRBlock[] } | null;
+      const blocks: OCRBlock[] = ocrData?.result?.blocks || ocrData?.blocks || [];
       if (!blocks.length) {
         if (lastOCRTextRef.current !== "") {
           lastOCRTextRef.current = "";
