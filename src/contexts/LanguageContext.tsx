@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Language, LANGUAGES } from "../services/translation";
+import { Language, LANGUAGES, LANGUAGE_MAP } from "../services/translation";
 import { impactLight, impactMedium } from "../services/haptics";
 
 const RECENT_LANGS_KEY = "recent_languages";
@@ -85,8 +85,8 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   }, [sourceLang.code, targetLang.code]);
 
   const applyPair = useCallback((sourceCode: string, targetCode: string) => {
-    const src = LANGUAGES.find((l) => l.code === sourceCode);
-    const tgt = LANGUAGES.find((l) => l.code === targetCode);
+    const src = LANGUAGE_MAP.get(sourceCode);
+    const tgt = LANGUAGE_MAP.get(targetCode);
     if (src && tgt) {
       impactLight();
       setSourceLang(src);

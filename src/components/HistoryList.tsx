@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import type { ThemeColors } from "../theme";
 import type { HistoryItem } from "../types";
-import { LANGUAGES } from "../services/translation";
+import { LANGUAGE_MAP } from "../services/translation";
 import { needsRomanization } from "../services/romanization";
 import type { OfflinePhrase, PhraseCategory } from "../services/offlinePhrases";
 import AlignedRomanization from "./AlignedRomanization";
@@ -375,7 +375,7 @@ function HistoryList({
           <Text style={[styles.liveLabel, { color: colors.destructiveBg }]}>
             {isListening ? "● LIVE" : "PROCESSING"}
             {sourceLang.code === "autodetect" && lastDetectedLang
-              ? ` · ${LANGUAGES.find((l) => l.code === lastDetectedLang)?.name || lastDetectedLang}`
+              ? ` · ${LANGUAGE_MAP.get(lastDetectedLang!)?.name || lastDetectedLang}`
               : ""}
           </Text>
           <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />

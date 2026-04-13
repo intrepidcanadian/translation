@@ -32,6 +32,7 @@ import ConversationPlayback from "../components/ConversationPlayback";
 import {
   translateText,
   LANGUAGES,
+  LANGUAGE_MAP,
 } from "../services/translation";
 import { getColors } from "../theme";
 import { PHRASE_CATEGORIES, getPhraseOfTheDay } from "../services/offlinePhrases";
@@ -78,11 +79,11 @@ export default function TranslateScreen() {
     const params = route.params as RootTabParamList["Translate"];
     if (!params) return;
     if (params.sourceLang) {
-      const src = LANGUAGES.find((l) => l.code === params.sourceLang);
+      const src = LANGUAGE_MAP.get(params.sourceLang);
       if (src) setSourceLang(src);
     }
     if (params.targetLang) {
-      const tgt = LANGUAGES.find((l) => l.code === params.targetLang);
+      const tgt = LANGUAGE_MAP.get(params.targetLang);
       if (tgt) setTargetLang(tgt);
     }
   }, [route.params, setSourceLang, setTargetLang]);
@@ -292,10 +293,12 @@ export default function TranslateScreen() {
 
   const renderSavedPairItem = useCallback(({ item }: { item: { sourceCode: string; targetCode: string } }) => {
     const isActive = item.sourceCode === sourceLang.code && item.targetCode === targetLang.code;
-    const srcName = LANGUAGES.find((l) => l.code === item.sourceCode)?.name || item.sourceCode;
-    const tgtName = LANGUAGES.find((l) => l.code === item.targetCode)?.name || item.targetCode;
-    const srcFlag = LANGUAGES.find((l) => l.code === item.sourceCode)?.flag || "";
-    const tgtFlag = LANGUAGES.find((l) => l.code === item.targetCode)?.flag || "";
+    const srcLang = LANGUAGE_MAP.get(item.sourceCode);
+    const tgtLang_ = LANGUAGE_MAP.get(item.targetCode);
+    const srcName = srcLang?.name || item.sourceCode;
+    const tgtName = tgtLang_?.name || item.targetCode;
+    const srcFlag = srcLang?.flag || "";
+    const tgtFlag = tgtLang_?.flag || "";
     return (
       <TouchableOpacity
         style={[styles.savedPairPill, { backgroundColor: colors.cardBg, borderColor: isActive ? colors.primary : colors.border }, isActive && styles.savedPairPillActive]}

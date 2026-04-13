@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Share } from "react-native";
 import AlignedRomanization from "./AlignedRomanization";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
 import { highlightMatches } from "../utils/highlightText";
-import { LANGUAGES } from "../services/translation";
+import { LANGUAGE_MAP } from "../services/translation";
 import type { ThemeColors } from "../theme";
 import type { HistoryItem } from "../types";
 
@@ -73,7 +73,7 @@ function ChatBubble({
           </Text>
         </TouchableOpacity>
         {item.detectedLang && (() => {
-          const lang = LANGUAGES.find((l) => l.code === item.detectedLang);
+          const lang = LANGUAGE_MAP.get(item.detectedLang!);
           return lang ? (
             <Text style={[styles.detectedLangBadge, { color: colors.primary, backgroundColor: colors.primary + "18" }]}>
               Detected: {lang.name}

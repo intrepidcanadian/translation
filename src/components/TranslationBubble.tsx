@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, Share } from "react-native";
 import AlignedRomanization from "./AlignedRomanization";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
 import { highlightMatches } from "../utils/highlightText";
-import { LANGUAGES } from "../services/translation";
+import { LANGUAGE_MAP } from "../services/translation";
 import type { ThemeColors } from "../theme";
 import type { HistoryItem } from "../types";
 
@@ -54,8 +54,8 @@ function TranslationBubble({
   const timeStr = formatRelativeTime(item.timestamp);
 
   const handleShare = () => {
-    const srcName = item.sourceLangCode ? LANGUAGES.find((l) => l.code === item.sourceLangCode)?.name : null;
-    const tgtName = item.targetLangCode ? LANGUAGES.find((l) => l.code === item.targetLangCode)?.name : null;
+    const srcName = item.sourceLangCode ? LANGUAGE_MAP.get(item.sourceLangCode)?.name : null;
+    const tgtName = item.targetLangCode ? LANGUAGE_MAP.get(item.targetLangCode)?.name : null;
     const langLine = srcName && tgtName ? `${srcName} → ${tgtName}` : "";
     const card = [
       `"${item.original}"`,
@@ -82,7 +82,7 @@ function TranslationBubble({
             : item.original}
         </Text>
         {item.detectedLang && (() => {
-          const lang = LANGUAGES.find((l) => l.code === item.detectedLang);
+          const lang = LANGUAGE_MAP.get(item.detectedLang!);
           return lang ? (
             <Text style={[styles.detectedLangBadge, { color: colors.primary, backgroundColor: colors.primary + "18" }]}>
               Detected: {lang.name}

@@ -7,7 +7,7 @@ import {
   FlatList,
   StyleSheet,
 } from "react-native";
-import { LANGUAGES } from "../services/translation";
+import { LANGUAGE_MAP } from "../services/translation";
 import type { ThemeColors } from "../theme";
 
 interface HistoryItem {
@@ -58,8 +58,8 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
     .slice(0, 5)
     .map(([pair, count]) => {
       const [src, tgt] = pair.split("\u2192");
-      const srcName = LANGUAGES.find((l) => l.code === src)?.name || src;
-      const tgtName = LANGUAGES.find((l) => l.code === tgt)?.name || tgt;
+      const srcName = LANGUAGE_MAP.get(src)?.name || src;
+      const tgtName = LANGUAGE_MAP.get(tgt)?.name || tgt;
       return { label: `${srcName} \u2192 ${tgtName}`, count };
     });
 
@@ -74,7 +74,7 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([code, count]) => ({
-      label: LANGUAGES.find((l) => l.code === code)?.name || code,
+      label: LANGUAGE_MAP.get(code)?.name || code,
       count,
     }));
 

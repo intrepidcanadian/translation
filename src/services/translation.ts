@@ -429,6 +429,9 @@ export const AUTO_DETECT_LANGUAGE: Language = {
   flag: "🌐",
 };
 
+// O(1) lookup by language code — use instead of LANGUAGES.find()
+export const LANGUAGE_MAP: Map<string, Language> = new Map();
+
 export const LANGUAGES: Language[] = [
   { code: "en", name: "English", speechCode: "en-US", flag: "🇺🇸" },
   { code: "es", name: "Spanish", speechCode: "es-ES", flag: "🇪🇸" },
@@ -451,3 +454,8 @@ export const LANGUAGES: Language[] = [
   { code: "uk", name: "Ukrainian", speechCode: "uk-UA", flag: "🇺🇦" },
   { code: "cs", name: "Czech", speechCode: "cs-CZ", flag: "🇨🇿" },
 ];
+
+// Populate lookup map
+for (const lang of LANGUAGES) {
+  LANGUAGE_MAP.set(lang.code, lang);
+}
