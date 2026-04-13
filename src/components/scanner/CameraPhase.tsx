@@ -115,6 +115,7 @@ export default function CameraPhase({
           onPress={onCapture}
           activeOpacity={0.7}
           accessibilityLabel={`Capture and analyze ${modeLabel.toLowerCase()}`}
+          accessibilityHint="Takes a photo and runs on-device OCR and translation"
         >
           <View style={styles.captureInner} />
         </TouchableOpacity>

@@ -75,6 +75,7 @@ export default function LanguagePicker({ label, selected, onSelect, showAutoDete
         onPress={() => setVisible(true)}
         accessibilityRole="button"
         accessibilityLabel={`${label} language: ${selected.name}. Tap to change.`}
+        accessibilityHint="Opens a list to choose a different language"
       >
         <Text style={[styles.buttonText, { color: colors.primaryText }]}>{selected.name}</Text>
         <Text style={[styles.arrow, { color: colors.primary }]} importantForAccessibility="no">▼</Text>

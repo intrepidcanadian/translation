@@ -117,6 +117,7 @@ function ControlsPanel({
             onPress={onOpenSplitScreen}
             accessibilityRole="button"
             accessibilityLabel="Open split screen conversation mode"
+            accessibilityHint="Opens a split view for face-to-face translation between two speakers"
           >
             <Text style={[styles.splitScreenIcon, { color: colors.primary }]}>⇅</Text>
             <Text style={[styles.splitScreenLabel, { color: colors.primary }]}>Face to Face</Text>
@@ -132,7 +133,9 @@ function ControlsPanel({
                 activeOpacity={0.7}
                 disabled={isListening && activeSpeaker !== "A"}
                 accessibilityRole="button"
-                accessibilityLabel={`Speak ${sourceLangName}`}
+                accessibilityLabel={isListening && activeSpeaker === "A" ? `Stop listening in ${sourceLangName}` : `Speak ${sourceLangName}`}
+                accessibilityHint={isListening ? "Stops speech recognition" : `Starts listening for ${sourceLangName} speech to translate`}
+                accessibilityState={{ busy: isListening && activeSpeaker === "A" }}
               >
                 <Text style={styles.micIcon} importantForAccessibility="no">🎙️</Text>
               </TouchableOpacity>
@@ -150,7 +153,9 @@ function ControlsPanel({
                 activeOpacity={0.7}
                 disabled={isListening && activeSpeaker !== "B"}
                 accessibilityRole="button"
-                accessibilityLabel={`Speak ${targetLangName}`}
+                accessibilityLabel={isListening && activeSpeaker === "B" ? `Stop listening in ${targetLangName}` : `Speak ${targetLangName}`}
+                accessibilityHint={isListening ? "Stops speech recognition" : `Starts listening for ${targetLangName} speech to translate`}
+                accessibilityState={{ busy: isListening && activeSpeaker === "B" }}
               >
                 <Text style={styles.micIcon} importantForAccessibility="no">🎙️</Text>
               </TouchableOpacity>
@@ -203,6 +208,7 @@ function ControlsPanel({
               returnKeyType="send"
               editable={!isTranslating}
               accessibilityLabel="Type text to translate"
+              accessibilityHint="Type text and press send to translate it"
               maxLength={500}
               multiline
               textAlignVertical="top"

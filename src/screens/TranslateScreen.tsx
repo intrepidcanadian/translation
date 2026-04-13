@@ -526,6 +526,7 @@ export default function TranslateScreen() {
                 onPress={() => setConversationMode((m) => !m)}
                 accessibilityRole="button"
                 accessibilityLabel={conversationMode ? "Switch to standard mode" : "Switch to conversation mode"}
+                accessibilityHint={conversationMode ? "Returns to single-speaker translation" : "Enables two-speaker face-to-face translation"}
                 accessibilityState={{ selected: conversationMode }}
               >
                 <Text style={[styles.modeToggleText, { color: colors.mutedText }, conversationMode && { color: colors.destructiveText }]}>Chat</Text>
@@ -563,6 +564,7 @@ export default function TranslateScreen() {
                   onPress={swapLanguages}
                   accessibilityRole="button"
                   accessibilityLabel={`Swap languages. Currently translating from ${sourceLang.name} to ${targetLang.name}`}
+                  accessibilityHint={`Swaps to translate from ${targetLang.name} to ${sourceLang.name}`}
                 >
                   <Text style={[styles.swapIcon, { color: colors.primary }]}>⇄</Text>
                 </TouchableOpacity>
@@ -572,6 +574,7 @@ export default function TranslateScreen() {
                     onPress={toggleSavePair}
                     accessibilityRole="button"
                     accessibilityLabel={isCurrentPairSaved ? "Remove saved language pair" : "Save this language pair"}
+                    accessibilityHint={isCurrentPairSaved ? "Removes this pair from saved shortcuts" : "Saves this language pair for quick switching"}
                   >
                     <Text style={[styles.savePairIcon, { color: colors.mutedText }, isCurrentPairSaved && { color: colors.favoriteColor }]}>
                       {isCurrentPairSaved ? "★" : "☆"}
