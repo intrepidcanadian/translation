@@ -8,11 +8,8 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
-  Alert,
   Keyboard,
   KeyboardAvoidingView,
-  Share,
-  LayoutAnimation,
   UIManager,
   useWindowDimensions,
 } from "react-native";
@@ -21,10 +18,9 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-import * as Clipboard from "expo-clipboard";
-import * as Speech from "expo-speech";
-import { impactLight, impactMedium, notifySuccess, notifyWarning } from "../services/haptics";
+import { notifyWarning } from "../services/haptics";
 import { useSpeechRecognition } from "../hooks/useSpeechRecognition";
+import { useHistoryActions } from "../hooks/useHistoryActions";
 import LanguagePicker from "../components/LanguagePicker";
 import ComparisonModal from "../components/ComparisonModal";
 import WordAlternativesModal from "../components/WordAlternativesModal";
@@ -35,14 +31,11 @@ import SplitConversation from "../components/SplitConversation";
 import ConversationPlayback from "../components/ConversationPlayback";
 import {
   translateText,
-  getWordAlternatives,
   LANGUAGES,
-  type WordAlternative,
 } from "../services/translation";
 import { getColors } from "../theme";
 import { PHRASE_CATEGORIES, getPhraseOfTheDay } from "../services/offlinePhrases";
 import { FONT_SIZE_SCALES } from "../components/SettingsModal";
-import type { TranslationProvider } from "../services/translation";
 import { useRoute } from "@react-navigation/native";
 import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
@@ -170,29 +163,17 @@ export default function TranslateScreen() {
   const [showSplitScreen, setShowSplitScreen] = useState(false);
   const [showPlayback, setShowPlayback] = useState(false);
 
-  const [copiedText, setCopiedText] = useState<string | null>(null);
-  const [speakingText, setSpeakingText] = useState<string | null>(null);
+  const historyActions = useHistoryActions({
+    history,
+    setHistory,
+    translationProvider: settings.translationProvider,
+    sourceLangCode: sourceLang.code,
+    targetLangCode: targetLang.code,
+    speechRate: settings.speechRate,
+    showError,
+  });
 
-  const [compareData, setCompareData] = useState<{
-    original: string;
-    results: Array<{ provider: string; text: string; loading?: boolean }>;
-  } | null>(null);
-
-  const [correctionPrompt, setCorrectionPrompt] = useState<{ index: number; original: string; translated: string } | null>(null);
-
-  const [wordAltData, setWordAltData] = useState<{
-    word: string;
-    sourceLang: string;
-    targetLang: string;
-    alternatives: WordAlternative[];
-    loading: boolean;
-  } | null>(null);
-
-  const [selectMode, setSelectMode] = useState(false);
-  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
-
-  const [deletedItem, setDeletedItem] = useState<{ item: HistoryItem; index: number } | null>(null);
-  const undoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { copiedText, speakingText, selectMode, setSelectMode, selectedIndices, deletedItem, compareData, setCompareData, correctionPrompt, setCorrectionPrompt, wordAltData, setWordAltData, copyToClipboard, speakText, deleteHistoryItem, undoDelete, toggleFavorite, retryTranslation, clearHistory, showExportPicker, toggleSelectItem, exitSelectMode, deleteSelected, exportSelected, submitCorrection, lookupWordAlternatives, compareTranslation } = historyActions;
 
   const [typedText, setTypedText] = useState("");
   const [typedPreview, setTypedPreview] = useState("");
@@ -202,105 +183,8 @@ export default function TranslateScreen() {
   useEffect(() => {
     return () => {
       if (errorDismissTimeout.current) clearTimeout(errorDismissTimeout.current);
-      if (undoTimeout.current) clearTimeout(undoTimeout.current);
-      Speech.stop();
     };
   }, []);
-
-  const speakText = useCallback(
-    async (text: string, langCode: string) => {
-      if (speakingText === text) {
-        Speech.stop();
-        setSpeakingText(null);
-        return;
-      }
-      Speech.stop();
-      setSpeakingText(text);
-      Speech.speak(text, {
-        language: langCode,
-        rate: settings.speechRate,
-        onDone: () => setSpeakingText(null),
-        onStopped: () => setSpeakingText(null),
-        onError: () => setSpeakingText(null),
-      });
-    },
-    [speakingText, settings.speechRate]
-  );
-
-  const submitCorrection = useCallback((correctedText: string) => {
-    if (!correctionPrompt || !correctedText.trim()) return;
-    const { index, original } = correctionPrompt;
-    const correction = correctedText.trim();
-    setHistory((prev) => {
-      const updated = [...prev];
-      if (updated[index]) {
-        updated[index] = { ...updated[index], translated: correction };
-      }
-      return updated;
-    });
-    notifySuccess();
-    setCorrectionPrompt(null);
-  }, [correctionPrompt, setHistory]);
-
-  const copyToClipboard = useCallback(async (text: string) => {
-    await Clipboard.setStringAsync(text);
-    notifySuccess();
-    setCopiedText(text);
-    setTimeout(() => setCopiedText(null), 1500);
-  }, []);
-
-  const lookupWordAlternatives = useCallback(async (word: string, srcLang: string, tgtLang: string) => {
-    setWordAltData({ word, sourceLang: srcLang, targetLang: tgtLang, alternatives: [], loading: true });
-    impactMedium();
-    try {
-      const alts = await getWordAlternatives(word, srcLang, tgtLang);
-      setWordAltData((prev) => prev ? { ...prev, alternatives: alts, loading: false } : null);
-    } catch (err) {
-      console.warn("Word alternatives lookup failed:", err);
-      setWordAltData((prev) => prev ? { ...prev, loading: false } : null);
-    }
-  }, []);
-
-  const compareTranslation = useCallback(async (original: string, currentTranslation: string) => {
-    const allProviders: Array<{ key: TranslationProvider; label: string }> = [
-      { key: "apple", label: "Apple (On-Device)" },
-      { key: "mlkit", label: "ML Kit (On-Device)" },
-      { key: "mymemory", label: "MyMemory (Cloud)" },
-    ];
-    const providers = allProviders.filter((p) => p.key !== settings.translationProvider);
-    const currentLabel = allProviders.find((p) => p.key === settings.translationProvider)?.label || settings.translationProvider;
-    const initialResults = [
-      { provider: currentLabel, text: currentTranslation },
-      ...providers.map((p) => ({ provider: p.label, text: "", loading: true })),
-    ];
-    setCompareData({ original, results: initialResults });
-
-    for (const p of providers) {
-      try {
-        const result = await translateText(original, sourceLang.code, targetLang.code, { provider: p.key });
-        setCompareData((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            results: prev.results.map((r) =>
-              r.provider === p.label ? { ...r, text: result.translatedText, loading: false } : r
-            ),
-          };
-        });
-      } catch (err) {
-        console.warn("Compare translation failed:", err);
-        setCompareData((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            results: prev.results.map((r) =>
-              r.provider === p.label ? { ...r, text: "Failed to load", loading: false } : r
-            ),
-          };
-        });
-      }
-    }
-  }, [settings.translationProvider, sourceLang.code, targetLang.code]);
 
   // Detect connectivity restored
   useEffect(() => {
@@ -313,160 +197,6 @@ export default function TranslateScreen() {
       return () => clearTimeout(timer);
     }
   }, [isOffline]);
-
-  const clearHistory = () => {
-    Alert.alert(
-      "Clear History",
-      `Delete all ${history.length} translation${history.length === 1 ? "" : "s"}? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear All",
-          style: "destructive",
-          onPress: () => {
-            notifyWarning();
-            setHistory([]);
-          },
-        },
-      ]
-    );
-  };
-
-  const deleteHistoryItem = useCallback((index: number) => {
-    impactMedium();
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setHistory((prev) => {
-      const removed = prev[index];
-      if (removed) {
-        if (undoTimeout.current) clearTimeout(undoTimeout.current);
-        setDeletedItem({ item: removed, index });
-        undoTimeout.current = setTimeout(() => setDeletedItem(null), 4000);
-      }
-      return prev.filter((_, i) => i !== index);
-    });
-  }, [setHistory]);
-
-  const undoDelete = useCallback(() => {
-    if (!deletedItem) return;
-    if (undoTimeout.current) clearTimeout(undoTimeout.current);
-    impactLight();
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setHistory((prev) => {
-      const updated = [...prev];
-      const insertAt = Math.min(deletedItem.index, updated.length);
-      updated.splice(insertAt, 0, deletedItem.item);
-      return updated;
-    });
-    setDeletedItem(null);
-  }, [deletedItem, setHistory]);
-
-  const toggleFavorite = useCallback((index: number) => {
-    impactLight();
-    setHistory((prev) =>
-      prev.map((item, i) => i === index ? { ...item, favorited: !item.favorited } : item)
-    );
-  }, [setHistory]);
-
-  const retryTranslation = useCallback(async (index: number) => {
-    const item = history[index];
-    if (!item?.error || !item.sourceLangCode || !item.targetLangCode) return;
-
-    setHistory((prev) =>
-      prev.map((h, i) => i === index ? { ...h, error: false, pending: true, translated: "Retrying..." } : h)
-    );
-
-    const controller = new AbortController();
-    try {
-      const result = await translateText(item.original, item.sourceLangCode, item.targetLangCode, { signal: controller.signal, provider: settings.translationProvider });
-      setHistory((prev) =>
-        prev.map((h, i) => i === index ? { ...h, translated: result.translatedText, pending: false, error: false, sourceLangCode: undefined, targetLangCode: undefined } : h)
-      );
-      notifySuccess();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Translation failed";
-      setHistory((prev) =>
-        prev.map((h, i) => i === index ? { ...h, translated: msg, pending: false, error: true } : h)
-      );
-      showError(msg);
-    }
-  }, [history, settings.translationProvider, showError, setHistory]);
-
-  const shareHistory = useCallback(async (format: "text" | "csv" | "json" = "text") => {
-    const exportable = history.filter((item) => !item.error && !item.pending);
-    if (exportable.length === 0) return;
-
-    let message: string;
-    if (format === "csv") {
-      const header = "Original,Translated,Favorited";
-      const rows = exportable.map(
-        (item) => `"${item.original.replace(/"/g, '""')}","${item.translated.replace(/"/g, '""')}",${item.favorited ? "yes" : "no"}`
-      );
-      message = [header, ...rows].join("\n");
-    } else if (format === "json") {
-      message = JSON.stringify(
-        exportable.map((item) => ({ original: item.original, translated: item.translated, favorited: !!item.favorited })),
-        null,
-        2
-      );
-    } else {
-      const lines = exportable.map((item, i) => `${i + 1}. ${item.original}\n   → ${item.translated}`);
-      message = `Live Translator - ${exportable.length} translation(s)\n\n${lines.join("\n\n")}`;
-    }
-    try { await Share.share({ message }); } catch (err) { console.warn("Share failed:", err); }
-  }, [history]);
-
-  const showExportPicker = useCallback(() => {
-    const exportable = history.filter((item) => !item.error && !item.pending);
-    if (exportable.length === 0) return;
-    Alert.alert("Export Format", "Choose a format for your translations", [
-      { text: "Text", onPress: () => shareHistory("text") },
-      { text: "CSV", onPress: () => shareHistory("csv") },
-      { text: "JSON", onPress: () => shareHistory("json") },
-      { text: "Cancel", style: "cancel" },
-    ]);
-  }, [history, shareHistory]);
-
-  const toggleSelectItem = useCallback((index: number) => {
-    setSelectedIndices((prev) => {
-      const next = new Set(prev);
-      if (next.has(index)) next.delete(index);
-      else next.add(index);
-      return next;
-    });
-  }, []);
-
-  const exitSelectMode = useCallback(() => {
-    setSelectMode(false);
-    setSelectedIndices(new Set());
-  }, []);
-
-  const deleteSelected = useCallback(() => {
-    if (selectedIndices.size === 0) return;
-    Alert.alert(
-      "Delete Selected",
-      `Delete ${selectedIndices.size} translation${selectedIndices.size === 1 ? "" : "s"}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            notifyWarning();
-            setHistory((prev) => prev.filter((_, i) => !selectedIndices.has(i)));
-            exitSelectMode();
-          },
-        },
-      ]
-    );
-  }, [selectedIndices, exitSelectMode, setHistory]);
-
-  const exportSelected = useCallback(() => {
-    if (selectedIndices.size === 0) return;
-    const items = history.filter((_, i) => selectedIndices.has(i));
-    const lines = items.map((item, i) => `${i + 1}. ${item.original}\n   → ${item.translated}`);
-    const text = `Live Translator - ${items.length} translation(s)\n\n${lines.join("\n\n")}`;
-    Share.share({ message: text }).catch((err) => console.warn("Share selected failed:", err));
-  }, [selectedIndices, history]);
 
   // Translate-as-you-type
   useEffect(() => {
