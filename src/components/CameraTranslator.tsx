@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -9,22 +9,17 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
-  Alert,
-  Share,
 } from "react-native";
-import { logger } from "../services/logger";
 import {
   Camera,
   useCameraDevice,
   useCameraPermission,
-  type PhotoFile,
 } from "react-native-vision-camera";
 import { Camera as OCRCamera } from "react-native-vision-camera-ocr-plus";
-import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
-import * as Clipboard from "expo-clipboard";
-import * as Speech from "expo-speech";
 import type { TranslationProvider } from "../services/translation";
-import { translateOCRLines, translateCapturedLines, mapToScreenCoords, clearOCRCache } from "../services/ocrTranslation";
+import { clearOCRCache } from "../services/ocrTranslation";
+import { useLiveOCR } from "../hooks/useLiveOCR";
+import { usePhotoCapture } from "../hooks/usePhotoCapture";
 import type { ThemeColors } from "../theme";
 
 interface DetectedBlock {
@@ -40,24 +35,6 @@ interface CapturedBlock {
   translatedText: string;
   imageFrame: { top: number; left: number; width: number; height: number };
   screenFrame: { top: number; left: number; width: number; height: number };
-}
-
-interface OCRFrame {
-  x?: number;
-  y?: number;
-  top?: number;
-  left?: number;
-  width?: number;
-  height?: number;
-}
-
-interface OCRBlock {
-  text: string;
-  lines?: Array<{
-    text: string;
-    frame?: OCRFrame;
-  }>;
-  frame?: OCRFrame;
 }
 
 interface CameraTranslatorProps {
@@ -166,18 +143,6 @@ function getOCRLanguage(langCode: string): "latin" | "chinese" | "japanese" | "k
   }
 }
 
-// Map language codes to ML Kit text recognition scripts
-function getMLKitScript(langCode: string): TextRecognitionScript {
-  switch (langCode) {
-    case "zh": return TextRecognitionScript.CHINESE;
-    case "ja": return TextRecognitionScript.JAPANESE;
-    case "ko": return TextRecognitionScript.KOREAN;
-    case "hi": return TextRecognitionScript.DEVANAGARI;
-    default: return TextRecognitionScript.LATIN;
-  }
-}
-
-
 export default function CameraTranslator({
   visible,
   onClose,
@@ -190,26 +155,36 @@ export default function CameraTranslator({
   const { hasPermission, requestPermission } = useCameraPermission();
   const captureRef = useRef<Camera>(null);
 
-  // Live OCR state
-  const [detectedBlocks, setDetectedBlocks] = useState<DetectedBlock[]>([]);
-  const [isTranslating, setIsTranslating] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [overlayMode, setOverlayMode] = useState<"bubble" | "replace">("replace");
   const blockOpacities = useRef(new Map<string, Animated.Value>()).current;
-
-  // Photo capture state
-  const [isCaptured, setIsCaptured] = useState(false);
-  const [capturedUri, setCapturedUri] = useState<string | null>(null);
-  const [capturedBlocks, setCapturedBlocks] = useState<CapturedBlock[]>([]);
-  const [isProcessingCapture, setIsProcessingCapture] = useState(false);
-
-  const [error, setError] = useState<string | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const isMountedRef = useRef(true);
-  const translateQueueRef = useRef<Array<{ text: string; frame: { top: number; left: number; width: number; height: number } }> | null>(null);
-  const isTranslatingRef = useRef(false);
   const lastOCRTextRef = useRef("");
   const [screenDims, setScreenDims] = useState(() => Dimensions.get("window"));
+
+  // Photo capture hook — manages capture state, OCR, translation, share, block tap
+  const { isCaptured, capturedUri, capturedBlocks, isProcessingCapture, captureError, handleCapture, handleRetake, handleShareCapture, handleBlockTap } = usePhotoCapture({
+    captureRef,
+    sourceLangCode,
+    targetLangCode,
+    translationProvider,
+    screenDims,
+    blockOpacities,
+    lastOCRTextRef,
+    isMountedRef,
+  });
+
+  // Live OCR hook — handles frame processing, translation, and detected block state
+  const { detectedBlocks, setDetectedBlocks, isTranslating, error, setError, abortRef, handleOCRResult } = useLiveOCR({
+    sourceLangCode,
+    targetLangCode,
+    translationProvider,
+    isPaused,
+    isCaptured,
+    blockOpacities,
+    isMountedRef,
+    lastOCRTextRef,
+  });
 
   // Track screen dimensions for overlay mapping
   useEffect(() => {
@@ -233,7 +208,7 @@ export default function CameraTranslator({
       isMountedRef.current = false;
       abortRef.current?.abort();
     };
-  }, []);
+  }, [abortRef]);
 
   // Clear cache when languages change
   useEffect(() => {
@@ -241,229 +216,7 @@ export default function CameraTranslator({
     setDetectedBlocks([]);
     blockOpacities.clear();
     lastOCRTextRef.current = "";
-  }, [sourceLangCode, targetLangCode]);
-
-  // Translate detected lines (debounced — only runs when OCR text actually changes)
-  const translateLines = useCallback(async (
-    lines: Array<{ text: string; frame: { top: number; left: number; width: number; height: number } }>
-  ) => {
-    if (isTranslatingRef.current || !isMountedRef.current) {
-      translateQueueRef.current = lines;
-      return;
-    }
-
-    isTranslatingRef.current = true;
-    setIsTranslating(true);
-
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    try {
-      const blocks = await translateOCRLines(lines, sourceLangCode, targetLangCode, translationProvider, controller.signal);
-
-      if (isMountedRef.current && !controller.signal.aborted) {
-        setDetectedBlocks(blocks);
-        const activeIds = new Set(blocks.map((b) => b.id));
-        for (const key of blockOpacities.keys()) {
-          if (!activeIds.has(key)) blockOpacities.delete(key);
-        }
-      }
-    } catch (err: unknown) {
-      if (isMountedRef.current && !(err instanceof DOMException && err.name === "AbortError")) {
-        setError(err instanceof Error ? err.message : "Translation failed");
-      }
-      // Clean up stale opacity entries on failure too
-      blockOpacities.clear();
-    } finally {
-      isTranslatingRef.current = false;
-      if (isMountedRef.current) setIsTranslating(false);
-
-      if (translateQueueRef.current && isMountedRef.current) {
-        const queued = translateQueueRef.current;
-        translateQueueRef.current = null;
-        translateLines(queued);
-      }
-    }
-  }, [sourceLangCode, targetLangCode, translationProvider]);
-
-  // Handle real-time OCR results from frame processor
-  // OCR plugin callback receives data with varying shape depending on version
-  const handleOCRResult = useCallback((data: unknown) => {
-    if (isPaused || isCaptured || !isMountedRef.current) return;
-
-    try {
-      const ocrData = data as { result?: { blocks?: OCRBlock[] }; blocks?: OCRBlock[] } | null;
-      const blocks: OCRBlock[] = ocrData?.result?.blocks || ocrData?.blocks || [];
-      if (!blocks.length) {
-        if (lastOCRTextRef.current !== "") {
-          lastOCRTextRef.current = "";
-          setDetectedBlocks([]);
-        }
-        return;
-      }
-
-      const lines: Array<{ text: string; frame: { top: number; left: number; width: number; height: number } }> = [];
-      for (const block of blocks) {
-        if (block.lines) {
-          for (const line of block.lines) {
-            if (!line.text?.trim() || !line.frame) continue;
-            lines.push({
-              text: line.text.trim(),
-              frame: {
-                top: line.frame.y ?? line.frame.top ?? 0,
-                left: line.frame.x ?? line.frame.left ?? 0,
-                width: line.frame.width ?? 0,
-                height: line.frame.height ?? 0,
-              },
-            });
-          }
-        } else if (block.text?.trim() && block.frame) {
-          lines.push({
-            text: block.text.trim(),
-            frame: {
-              top: block.frame.y ?? block.frame.top ?? 0,
-              left: block.frame.x ?? block.frame.left ?? 0,
-              width: block.frame.width ?? 0,
-              height: block.frame.height ?? 0,
-            },
-          });
-        }
-      }
-
-      if (lines.length === 0) return;
-
-      const currentText = lines.map((l) => l.text).join("|");
-      if (currentText === lastOCRTextRef.current) return;
-      lastOCRTextRef.current = currentText;
-
-      setError(null);
-      translateLines(lines);
-    } catch (err) {
-      logger.warn("OCR", "OCR frame parse error", err);
-    }
-  }, [isPaused, isCaptured, translateLines]);
-
-  // Photo capture handler
-  const handleCapture = useCallback(async () => {
-    if (!captureRef.current || isProcessingCapture) return;
-
-    setIsProcessingCapture(true);
-    setError(null);
-
-    try {
-      const photo: PhotoFile = await captureRef.current.takePhoto({
-        enableShutterSound: true,
-      });
-      const uri = Platform.OS === "android" ? `file://${photo.path}` : photo.path;
-
-      setCapturedUri(uri);
-      setIsCaptured(true);
-      setDetectedBlocks([]);
-      blockOpacities.clear();
-
-      // Run ML Kit OCR on the captured photo
-      const script = getMLKitScript(sourceLangCode);
-      const result = await TextRecognition.recognize(uri, script);
-
-      if (!result.blocks.length) {
-        setError("No text detected in photo. Try again.");
-        setIsProcessingCapture(false);
-        return;
-      }
-
-      // Extract lines with bounding boxes
-      const lines: Array<{ text: string; frame: { top: number; left: number; width: number; height: number } }> = [];
-      for (const block of result.blocks) {
-        for (const line of block.lines) {
-          if (!line.text?.trim() || !line.frame) continue;
-          lines.push({
-            text: line.text.trim(),
-            frame: {
-              top: line.frame.top ?? 0,
-              left: line.frame.left ?? 0,
-              width: line.frame.width ?? 0,
-              height: line.frame.height ?? 0,
-            },
-          });
-        }
-      }
-
-      if (lines.length === 0) {
-        setError("No text lines detected.");
-        setIsProcessingCapture(false);
-        return;
-      }
-
-      // Batch translate
-      const texts = lines.map((l) => l.text);
-      const translations = await translateCapturedLines(texts, sourceLangCode, targetLangCode, translationProvider);
-
-      // Scale coordinates from image space to screen space
-      const blocks: CapturedBlock[] = lines.map((line, i) => ({
-        id: `cap-${i}-${line.text.slice(0, 8)}`,
-        originalText: line.text,
-        translatedText: translations[i] || line.text,
-        imageFrame: line.frame,
-        screenFrame: mapToScreenCoords(line.frame, photo.width, photo.height, screenDims.width, screenDims.height),
-      }));
-
-      setCapturedBlocks(blocks);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Capture failed");
-      setIsCaptured(false);
-      setCapturedUri(null);
-    } finally {
-      setIsProcessingCapture(false);
-    }
-  }, [sourceLangCode, targetLangCode, translationProvider, screenDims, isProcessingCapture]);
-
-  const handleRetake = useCallback(() => {
-    setIsCaptured(false);
-    setCapturedUri(null);
-    setCapturedBlocks([]);
-    setError(null);
-    lastOCRTextRef.current = "";
-  }, []);
-
-  const handleShareCapture = useCallback(async () => {
-    if (!capturedUri) return;
-    const textSummary = capturedBlocks
-      .map((b) => `${b.originalText} → ${b.translatedText}`)
-      .join("\n");
-
-    try {
-      await Share.share({
-        message: `Photo Translation (${sourceLangCode.toUpperCase()} → ${targetLangCode.toUpperCase()}):\n\n${textSummary}`,
-        url: capturedUri,
-      });
-    } catch (err) {
-      // User cancelled share or share failed
-      logger.warn("Camera", "Share capture failed", err);
-    }
-  }, [capturedUri, capturedBlocks, sourceLangCode, targetLangCode]);
-
-  const handleBlockTap = useCallback((block: CapturedBlock) => {
-    Alert.alert(
-      block.translatedText,
-      block.originalText,
-      [
-        {
-          text: "Copy Translation",
-          onPress: () => Clipboard.setStringAsync(block.translatedText),
-        },
-        {
-          text: "Copy Original",
-          onPress: () => Clipboard.setStringAsync(block.originalText),
-        },
-        {
-          text: "Speak",
-          onPress: () => Speech.speak(block.translatedText, { language: targetLangCode }),
-        },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
-  }, [targetLangCode]);
+  }, [sourceLangCode, targetLangCode, setDetectedBlocks]);
 
   if (!visible) return null;
 
@@ -654,17 +407,17 @@ export default function CameraTranslator({
                 <Text style={styles.statusText}>Paused — tap play to resume</Text>
               </View>
             )}
-            {error && (
+            {(error || captureError) && (
               <View style={styles.statusRow}>
-                <Text style={styles.errorStatusText}>{error}</Text>
+                <Text style={styles.errorStatusText}>{captureError || error}</Text>
               </View>
             )}
-            {!isTranslating && !isPaused && !error && detectedBlocks.length > 0 && (
+            {!isTranslating && !isPaused && !error && !captureError && detectedBlocks.length > 0 && (
               <Text style={styles.statusText}>
                 {detectedBlocks.length} text region{detectedBlocks.length !== 1 ? "s" : ""} | Real-time OCR
               </Text>
             )}
-            {!isTranslating && !isPaused && !error && detectedBlocks.length === 0 && (
+            {!isTranslating && !isPaused && !error && !captureError && detectedBlocks.length === 0 && (
               <Text style={styles.statusText}>Point camera at text to translate</Text>
             )}
           </>
@@ -774,29 +527,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "700",
-  },
-  overlay: {
-    justifyContent: "flex-start",
-    alignItems: "flex-start",
-  },
-  overlayBubble: {
-    backgroundColor: "rgba(26, 26, 46, 0.88)",
-    borderRadius: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: "rgba(108,99,255,0.5)",
-    maxWidth: 280,
-  },
-  overlayTranslated: {
-    color: "#a8a4ff",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  overlayOriginal: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 10,
-    marginTop: 1,
   },
   bottomBar: {
     position: "absolute",

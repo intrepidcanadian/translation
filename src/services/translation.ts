@@ -6,6 +6,27 @@ import { logger } from "./logger";
 
 export type TranslationProvider = "mymemory" | "apple" | "mlkit";
 
+// MyMemory API response shapes for type-safe parsing
+interface MyMemoryResponseData {
+  translatedText?: string;
+  match?: number;
+  detectedLanguage?: string;
+}
+
+interface MyMemoryMatch {
+  translation?: string;
+  quality?: number;
+  match?: number;
+  "created-by"?: string;
+}
+
+interface MyMemoryResponse {
+  responseStatus: number;
+  responseDetails?: string;
+  responseData?: MyMemoryResponseData;
+  matches?: MyMemoryMatch[];
+}
+
 const MYMEMORY_API = "https://api.mymemory.translated.net/get";
 
 const CACHE_MAX_SIZE = 200;
@@ -147,7 +168,7 @@ async function translateMyMemory(text: string, sourceLang: string, targetLang: s
     throw new Error(`Translation service error (${response.status}). Try again.`);
   }
 
-  let data: Record<string, unknown>;
+  let data: MyMemoryResponse;
   try {
     data = await response.json();
   } catch {
@@ -158,19 +179,17 @@ async function translateMyMemory(text: string, sourceLang: string, targetLang: s
     throw new Error("Too many translation requests. Wait a moment and try again.");
   }
   if (data.responseStatus !== 200) {
-    throw new Error((data.responseDetails as string) || "Translation failed. Try again.");
+    throw new Error(data.responseDetails || "Translation failed. Try again.");
   }
 
-  const responseData = data.responseData as Record<string, unknown> | undefined;
-  if (!responseData?.translatedText) {
+  if (!data.responseData?.translatedText) {
     throw new Error("Translation service returned an empty result. Try again.");
   }
 
-  const match = responseData.match;
   return {
-    translatedText: responseData.translatedText as string,
-    detectedLanguage: responseData.detectedLanguage as string | undefined,
-    confidence: typeof match === "number" ? match : undefined,
+    translatedText: data.responseData.translatedText,
+    detectedLanguage: data.responseData.detectedLanguage,
+    confidence: typeof data.responseData.match === "number" ? data.responseData.match : undefined,
   };
 }
 
@@ -397,7 +416,7 @@ export async function getWordAlternatives(
   const response = await fetchWithTimeout(url, {}, signal);
   if (!response.ok) return [];
 
-  let data: { responseData?: { translatedText?: string; match?: number }; matches?: Array<{ translation?: string; quality?: number; match?: number; "created-by"?: string }> };
+  let data: MyMemoryResponse;
   try {
     data = await response.json();
   } catch {

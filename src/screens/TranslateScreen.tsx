@@ -29,6 +29,8 @@ import ControlsPanel from "../components/ControlsPanel";
 import HistoryList from "../components/HistoryList";
 import SplitConversation from "../components/SplitConversation";
 import ConversationPlayback from "../components/ConversationPlayback";
+import PassengerView from "../components/PassengerView";
+import VisualCardsModal from "../components/VisualCardsModal";
 import {
   translateText,
   LANGUAGES,
@@ -212,6 +214,8 @@ export default function TranslateScreen() {
 
   const [typedText, setTypedText] = useState("");
   const [typedPreview, setTypedPreview] = useState("");
+  const [passengerViewIndex, setPassengerViewIndex] = useState<number | null>(null);
+  const [showVisualCards, setShowVisualCards] = useState(false);
   const typedTranslateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cleanup on unmount
@@ -553,6 +557,7 @@ export default function TranslateScreen() {
               onCompareTranslation={compareTranslation}
               onCorrection={setCorrectionPrompt}
               onWordLongPress={lookupWordAlternatives}
+              onShowPassenger={setPassengerViewIndex}
             />
 
             {/* Undo delete toast */}
@@ -594,6 +599,7 @@ export default function TranslateScreen() {
               onStopListening={stopListening}
               onStartListeningAs={startListeningAs}
               onOpenSplitScreen={onOpenSplitScreen}
+              onOpenVisualCards={() => setShowVisualCards(true)}
               onTypedTextChange={setTypedText}
               onSubmitTypedText={submitTypedText}
               onCopyToClipboard={copyToClipboard}
@@ -603,6 +609,21 @@ export default function TranslateScreen() {
       </SafeAreaView>
       <SplitConversation visible={showSplitScreen} onClose={onCloseSplitScreen} />
       <ConversationPlayback visible={showPlayback} onClose={onClosePlayback} />
+      <PassengerView
+        visible={passengerViewIndex !== null}
+        onClose={() => setPassengerViewIndex(null)}
+        history={history}
+        initialIndex={passengerViewIndex ?? 0}
+        colors={colors}
+        speechRate={settings.speechRate}
+      />
+      <VisualCardsModal
+        visible={showVisualCards}
+        onClose={() => setShowVisualCards(false)}
+        colors={colors}
+        passengerLang={targetLang.code === "autodetect" ? undefined : targetLang.code}
+        speechRate={settings.speechRate}
+      />
     </>
   );
 }
@@ -613,16 +634,13 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 20 },
   title: { fontSize: 28, fontWeight: "800", textAlign: "center" },
   modeToggle: { position: "absolute", right: 0, borderRadius: 12, paddingVertical: 6, paddingHorizontal: 12 },
-  modeToggleActive: { backgroundColor: "#6c63ff" },
   modeToggleText: { fontSize: 12, fontWeight: "700" },
-  modeToggleTextActive: { color: "#ffffff" },
   langRow: { flexDirection: "row", alignItems: "flex-end", gap: 10, marginBottom: 20 },
   langMiddleButtons: { alignItems: "center", gap: 4, marginBottom: 0 },
   swapButton: { borderRadius: 12, width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   swapIcon: { fontSize: 20, fontWeight: "700" },
   savePairButton: { borderRadius: 10, width: 32, height: 28, alignItems: "center", justifyContent: "center" },
   savePairIcon: { fontSize: 16, color: "#8888aa" },
-  savePairIconActive: { color: "#ffd700" },
   savedPairsRow: { marginBottom: 12, marginTop: -8 },
   savedPairPill: { borderRadius: 14, paddingVertical: 6, paddingHorizontal: 12, marginRight: 8, borderWidth: 1 },
   savedPairPillActive: { borderWidth: 1.5 },
