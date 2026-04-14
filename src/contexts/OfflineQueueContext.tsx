@@ -109,40 +109,55 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
       );
     };
 
-    for (const item of queue) {
-      if (consecutiveFailures >= 3) {
-        // Circuit-break: leave the rest in the queue for a future attempt.
-        break;
+    // try/finally guarantees isProcessingQueue is released even if an
+    // unexpected throw escapes the loop — previously a hidden exception from
+    // translateText or notifySuccess could leave the flag stuck true,
+    // silently blocking every future processOfflineQueue() call until the
+    // app was restarted.
+    try {
+      for (const item of queue) {
+        if (consecutiveFailures >= 3) {
+          // Circuit-break: leave the rest in the queue for a future attempt.
+          break;
+        }
+        try {
+          const result = await translateText(item.text, item.sourceLang, item.targetLang, { provider: settings.translationProvider });
+          onTranslatedListenersRef.current.forEach((cb) => {
+            try {
+              cb(item.text, result.translatedText);
+            } catch (cbErr) {
+              logger.warn("Network", "Offline queue listener threw", cbErr);
+            }
+          });
+          processed++;
+          consecutiveFailures = 0;
+          // Remove this item from remaining and persist. The reference comparison
+          // is safe here because `remaining` was seeded from `queue` and items
+          // are plain objects we never mutate.
+          remaining = remaining.filter((r) => r !== item);
+          persistRemaining();
+        } catch (err) {
+          logger.warn("Network", "Offline queue translation failed", err);
+          consecutiveFailures++;
+          // Leave failed items in `remaining` so they'll be retried next time
+          // the network comes back.
+        }
       }
-      try {
-        const result = await translateText(item.text, item.sourceLang, item.targetLang, { provider: settings.translationProvider });
-        onTranslatedListenersRef.current.forEach((cb) => {
-          try {
-            cb(item.text, result.translatedText);
-          } catch (cbErr) {
-            logger.warn("Network", "Offline queue listener threw", cbErr);
-          }
-        });
-        processed++;
-        consecutiveFailures = 0;
-        // Remove this item from remaining and persist. The reference comparison
-        // is safe here because `remaining` was seeded from `queue` and items
-        // are plain objects we never mutate.
-        remaining = remaining.filter((r) => r !== item);
-        persistRemaining();
-      } catch (err) {
-        logger.warn("Network", "Offline queue translation failed", err);
-        consecutiveFailures++;
-        // Leave failed items in `remaining` so they'll be retried next time
-        // the network comes back.
-      }
-    }
 
-    // Final persist in case the loop exited via the circuit breaker (no success
-    // branch ran) — ensures the queue state on disk matches what's in memory.
-    persistRemaining();
-    isProcessingQueue.current = false;
-    if (processed > 0) notifySuccess();
+      // Final persist in case the loop exited via the circuit breaker (no success
+      // branch ran) — ensures the queue state on disk matches what's in memory.
+      persistRemaining();
+      if (processed > 0) {
+        try {
+          notifySuccess();
+        } catch (hapticErr) {
+          // A haptic failure is cosmetic; never let it stick the queue flag.
+          logger.warn("Network", "notifySuccess failed after queue drain", hapticErr);
+        }
+      }
+    } finally {
+      isProcessingQueue.current = false;
+    }
   }, [settings.translationProvider]);
 
   useEffect(() => {

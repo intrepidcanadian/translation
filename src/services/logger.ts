@@ -124,6 +124,29 @@ export const logger = {
    * dashboards. */
   query: (q: LogQuery): readonly LogEntry[] => queryAll(q),
 
+  /**
+   * Count recent log entries grouped by a derived key. Useful for dashboards
+   * that want to render "errors by tag" or "entries by message prefix" without
+   * iterating the rings themselves. `keyFn` returns the group key per entry —
+   * return `null` or `undefined` to drop an entry from the count entirely.
+   *
+   * Example:
+   *   logger.countBy({ levels: ["warn", "error"] }, (e) => e.tag)
+   *   // => { Translation: 3, Network: 1 }
+   */
+  countBy: <K extends string>(
+    q: LogQuery,
+    keyFn: (entry: LogEntry) => K | null | undefined
+  ): Record<K, number> => {
+    const out = {} as Record<K, number>;
+    for (const entry of queryAll(q)) {
+      const key = keyFn(entry);
+      if (key == null) continue;
+      out[key] = (out[key] ?? 0) + 1;
+    }
+    return out;
+  },
+
   /** Clear recent error buffer */
   clearRecentErrors: () => { recentErrors.length = 0; recentDebug.length = 0; },
 

@@ -44,6 +44,7 @@ import {
   type Language,
 } from "../services/translation";
 import { logger } from "../services/logger";
+import { increment as incrementTelemetry } from "../services/telemetry";
 import { PHRASE_CATEGORIES, getPhraseOfTheDay, offlineTranslate } from "../services/offlinePhrases";
 import { FONT_SIZE_SCALES } from "../components/SettingsModal";
 import { useRoute } from "@react-navigation/native";
@@ -312,8 +313,15 @@ export default function TranslateScreen() {
     }
   }, [isOffline]);
 
-  // Translate-as-you-type with AbortController to cancel in-flight requests
+  // Translate-as-you-type with AbortController to cancel in-flight requests.
+  // Error dedup: the debounce fires ~every 500ms as the user types, so a
+  // steadily-failing network would surface the same error banner repeatedly
+  // and drown out other feedback. We keep the last error signature + timestamp
+  // and skip showError() if we've already warned about the same issue within
+  // the cooldown window.
   const typedAbortRef = useRef<AbortController | null>(null);
+  const typeAheadLastErrorRef = useRef<{ message: string; at: number } | null>(null);
+  const TYPE_AHEAD_ERROR_COOLDOWN_MS = 10_000;
   useEffect(() => {
     if (typedTranslateTimer.current) clearTimeout(typedTranslateTimer.current);
     typedAbortRef.current?.abort();
@@ -330,6 +338,7 @@ export default function TranslateScreen() {
       if (glossaryMatch) {
         setTypedPreview(glossaryMatch);
         logger.debug("Translation", "type-ahead: glossary hit", { length: text.length });
+        incrementTelemetry("typeAhead.glossary");
         return;
       }
       // Offline short-circuit — when disconnected, try the offline phrase
@@ -343,6 +352,7 @@ export default function TranslateScreen() {
           offlineHit ? "type-ahead: offline dict hit" : "type-ahead: offline dict miss",
           { length: text.length }
         );
+        incrementTelemetry(offlineHit ? "typeAhead.offlineHit" : "typeAhead.offlineMiss");
         return;
       }
       const controller = new AbortController();
@@ -351,18 +361,34 @@ export default function TranslateScreen() {
         length: text.length,
         provider: settings.translationProvider,
       });
+      incrementTelemetry("typeAhead.network");
       try {
         const result = await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider });
         if (!controller.signal.aborted) {
           setTypedPreview(result.translatedText);
+          // Successful request clears any lingering error so the next genuine
+          // failure can surface immediately instead of being suppressed by
+          // the cooldown window.
+          typeAheadLastErrorRef.current = null;
         }
       } catch (err: unknown) {
         if (!(err instanceof DOMException && err.name === "AbortError")) {
           logger.warn("Translation", "Type-ahead translation failed", err);
+          incrementTelemetry("typeAhead.error");
           if (!controller.signal.aborted) {
             setTypedPreview("");
             const msg = err instanceof Error ? err.message : "Translation preview failed";
-            showError(msg);
+            // Dedup: don't bombard the banner with the same message every
+            // 500ms. Surface the first occurrence, then wait out the cooldown
+            // before showing it again. A different error message breaks
+            // through immediately (different root cause).
+            const prev = typeAheadLastErrorRef.current;
+            const now = Date.now();
+            const isDuplicate = prev && prev.message === msg && now - prev.at < TYPE_AHEAD_ERROR_COOLDOWN_MS;
+            if (!isDuplicate) {
+              typeAheadLastErrorRef.current = { message: msg, at: now };
+              showError(msg);
+            }
           }
         }
       }

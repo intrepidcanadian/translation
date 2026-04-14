@@ -25,6 +25,7 @@ import {
   type TranslationProvider,
 } from "../services/translation";
 import { logger } from "../services/logger";
+import { getAll as getTelemetrySnapshot, reset as resetTelemetry } from "../services/telemetry";
 import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
 import CollapsibleSection from "./CollapsibleSection";
@@ -32,9 +33,10 @@ import CollapsibleSection from "./CollapsibleSection";
 export type { TranslationProvider };
 
 // Type-ahead telemetry shape — counts of where each debounced preview landed.
-// Sourced from logger.query() against the session-scoped debug ring buffer.
-// Lets us measure how often the offline short-circuit saves API quota without
-// shipping Sentry (#113).
+// Sourced from the telemetry module (src/services/telemetry.ts), which works
+// in both dev and production builds. The previous implementation queried the
+// logger's debug ring buffer, but that ring is `__DEV__`-only so the
+// dashboard was empty in release builds (#118).
 interface TypeAheadStats {
   glossary: number;
   offlineHit: number;
@@ -43,21 +45,12 @@ interface TypeAheadStats {
   total: number;
 }
 
-// String matchers must stay in sync with the logger.debug calls in
-// TranslateScreen's translate-as-you-type effect. Worth a brief comment over
-// each so a future rename doesn't silently break the dashboard.
 function computeTypeAheadStats(): TypeAheadStats {
-  const entries = logger.query({ tags: ["Translation"], levels: ["debug"] });
-  let glossary = 0;
-  let offlineHit = 0;
-  let offlineMiss = 0;
-  let network = 0;
-  for (const e of entries) {
-    if (e.message === "type-ahead: glossary hit") glossary++;
-    else if (e.message === "type-ahead: offline dict hit") offlineHit++;
-    else if (e.message === "type-ahead: offline dict miss") offlineMiss++;
-    else if (e.message === "type-ahead: network request") network++;
-  }
+  const t = getTelemetrySnapshot();
+  const glossary = t["typeAhead.glossary"];
+  const offlineHit = t["typeAhead.offlineHit"];
+  const offlineMiss = t["typeAhead.offlineMiss"];
+  const network = t["typeAhead.network"];
   return { glossary, offlineHit, offlineMiss, network, total: glossary + offlineHit + offlineMiss + network };
 }
 
@@ -86,6 +79,11 @@ export interface Settings {
   offlineSpeech: boolean;
   silenceTimeout: SilenceTimeoutOption;
   confidenceThreshold: ConfidenceThreshold;
+  /** Include translation diagnostics (cache size, hit rate, open circuit
+   * breakers, type-ahead counters) when sharing crash reports. Defaults on
+   * because the data is innocuous, but users can opt out if they'd rather not
+   * send metadata about their session alongside the crash itself (#120). */
+  shareDiagnosticsInCrashReports: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -100,6 +98,7 @@ export const DEFAULT_SETTINGS: Settings = {
   offlineSpeech: false,
   silenceTimeout: 0,
   confidenceThreshold: 0,
+  shareDiagnosticsInCrashReports: true,
 };
 
 interface Props {
@@ -162,6 +161,15 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     notifySuccess();
   }, [refreshDiagnostics]);
 
+  // Zero the type-ahead counters without touching cache/circuits. Lets a user
+  // start a fresh measurement window after changing providers or settings
+  // without nuking the in-memory cache or circuit breaker state.
+  const handleResetTelemetry = useCallback(() => {
+    resetTelemetry();
+    refreshDiagnostics();
+    notifySuccess();
+  }, [refreshDiagnostics]);
+
   // Per-provider eviction — dumps just one provider's cached entries so users
   // switching providers can drop stale cloud results without nuking the whole
   // cache. Uses the new clearTranslationCache(provider) overload.
@@ -205,37 +213,54 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     const versionLine = lastCrash.appVersion
       ? `Version: ${lastCrash.appVersion}${lastCrash.buildNumber ? ` (${lastCrash.buildNumber})` : ""}`
       : "";
-    // Snapshot live translation diagnostics so shared reports reveal which
-    // provider was down at crash-share time. Circuit state is in-memory only,
-    // so this is the only place it survives into the shared bundle. Skips
-    // entirely when nothing interesting is happening to keep the report clean.
-    const circuits = getCircuitSnapshots();
-    const cache = getTranslationCacheStats();
-    const telemetry = computeTypeAheadStats();
+    // Diagnostics block is opt-in via settings.shareDiagnosticsInCrashReports
+    // (#120). Default on — innocuous metadata — but users who'd rather not
+    // send telemetry alongside crash stacks can flip the toggle in Settings.
     const diagnosticsLines: string[] = [];
-    if (circuits.some((c) => c.open || c.failures > 0) || cache.size > 0 || telemetry.total > 0) {
-      diagnosticsLines.push("\nTranslation diagnostics:");
-      if (cache.size > 0) {
-        diagnosticsLines.push(`  Cache: ${cache.size}/${cache.max}`);
-      }
-      const cacheTotal = cache.hits + cache.misses;
-      if (cacheTotal > 0) {
-        diagnosticsLines.push(
-          `  Cache hit rate: ${Math.round((cache.hits / cacheTotal) * 100)}% (${cache.hits}/${cacheTotal})`
-        );
-      }
-      for (const c of circuits) {
-        if (c.open || c.failures > 0) {
+    if (settings.shareDiagnosticsInCrashReports) {
+      // Snapshot live translation diagnostics so shared reports reveal which
+      // provider was down at crash-share time. Circuit state is in-memory
+      // only, so this is the only place it survives into the shared bundle.
+      // Skips entirely when nothing interesting is happening to keep the
+      // report clean.
+      const circuits = getCircuitSnapshots();
+      const cache = getTranslationCacheStats();
+      const telemetry = computeTypeAheadStats();
+      if (circuits.some((c) => c.open || c.failures > 0) || cache.size > 0 || telemetry.total > 0) {
+        diagnosticsLines.push("\nTranslation diagnostics:");
+        if (cache.size > 0) {
+          diagnosticsLines.push(`  Cache: ${cache.size}/${cache.max}`);
+        }
+        const cacheTotal = cache.hits + cache.misses;
+        if (cacheTotal > 0) {
           diagnosticsLines.push(
-            `  ${c.provider}: ${c.open ? `OPEN (${Math.ceil(c.msUntilReset / 1000)}s)` : "closed"} · failures ${c.failures}`
+            `  Cache hit rate: ${Math.round((cache.hits / cacheTotal) * 100)}% (${cache.hits}/${cacheTotal})`
           );
         }
+        for (const c of circuits) {
+          if (c.open || c.failures > 0) {
+            diagnosticsLines.push(
+              `  ${c.provider}: ${c.open ? `OPEN (${Math.ceil(c.msUntilReset / 1000)}s)` : "closed"} · failures ${c.failures}`
+            );
+          }
+        }
+        if (telemetry.total > 0) {
+          diagnosticsLines.push(
+            `  Type-ahead: glossary=${telemetry.glossary} offHit=${telemetry.offlineHit} offMiss=${telemetry.offlineMiss} net=${telemetry.network}`
+          );
+        }
+        // Errors-by-tag breakdown via logger.countBy (#119). Gives the person
+        // reading the report a quick "which subsystem is on fire?" view
+        // without having to scan every recent-errors line individually.
+        const errorsByTag = logger.countBy({ levels: ["warn", "error"] }, (e) => e.tag);
+        const tagEntries = Object.entries(errorsByTag).filter(([, n]) => n > 0);
+        if (tagEntries.length > 0) {
+          tagEntries.sort((a, b) => b[1] - a[1]);
+          diagnosticsLines.push(`  Errors by tag: ${tagEntries.map(([t, n]) => `${t}=${n}`).join(", ")}`);
+        }
       }
-      if (telemetry.total > 0) {
-        diagnosticsLines.push(
-          `  Type-ahead: glossary=${telemetry.glossary} offHit=${telemetry.offlineHit} offMiss=${telemetry.offlineMiss} net=${telemetry.network}`
-        );
-      }
+    } else {
+      diagnosticsLines.push("\n(Diagnostics redacted — user opted out)");
     }
     return [
       `Live Translator crash report`,
@@ -248,7 +273,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
       recentErrors.length > 0 ? `\nRecent errors (${recentErrors.length}):` : "",
       ...recentErrors.slice(-10).map((e) => `  [${e.tag}] ${e.message}`),
     ].filter(Boolean).join("\n");
-  }, [lastCrash]);
+  }, [lastCrash, settings.shareDiagnosticsInCrashReports]);
 
   const copyCrashReport = useCallback(async () => {
     if (!lastCrash) return;
@@ -394,6 +419,21 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                 trackColor={dynamicStyles.switchTrack}
                 thumbColor={colors.destructiveText}
                 accessibilityLabel="Toggle offline speech recognition"
+              />
+            </View>
+
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Diagnostics in Crash Reports</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>Include cache and circuit breaker info when sharing crashes</Text>
+              </View>
+              <Switch
+                value={settings.shareDiagnosticsInCrashReports}
+                onValueChange={() => toggle("shareDiagnosticsInCrashReports")}
+                trackColor={dynamicStyles.switchTrack}
+                thumbColor={colors.destructiveText}
+                accessibilityLabel="Toggle diagnostics in shared crash reports"
+                accessibilityHint="When off, shared crash reports will not include translation diagnostics"
               />
             </View>
 
@@ -580,7 +620,8 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                   {/* Type-ahead telemetry — glossary/offline/network hit breakdown so
                       we can measure how often the offline short-circuit saves API
                       quota vs. hitting the network. Session-scoped (cleared when the
-                      process dies). */}
+                      process dies). Sourced from the prod-safe telemetry module so
+                      the numbers are meaningful in release builds too (#118). */}
                   {typeAheadStats && (
                     <View style={styles.telemetryBlock}>
                       <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
@@ -623,6 +664,17 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                         accessibilityLabel="Clear translation cache"
                       >
                         <Text style={[styles.crashActionText, { color: colors.dimText }]}>Clear Cache</Text>
+                      </TouchableOpacity>
+                    )}
+                    {typeAheadStats && typeAheadStats.total > 0 && (
+                      <TouchableOpacity
+                        style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
+                        onPress={handleResetTelemetry}
+                        accessibilityRole="button"
+                        accessibilityLabel="Reset type-ahead telemetry counters"
+                        accessibilityHint="Zeroes session counters without clearing cache or circuits"
+                      >
+                        <Text style={[styles.crashActionText, { color: colors.dimText }]}>Reset Telemetry</Text>
                       </TouchableOpacity>
                     )}
                   </View>
