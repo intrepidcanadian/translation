@@ -288,10 +288,16 @@ function HistoryList({
   const listRef = useRef<FlatList>(null);
 
   const keyExtractor = useCallback(
-    (item: HistoryItem, index: number) =>
-      item.timestamp
+    (item: HistoryItem, index: number) => {
+      // Prefer the stable id backfilled by migrateHistoryItem / newHistoryId
+      // so React reconciliation survives deletions and reorders. Fall back to
+      // the legacy composite key only for items that somehow slipped through
+      // without an id (shouldn't happen post-migration, defensive).
+      if (item.id) return item.id;
+      return item.timestamp
         ? `${item.timestamp}-${index}-${item.original.slice(0, 16)}`
-        : `${index}-${item.original.slice(0, 20)}`,
+        : `${index}-${item.original.slice(0, 20)}`;
+    },
     []
   );
 

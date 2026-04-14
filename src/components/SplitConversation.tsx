@@ -17,6 +17,7 @@ import { useGlossary } from "../contexts/GlossaryContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
 import { useStreak } from "../contexts/StreakContext";
 import { useTheme } from "../contexts/ThemeContext";
+import { newHistoryId } from "../types";
 
 interface SplitConversationProps {
   visible: boolean;
@@ -140,6 +141,7 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
       setHistory((prev) => [
         ...prev,
         {
+          id: newHistoryId(),
           original: final,
           translated,
           status: "ok" as const,
