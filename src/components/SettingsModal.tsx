@@ -28,7 +28,7 @@ import { logger } from "../services/logger";
 import {
   getAll as getTelemetrySnapshot,
   reset as resetTelemetry,
-  didPruneUnknownKeys,
+  prunedUnknownKeys,
 } from "../services/telemetry";
 import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
@@ -290,13 +290,23 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
             `  Type-ahead: glossary=${telemetry.glossary} offHit=${telemetry.offlineHit} offMiss=${telemetry.offlineMiss} net=${telemetry.network}`
           );
         }
-        // Surface telemetry prune events (#143). Signals a client downgrade —
-        // the persisted blob contained keys this build doesn't recognize, so
-        // the hydrator dropped them. Invaluable when debugging A/B rollouts
-        // where some users may have rolled back from a newer build.
-        if (didPruneUnknownKeys()) {
+        // Surface telemetry prune events (#143/#147). Signals a client
+        // downgrade — the persisted blob contained keys this build doesn't
+        // recognize, so the hydrator dropped them. We list the actual key
+        // names (#147) so the crash reader can tell "expected cleanup" from
+        // "major rollback": 2 forward-compat keys is routine, 10+ is alarming.
+        const prunedKeys = prunedUnknownKeys();
+        if (prunedKeys.length > 0) {
+          // Cap the rendered list so a pathological blob can't bloat the
+          // crash report; still include the count so the reader knows the
+          // full scope.
+          const MAX_RENDERED = 8;
+          const shown = prunedKeys.slice(0, MAX_RENDERED).join(", ");
+          const suffix = prunedKeys.length > MAX_RENDERED
+            ? ` (+${prunedKeys.length - MAX_RENDERED} more)`
+            : "";
           diagnosticsLines.push(
-            `  Telemetry: pruned unknown keys from persisted blob (downgrade or stale forward-compat field)`
+            `  Telemetry: pruned ${prunedKeys.length} unknown key(s) — ${shown}${suffix}`
           );
         }
         const speech = computeSpeechStats();
@@ -688,23 +698,35 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                       {s.provider}: {s.open ? `open (${Math.ceil(s.msUntilReset / 1000)}s)` : "closed"} · failures {s.failures}
                     </Text>
                   ))}
-                  {/* Telemetry prune notice (#143) — visible when the last
-                      `initTelemetry()` dropped unknown keys from the persisted
-                      blob. Typically indicates a client downgrade from a
-                      newer build; surfacing it lets us catch rollouts that
-                      accidentally removed a counter key. */}
-                  {didPruneUnknownKeys() && (
-                    <Text
-                      style={[
-                        styles.infoText,
-                        dynamicStyles.infoText,
-                        { color: colors.dimText, marginTop: 4 },
-                      ]}
-                      accessibilityLabel="Telemetry pruned unknown keys — client may have been downgraded"
-                    >
-                      ⚠ Telemetry pruned unknown keys (possible downgrade)
-                    </Text>
-                  )}
+                  {/* Telemetry prune notice (#143/#147) — visible when the
+                      last `initTelemetry()` dropped unknown keys from the
+                      persisted blob. Typically indicates a client downgrade
+                      from a newer build; surfacing it lets us catch rollouts
+                      that accidentally removed a counter key. #147 lists the
+                      actual key names so the user can tell routine cleanup
+                      from a major rollback. */}
+                  {(() => {
+                    const pruned = prunedUnknownKeys();
+                    if (pruned.length === 0) return null;
+                    const MAX_RENDERED = 3;
+                    const shown = pruned.slice(0, MAX_RENDERED).join(", ");
+                    const suffix = pruned.length > MAX_RENDERED
+                      ? ` +${pruned.length - MAX_RENDERED} more`
+                      : "";
+                    const label = `Telemetry pruned ${pruned.length} unknown key${pruned.length === 1 ? "" : "s"} — client may have been downgraded`;
+                    return (
+                      <Text
+                        style={[
+                          styles.infoText,
+                          dynamicStyles.infoText,
+                          { color: colors.dimText, marginTop: 4 },
+                        ]}
+                        accessibilityLabel={label}
+                      >
+                        {`⚠ Telemetry pruned ${pruned.length}: ${shown}${suffix}`}
+                      </Text>
+                    );
+                  })()}
                   {/* Type-ahead telemetry — glossary/offline/network hit breakdown so
                       we can measure how often the offline short-circuit saves API
                       quota vs. hitting the network. Session-scoped (cleared when the

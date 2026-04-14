@@ -1,4 +1,9 @@
-import { translateText, clearTranslationCache } from "../services/translation";
+import {
+  translateText,
+  clearTranslationCache,
+  getTranslationCacheStats,
+  resetCacheCounters,
+} from "../services/translation";
 
 // Mock fetch for MyMemory API tests
 const mockFetch = jest.fn();
@@ -117,5 +122,65 @@ describe("translateText", () => {
     const url = mockFetch.mock.calls[0][0] as string;
     expect(url).toContain(encodeURIComponent("Hello world"));
     expect(url).not.toContain(encodeURIComponent("  Hello world  "));
+  });
+});
+
+describe("translation cache hit/miss counters (#117)", () => {
+  beforeEach(() => {
+    resetCacheCounters();
+  });
+
+  it("increments misses on the first call and hits on the second", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockMyMemoryResponse("La casa es grande")
+    );
+
+    // First call: cache miss (request reaches the provider)
+    await translateText("The house is big", "en", "es", {
+      provider: "mymemory",
+    });
+
+    let stats = getTranslationCacheStats();
+    expect(stats.misses).toBe(1);
+    expect(stats.hits).toBe(0);
+    expect(stats.size).toBe(1);
+
+    // Second call with identical args: cache hit (no new fetch)
+    await translateText("The house is big", "en", "es", {
+      provider: "mymemory",
+    });
+
+    stats = getTranslationCacheStats();
+    expect(stats.hits).toBe(1);
+    expect(stats.misses).toBe(1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not count offline-dictionary short-circuits as misses", async () => {
+    // "Thank you" is in the offline phrase dictionary, so translateText
+    // returns without reaching a provider. That path must be excluded from
+    // hit/miss counters — otherwise the ratio in Settings → Translation
+    // Diagnostics would drift every time a user translates a known phrase.
+    await translateText("Thank you", "en", "es", { provider: "mymemory" });
+    const stats = getTranslationCacheStats();
+    expect(stats.hits).toBe(0);
+    expect(stats.misses).toBe(0);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("resets hit/miss counters on a full clearTranslationCache call", async () => {
+    mockFetch.mockResolvedValueOnce(mockMyMemoryResponse("Quantum foobar"));
+    // Use a phrase guaranteed NOT to be in the offline dictionary so the
+    // provider path runs and the miss counter actually increments.
+    await translateText("Quantum foobar xyzzy", "en", "es", { provider: "mymemory" });
+    expect(getTranslationCacheStats().misses).toBe(1);
+
+    clearTranslationCache();
+    const stats = getTranslationCacheStats();
+    // Counters zero alongside the cache so the denominator stays meaningful
+    // after the dashboard's "Clear Cache" action.
+    expect(stats.hits).toBe(0);
+    expect(stats.misses).toBe(0);
+    expect(stats.size).toBe(0);
   });
 });

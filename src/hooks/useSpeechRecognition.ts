@@ -232,7 +232,21 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
       "not-allowed": "Microphone permission denied.",
       "network": "Network error during speech recognition.",
     };
-    onShowError(errorMap[event.error] || `Speech error: ${event.error}`);
+    // #146: emit a tagged Speech warning into the logger ring so
+    // `logger.countByRolling({ tags: ["Speech"], levels: ["warn", "error"] })`
+    // picks up recognition failures (permission denied, network errors, no
+    // microphone, ...) in addition to the translate-failure path. Without
+    // this, a user stuck in a broken mic state would show 0 speech activity
+    // in the diagnostics dashboard even though every session was failing.
+    // Routine "no-speech" events are logged at debug level so they don't
+    // flood the error ring for silent users.
+    const code = event.error;
+    if (code === "no-speech") {
+      logger.debug("Speech", `recognition no-speech (${code})`);
+    } else {
+      logger.warn("Speech", `recognition error (${code})`);
+    }
+    onShowError(errorMap[code] || `Speech error: ${code}`);
     setIsListening(false);
   });
 
@@ -248,6 +262,10 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     try {
       const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!result.granted) {
+        // #146: a permission denial is a speech-pipeline failure too.
+        // Tagging it as Speech warn ensures rolling diagnostics reflect
+        // users who can't start speech at all, not just translate failures.
+        logger.warn("Speech", "microphone permission denied");
         Alert.alert(
           "Microphone Permission Required",
           "Live Translator needs microphone access to translate speech. Please enable it in Settings.",

@@ -98,8 +98,12 @@ let pendingDeltasCapLogged = false;
  * rolled back from a newer build" events (#143). `info`-level logger entries
  * don't land in the error ring so the prune event is otherwise invisible in
  * production crash reports.
+ *
+ * #147: holds the actual key names that were dropped — not just a boolean —
+ * so the crash report can distinguish "forward-compat field cleanup"
+ * (1–2 keys, expected) from "major downgrade" (many keys, possibly harmful).
  */
-let didPruneUnknownKeysFlag = false;
+let prunedKeyNames: string[] = [];
 
 function schedulePersist(): void {
   if (!persistEnabled) return;
@@ -128,8 +132,8 @@ export async function initTelemetry(): Promise<void> {
   if (hydrationInFlight) return hydrationInFlight;
 
   hydrationInFlight = (async () => {
-    let storedHadUnknownKeys = false;
-    didPruneUnknownKeysFlag = false;
+    const localPruned: string[] = [];
+    prunedKeyNames = [];
     try {
       const raw = await AsyncStorage.getItem(TELEMETRY_STORAGE_KEY);
       if (raw) {
@@ -140,8 +144,10 @@ export async function initTelemetry(): Promise<void> {
           const knownSet = new Set<string>(knownKeys);
           for (const k of Object.keys(stored)) {
             if (!knownSet.has(k)) {
-              storedHadUnknownKeys = true;
-              break;
+              // #147: collect every pruned key instead of a boolean so the
+              // diagnostics dashboard and crash report can list them. A prune
+              // of 2 keys is a normal cleanup; a prune of 10 is a warning.
+              localPruned.push(k);
             }
           }
           for (const key of knownKeys) {
@@ -157,14 +163,14 @@ export async function initTelemetry(): Promise<void> {
     } catch (err) {
       logger.warn("Telemetry", "Failed to hydrate telemetry counters", err);
     } finally {
-      if (storedHadUnknownKeys) {
-        didPruneUnknownKeysFlag = true;
+      if (localPruned.length > 0) {
+        prunedKeyNames = localPruned;
         // Promote to `warn` so the prune event lands in the error ring — the
         // crash report and Settings → Translation Diagnostics can then surface
         // it. An `info`-level entry would be invisible in production.
         logger.warn(
           "Telemetry",
-          "Pruning unknown keys from persisted telemetry blob"
+          `Pruning ${localPruned.length} unknown key(s) from persisted telemetry blob: ${localPruned.join(", ")}`
         );
       }
       // Discard pending deltas now that they've been folded in.
@@ -269,16 +275,30 @@ export function getTypeAheadLocalRatio(): number {
 }
 
 /**
- * Did the most recent `initTelemetry()` run find — and prune — unknown keys
- * in the persisted blob? Typically indicates a client downgrade (a newer
- * build wrote keys this build doesn't know about) or a forward-compat field
- * that was later removed. Surfaced by Settings → Translation Diagnostics and
- * the crash-report builder so the signal isn't lost in production where
- * `info`-level logs aren't ringed (#143).
+ * Names of every key that the most recent `initTelemetry()` run dropped from
+ * the persisted blob because this build doesn't recognize them. Typically
+ * indicates a client downgrade (a newer build wrote keys this build doesn't
+ * know about) or a forward-compat field that was later removed. Surfaced by
+ * Settings → Translation Diagnostics and the crash-report builder so the
+ * signal isn't lost in production where `info`-level logs aren't ringed
+ * (#143/#147).
  *
- * Returns false until hydration completes; cleared back to false on the next
- * `initTelemetry()` that finds a clean blob.
+ * Returns an empty array until hydration completes; cleared back to empty on
+ * the next `initTelemetry()` that finds a clean blob. Callers that only need
+ * a yes/no signal can use `.length > 0`.
+ *
+ * The returned array is a stable reference across renders until the next
+ * hydration — callers that want to drop into React state should copy it.
+ */
+export function prunedUnknownKeys(): readonly string[] {
+  return prunedKeyNames;
+}
+
+/**
+ * Backwards-compatible boolean shorthand around `prunedUnknownKeys()`.
+ * Prefer `prunedUnknownKeys()` in new code so the specific key names are
+ * available for display.
  */
 export function didPruneUnknownKeys(): boolean {
-  return didPruneUnknownKeysFlag;
+  return prunedKeyNames.length > 0;
 }
