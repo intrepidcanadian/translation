@@ -401,6 +401,63 @@ export function clearTranslationCache() {
   translationCache.clear();
 }
 
+// ─── Diagnostics API ──────────────────────────────────────────────────────────
+// Exported so the Settings debug panel and future unit tests can inspect and
+// reset the circuit breaker / translation cache without reaching into module
+// internals. None of these affect app behavior directly.
+
+export interface CircuitSnapshot {
+  provider: string;
+  failures: number;
+  open: boolean;
+  /** Milliseconds until auto-reset, or 0 if the breaker is closed. */
+  msUntilReset: number;
+}
+
+export interface TranslationCacheStats {
+  size: number;
+  max: number;
+  byProvider: Record<string, number>;
+}
+
+/** Snapshot of every provider circuit breaker's current state. */
+export function getCircuitSnapshots(): CircuitSnapshot[] {
+  const now = Date.now();
+  const snapshots: CircuitSnapshot[] = [];
+  for (const [provider, circuit] of circuitState.entries()) {
+    const open = circuit.openedAt !== null && now - circuit.openedAt < CIRCUIT_BREAKER_RESET_MS;
+    const msUntilReset = open && circuit.openedAt !== null
+      ? Math.max(0, CIRCUIT_BREAKER_RESET_MS - (now - circuit.openedAt))
+      : 0;
+    snapshots.push({
+      provider,
+      failures: circuit.failures,
+      open,
+      msUntilReset,
+    });
+  }
+  return snapshots;
+}
+
+/** Force every circuit breaker back to closed. Useful after diagnostics or in tests. */
+export function resetCircuits(): void {
+  for (const circuit of circuitState.values()) {
+    circuit.failures = 0;
+    circuit.openedAt = null;
+  }
+}
+
+/** Current translation cache size + per-provider breakdown. */
+export function getTranslationCacheStats(): TranslationCacheStats {
+  const byProvider: Record<string, number> = {};
+  for (const key of translationCache.keys()) {
+    // key format: `${provider}|${sourceLang}|${targetLang}|${text}`
+    const provider = key.slice(0, key.indexOf("|"));
+    byProvider[provider] = (byProvider[provider] || 0) + 1;
+  }
+  return { size: translationCache.size, max: CACHE_MAX_SIZE, byProvider };
+}
+
 export interface WordAlternative {
   translation: string;
   quality: number; // 0-100

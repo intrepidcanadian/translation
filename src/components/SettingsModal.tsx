@@ -14,7 +14,16 @@ import Slider from "@react-native-community/slider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
 import { type ThemeMode, type ThemeColors, getColors } from "../theme";
-import { isAppleTranslationAvailable, type TranslationProvider } from "../services/translation";
+import {
+  isAppleTranslationAvailable,
+  getCircuitSnapshots,
+  getTranslationCacheStats,
+  resetCircuits,
+  clearTranslationCache,
+  type CircuitSnapshot,
+  type TranslationCacheStats,
+  type TranslationProvider,
+} from "../services/translation";
 import { logger } from "../services/logger";
 import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
@@ -74,12 +83,40 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [lastCrash, setLastCrash] = useState<CrashReport | null>(null);
   const [crashCopied, setCrashCopied] = useState(false);
+  const [circuitSnapshots, setCircuitSnapshots] = useState<CircuitSnapshot[]>([]);
+  const [cacheStats, setCacheStats] = useState<TranslationCacheStats | null>(null);
 
   useEffect(() => {
     if (Platform.OS === "ios") {
       isAppleTranslationAvailable().then(setAppleAvailable);
     }
   }, []);
+
+  // Refresh live translation diagnostics every time the modal is shown.
+  // Circuit breaker state and cache stats are in-memory only, so we re-read
+  // them on open rather than subscribing.
+  useEffect(() => {
+    if (!visible) return;
+    setCircuitSnapshots(getCircuitSnapshots());
+    setCacheStats(getTranslationCacheStats());
+  }, [visible]);
+
+  const refreshDiagnostics = useCallback(() => {
+    setCircuitSnapshots(getCircuitSnapshots());
+    setCacheStats(getTranslationCacheStats());
+  }, []);
+
+  const handleResetCircuits = useCallback(() => {
+    resetCircuits();
+    refreshDiagnostics();
+    notifySuccess();
+  }, [refreshDiagnostics]);
+
+  const handleClearTranslationCache = useCallback(() => {
+    clearTranslationCache();
+    refreshDiagnostics();
+    notifySuccess();
+  }, [refreshDiagnostics]);
 
   // Load last crash report when settings opens. The stored blob runs through
   // migrateCrashReport so reports written by older app versions (pre-
@@ -397,6 +434,62 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                 }
               </Text>
             </View>
+
+            {/* Translation diagnostics — circuit breakers + cache stats */}
+            {(circuitSnapshots.length > 0 || (cacheStats && cacheStats.size > 0)) && (
+              <View style={styles.infoSection}>
+                <Text style={[styles.infoTitle, dynamicStyles.infoTitle]}>Translation Diagnostics</Text>
+                {cacheStats && (
+                  <Text style={[styles.infoText, dynamicStyles.infoText]}>
+                    Cache: {cacheStats.size}/{cacheStats.max}
+                    {Object.keys(cacheStats.byProvider).length > 0 ? " · " : ""}
+                    {Object.entries(cacheStats.byProvider).map(([p, n]) => `${p}:${n}`).join(" ")}
+                  </Text>
+                )}
+                {circuitSnapshots.map((s) => (
+                  <Text
+                    key={s.provider}
+                    style={[
+                      styles.infoText,
+                      dynamicStyles.infoText,
+                      s.open ? { color: colors.errorText } : null,
+                    ]}
+                  >
+                    {s.provider}: {s.open ? `open (${Math.ceil(s.msUntilReset / 1000)}s)` : "closed"} · failures {s.failures}
+                  </Text>
+                ))}
+                <View style={styles.crashActions}>
+                  <TouchableOpacity
+                    style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
+                    onPress={refreshDiagnostics}
+                    accessibilityRole="button"
+                    accessibilityLabel="Refresh translation diagnostics"
+                  >
+                    <Text style={[styles.crashActionText, { color: colors.primary }]}>Refresh</Text>
+                  </TouchableOpacity>
+                  {circuitSnapshots.some((s) => s.open || s.failures > 0) && (
+                    <TouchableOpacity
+                      style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
+                      onPress={handleResetCircuits}
+                      accessibilityRole="button"
+                      accessibilityLabel="Reset translation circuit breakers"
+                    >
+                      <Text style={[styles.crashActionText, { color: colors.primary }]}>Reset Circuits</Text>
+                    </TouchableOpacity>
+                  )}
+                  {cacheStats && cacheStats.size > 0 && (
+                    <TouchableOpacity
+                      style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
+                      onPress={handleClearTranslationCache}
+                      accessibilityRole="button"
+                      accessibilityLabel="Clear translation cache"
+                    >
+                      <Text style={[styles.crashActionText, { color: colors.dimText }]}>Clear Cache</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            )}
 
             {/* Debug / crash report section */}
             {(lastCrash || logger.getRecentErrors().length > 0) && (
