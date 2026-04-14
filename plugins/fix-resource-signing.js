@@ -4,7 +4,7 @@ const path = require("path");
 
 // Marker comment so the plugin is idempotent across re-runs and we can detect
 // whether a previous run already patched the Podfile.
-const MARKER = "# fix-resource-signing-plugin v2";
+const MARKER = "# fix-resource-signing-plugin v3";
 
 /**
  * Xcode 14+ requires every resource bundle target to declare a development team.
@@ -50,18 +50,24 @@ function withFixResourceBundleSigning(config) {
 
       const snippet = `
     ${MARKER}
-    # Xcode 14+ requires resource bundle targets to declare a development team.
-    # Resource bundles are loaded by the already-signed host app, so disabling
-    # code signing on them is safe and is the canonical fix.
+    # Xcode 14+ requires every target with resources to declare a development
+    # team. CocoaPods-generated targets (resource bundles AND pod framework /
+    # library targets that bundle resources) don't have one, so the archive
+    # fails with "Signing for ... requires a development team".
+    #
+    # All pods targets are statically linked into the already-signed host app
+    # (framework build type is static library), so disabling their code signing
+    # is safe. v3 broadens the filter from \`product_type == "bundle"\` to every
+    # pods target because v2's narrower filter missed the actual failing target
+    # on EAS, leaving the archive broken.
     installer.pods_project.targets.each do |target|
-      if target.respond_to?(:product_type) && target.product_type == "com.apple.product-type.bundle"
-        target.build_configurations.each do |bc|
-          bc.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
-          bc.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
-          bc.build_settings['CODE_SIGN_IDENTITY'] = ''
-          bc.build_settings['CODE_SIGN_ENTITLEMENTS'] = ''
-          bc.build_settings['EXPANDED_CODE_SIGN_IDENTITY'] = ''
-        end
+      target.build_configurations.each do |bc|
+        bc.build_settings['CODE_SIGNING_ALLOWED'] = 'NO'
+        bc.build_settings['CODE_SIGNING_REQUIRED'] = 'NO'
+        bc.build_settings['CODE_SIGN_IDENTITY'] = ''
+        bc.build_settings['CODE_SIGN_ENTITLEMENTS'] = ''
+        bc.build_settings['EXPANDED_CODE_SIGN_IDENTITY'] = ''
+        bc.build_settings['DEVELOPMENT_TEAM'] = ''
       end
     end
 `;
