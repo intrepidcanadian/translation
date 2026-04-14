@@ -19,6 +19,7 @@ import TranslationBubble from "./TranslationBubble";
 import ChatBubble from "./ChatBubble";
 import { Platform } from "react-native";
 import { useHistoryActionsContext } from "../contexts/HistoryActionsContext";
+import { useHistoryDisplay } from "../contexts/HistoryDisplayContext";
 
 type DynamicFontSizes = {
   original: { fontSize: number };
@@ -32,23 +33,9 @@ interface HistoryListProps {
   history: HistoryItem[];
   filteredHistory: HistoryItem[];
   colors: ThemeColors;
-  dynamicFontSizes: {
-    original: { fontSize: number };
-    translated: { fontSize: number };
-    liveOriginal: { fontSize: number };
-    liveTranslated: { fontSize: number };
-    chatText: { fontSize: number };
-  };
+  dynamicFontSizes: DynamicFontSizes;
   fontScale: number;
-  showRomanization: boolean;
-  confidenceThreshold: number;
   conversationMode: boolean;
-  selectMode: boolean;
-  selectedIndices: Set<number>;
-  searchQuery: string;
-  showFavoritesOnly: boolean;
-  hasFavorites: boolean;
-  hasMoreHistory: boolean;
   copiedText: string | null;
   speakingText: string | null;
   sourceLang: { code: string; name: string; speechCode: string };
@@ -59,7 +46,6 @@ interface HistoryListProps {
   translatedText: string;
   lastDetectedLang: string | null | undefined;
   skeletonAnim: Animated.Value;
-  autoScroll: boolean;
   phraseOfTheDay: {
     potd: { phrase: OfflinePhrase; category: PhraseCategory };
     categoryInfo?: { key: PhraseCategory; label: string; icon: string };
@@ -267,15 +253,7 @@ function HistoryList({
   colors,
   dynamicFontSizes,
   fontScale,
-  showRomanization,
-  confidenceThreshold,
   conversationMode,
-  selectMode,
-  selectedIndices,
-  searchQuery,
-  showFavoritesOnly,
-  hasFavorites,
-  hasMoreHistory,
   copiedText,
   speakingText,
   sourceLang,
@@ -286,7 +264,6 @@ function HistoryList({
   translatedText,
   lastDetectedLang,
   skeletonAnim,
-  autoScroll,
   phraseOfTheDay,
 }: HistoryListProps) {
   const {
@@ -297,6 +274,17 @@ function HistoryList({
     onToggleFavoritesOnly,
     onLoadMoreHistory,
   } = useHistoryActionsContext();
+  const {
+    searchQuery,
+    showFavoritesOnly,
+    hasFavorites,
+    hasMoreHistory,
+    selectMode,
+    selectedIndices,
+    confidenceThreshold,
+    autoScroll,
+    showRomanization,
+  } = useHistoryDisplay();
   const listRef = useRef<FlatList>(null);
 
   const keyExtractor = useCallback(

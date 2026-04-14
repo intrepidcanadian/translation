@@ -35,6 +35,7 @@ import VisualCardsModal from "../components/VisualCardsModal";
 import TranslationShareCard from "../components/TranslationShareCard";
 import PhrasebookModal from "../components/PhrasebookModal";
 import { HistoryActionsProvider, type HistoryActions } from "../contexts/HistoryActionsContext";
+import { HistoryDisplayProvider, type HistoryDisplayState } from "../contexts/HistoryDisplayContext";
 import {
   translateText,
   LANGUAGES,
@@ -104,14 +105,21 @@ export default function TranslateScreen() {
     () => savedPairs.some((p) => p.sourceCode === sourceLang.code && p.targetCode === targetLang.code),
     [savedPairs, sourceLang.code, targetLang.code]
   );
+  // Snapshot-ref pattern so toggleSavePair has an empty deps array and stays
+  // identity-stable — otherwise every savedPairs / sourceLang / targetLang change
+  // re-creates the callback and breaks React.memo on downstream components that
+  // receive it as a prop.
+  const toggleSavePairRef = useRef({ sourceCode: sourceLang.code, targetCode: targetLang.code, isCurrentPairSaved, addSavedPair, removeSavedPair });
+  toggleSavePairRef.current = { sourceCode: sourceLang.code, targetCode: targetLang.code, isCurrentPairSaved, addSavedPair, removeSavedPair };
   const toggleSavePair = useCallback(() => {
-    if (sourceLang.code === "autodetect") return;
-    if (isCurrentPairSaved) {
-      removeSavedPair(sourceLang.code, targetLang.code);
+    const snap = toggleSavePairRef.current;
+    if (snap.sourceCode === "autodetect") return;
+    if (snap.isCurrentPairSaved) {
+      snap.removeSavedPair(snap.sourceCode, snap.targetCode);
     } else {
-      addSavedPair(sourceLang.code, targetLang.code);
+      snap.addSavedPair(snap.sourceCode, snap.targetCode);
     }
-  }, [sourceLang.code, targetLang.code, isCurrentPairSaved, addSavedPair, removeSavedPair]);
+  }, []);
   const { glossaryLookup } = useGlossary();
   const { history, setHistory, hasMoreHistory, loadMoreHistory, updateWidgetData } = useTranslationData();
   const { updateStreak } = useStreak();
@@ -241,6 +249,14 @@ export default function TranslateScreen() {
   const [showVisualCards, setShowVisualCards] = useState(false);
   const [showPhrasebook, setShowPhrasebook] = useState(false);
   const [shareCardIndex, setShareCardIndex] = useState<number | null>(null);
+  // Memoize the share-card item lookup so TranslationShareCard receives stable
+  // field references and skips re-renders when unrelated history updates happen.
+  // Previously the JSX did history[shareCardIndex].original/.translated/… lookups
+  // six times inline on every render while the modal was open.
+  const shareCardItem = useMemo(
+    () => (shareCardIndex !== null ? history[shareCardIndex] ?? null : null),
+    [shareCardIndex, history]
+  );
   const typedTranslateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Gesture shortcuts: swipe up → phrasebook, swipe down → mic toggle, two-finger tap → swap languages
@@ -454,6 +470,30 @@ export default function TranslateScreen() {
   const onClosePhrasebook = useCallback(() => setShowPhrasebook(false), []);
   const onCloseShareCard = useCallback(() => setShareCardIndex(null), []);
 
+  // Display state for HistoryList — published via context so HistoryList doesn't
+  // have to accept nine separate props for filter/select/display flags.
+  const historyDisplayValue = useMemo<HistoryDisplayState>(() => ({
+    searchQuery,
+    showFavoritesOnly,
+    hasFavorites,
+    hasMoreHistory,
+    selectMode,
+    selectedIndices,
+    confidenceThreshold: settings.confidenceThreshold,
+    autoScroll: settings.autoScroll,
+    showRomanization: settings.showRomanization,
+  }), [
+    searchQuery,
+    showFavoritesOnly,
+    hasFavorites,
+    hasMoreHistory,
+    selectMode,
+    selectedIndices,
+    settings.confidenceThreshold,
+    settings.autoScroll,
+    settings.showRomanization,
+  ]);
+
   // Memoized history actions for context — avoids re-creating object each render
   const historyActionsValue = useMemo<HistoryActions>(() => ({
     onDeleteHistoryItem: deleteHistoryItem,
@@ -483,8 +523,25 @@ export default function TranslateScreen() {
     trackRecentLang(lang.code);
   }, [setTargetLang, trackRecentLang]);
 
+  // Same snapshot-ref pattern as toggleSavePair so FlatList doesn't invalidate
+  // every row when savedPairs / language / theme color changes.
+  const savedPairRenderRef = useRef({
+    sourceCode: sourceLang.code,
+    targetCode: targetLang.code,
+    colors,
+    applyPair,
+    removeSavedPair,
+  });
+  savedPairRenderRef.current = {
+    sourceCode: sourceLang.code,
+    targetCode: targetLang.code,
+    colors,
+    applyPair,
+    removeSavedPair,
+  };
   const renderSavedPairItem = useCallback(({ item }: { item: { sourceCode: string; targetCode: string } }) => {
-    const isActive = item.sourceCode === sourceLang.code && item.targetCode === targetLang.code;
+    const snap = savedPairRenderRef.current;
+    const isActive = item.sourceCode === snap.sourceCode && item.targetCode === snap.targetCode;
     const srcLang = LANGUAGE_MAP.get(item.sourceCode);
     const tgtLang_ = LANGUAGE_MAP.get(item.targetCode);
     const srcName = srcLang?.name || item.sourceCode;
@@ -493,18 +550,18 @@ export default function TranslateScreen() {
     const tgtFlag = tgtLang_?.flag || "";
     return (
       <TouchableOpacity
-        style={[styles.savedPairPill, { backgroundColor: colors.cardBg, borderColor: isActive ? colors.primary : colors.border }, isActive && styles.savedPairPillActive]}
-        onPress={() => applyPair(item.sourceCode, item.targetCode)}
-        onLongPress={() => removeSavedPair(item.sourceCode, item.targetCode)}
+        style={[styles.savedPairPill, { backgroundColor: snap.colors.cardBg, borderColor: isActive ? snap.colors.primary : snap.colors.border }, isActive && styles.savedPairPillActive]}
+        onPress={() => snap.applyPair(item.sourceCode, item.targetCode)}
+        onLongPress={() => snap.removeSavedPair(item.sourceCode, item.targetCode)}
         accessibilityRole="button"
         accessibilityLabel={`Switch to ${srcName} to ${tgtName}. Long press to remove.`}
       >
-        <Text style={[styles.savedPairText, { color: isActive ? colors.primary : colors.mutedText }]}>
+        <Text style={[styles.savedPairText, { color: isActive ? snap.colors.primary : snap.colors.mutedText }]}>
           {srcFlag} {srcName.slice(0, 3)} → {tgtFlag} {tgtName.slice(0, 3)}
         </Text>
       </TouchableOpacity>
     );
-  }, [sourceLang.code, targetLang.code, colors.cardBg, colors.primary, colors.border, colors.mutedText, applyPair, removeSavedPair]);
+  }, []);
 
   return (
     <>
@@ -647,34 +704,27 @@ export default function TranslateScreen() {
 
             {/* History + live translation */}
             <HistoryActionsProvider value={historyActionsValue}>
-              <HistoryList
-                history={history}
-                filteredHistory={filteredHistory}
-                colors={colors}
-                dynamicFontSizes={dynamicFontSizes}
-                fontScale={fontScale}
-                showRomanization={settings.showRomanization}
-                confidenceThreshold={settings.confidenceThreshold}
-                conversationMode={conversationMode}
-                selectMode={selectMode}
-                selectedIndices={selectedIndices}
-                searchQuery={searchQuery}
-                showFavoritesOnly={showFavoritesOnly}
-                hasFavorites={hasFavorites}
-                hasMoreHistory={hasMoreHistory}
-                copiedText={copiedText}
-                speakingText={speakingText}
-                sourceLang={sourceLang}
-                targetLang={targetLang}
-                isListening={isListening}
-                isTranslating={isTranslating}
-                liveText={liveText}
-                translatedText={translatedText}
-                lastDetectedLang={lastDetectedLang}
-                skeletonAnim={skeletonAnim}
-                autoScroll={settings.autoScroll}
-                phraseOfTheDay={phraseOfTheDay}
-              />
+              <HistoryDisplayProvider value={historyDisplayValue}>
+                <HistoryList
+                  history={history}
+                  filteredHistory={filteredHistory}
+                  colors={colors}
+                  dynamicFontSizes={dynamicFontSizes}
+                  fontScale={fontScale}
+                  conversationMode={conversationMode}
+                  copiedText={copiedText}
+                  speakingText={speakingText}
+                  sourceLang={sourceLang}
+                  targetLang={targetLang}
+                  isListening={isListening}
+                  isTranslating={isTranslating}
+                  liveText={liveText}
+                  translatedText={translatedText}
+                  lastDetectedLang={lastDetectedLang}
+                  skeletonAnim={skeletonAnim}
+                  phraseOfTheDay={phraseOfTheDay}
+                />
+              </HistoryDisplayProvider>
             </HistoryActionsProvider>
 
             {/* Undo delete toast */}
@@ -750,15 +800,15 @@ export default function TranslateScreen() {
         onCopy={copyToClipboard}
         onSpeak={speakText}
       />
-      {shareCardIndex !== null && history[shareCardIndex] && (
+      {shareCardItem && (
         <TranslationShareCard
           visible
           onClose={onCloseShareCard}
-          original={history[shareCardIndex].original}
-          translated={history[shareCardIndex].translated}
-          sourceLangCode={history[shareCardIndex].sourceLangCode}
-          targetLangCode={history[shareCardIndex].targetLangCode}
-          confidence={history[shareCardIndex].confidence}
+          original={shareCardItem.original}
+          translated={shareCardItem.translated}
+          sourceLangCode={shareCardItem.sourceLangCode}
+          targetLangCode={shareCardItem.targetLangCode}
+          confidence={shareCardItem.confidence}
           colors={colors}
         />
       )}

@@ -1,8 +1,18 @@
 import React, { Component, type ErrorInfo, type ReactNode } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Appearance, Alert } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Appearance, Alert, Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
 import { getColors, type ThemeMode } from "../theme";
 import { logger } from "../services/logger";
+
+// Read once at module load. expo-constants surfaces the app.json version + the
+// native build number (iOS CFBundleVersion / Android versionCode) which is what
+// we actually need when triaging a crash report.
+const APP_VERSION = Constants.expoConfig?.version ?? "unknown";
+const BUILD_NUMBER =
+  (Platform.OS === "ios"
+    ? Constants.expoConfig?.ios?.buildNumber
+    : Constants.expoConfig?.android?.versionCode?.toString()) ?? "unknown";
 
 const LAST_CRASH_KEY = "@live_translator_last_crash";
 // Rolling timestamps of recent crashes — when the app repeatedly crashes in a short
@@ -11,9 +21,23 @@ const LAST_CRASH_KEY = "@live_translator_last_crash";
 const RECENT_CRASHES_KEY = "@live_translator_recent_crashes";
 const CRASH_LOOP_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const CRASH_LOOP_THRESHOLD = 3;
-// Keys we must preserve when wiping state, so a user's reset doesn't re-trigger
-// onboarding or wipe their crash report before they can share it.
-const PRESERVED_KEYS = new Set<string>([LAST_CRASH_KEY, RECENT_CRASHES_KEY]);
+// Crash report keys must always survive any reset so the user can still share the
+// diagnostic report after recovering.
+const CRASH_REPORT_KEYS = new Set<string>([LAST_CRASH_KEY, RECENT_CRASHES_KEY]);
+// "Safe" keys that hold the user's own content and preferences. A soft reset keeps
+// these — only transient / cache keys get cleared. A full reset wipes everything
+// except the crash report keys.
+const USER_DATA_KEYS = new Set<string>([
+  "translation_history",
+  "user_glossary",
+  "saved_language_pairs",
+  "recent_languages",
+  "usage_streak",
+  "app_settings",
+  "onboarding_completed",
+  "rating_prompted",
+  "translation_count",
+]);
 
 interface Props {
   children: ReactNode;
@@ -38,12 +62,17 @@ export default class ErrorBoundary extends Component<Props, State> {
 
     const now = Date.now();
 
-    // Persist crash info for debugging across sessions
+    // Persist crash info for debugging across sessions. Stamping app version +
+    // build number here means shared reports always reveal which build crashed,
+    // without the user having to remember or look it up.
     const crashReport = {
       message: error.message,
       stack: error.stack?.slice(0, 500),
       componentStack: info.componentStack?.slice(0, 500),
       timestamp: now,
+      appVersion: APP_VERSION,
+      buildNumber: BUILD_NUMBER,
+      platform: `${Platform.OS} ${Platform.Version}`,
     };
     try {
       await AsyncStorage.setItem(LAST_CRASH_KEY, JSON.stringify(crashReport));
@@ -70,30 +99,62 @@ export default class ErrorBoundary extends Component<Props, State> {
     this.setState({ hasError: false, error: null });
   };
 
+  // Tiered reset: start with a soft clear (transient/cache only) and escalate to a
+  // full wipe only if the user opts in. Most crash loops come from a single
+  // corrupted cache blob (e.g. a malformed offline queue), so the soft path
+  // usually recovers without losing the user's history, glossary, or pairs.
   handleResetData = () => {
     Alert.alert(
-      "Reset app data?",
-      "This clears cached settings and history but preserves the crash report so you can still share it. The app will reload.",
+      "Recover from crashes?",
+      "Clear caches keeps your history, glossary, saved pairs, and settings and only drops transient data (offline queue, widget cache). If that doesn't help, choose Reset Everything.",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Reset",
+          text: "Clear Caches",
+          onPress: () => this.performReset("soft"),
+        },
+        {
+          text: "Reset Everything",
           style: "destructive",
-          onPress: async () => {
-            try {
-              const keys = await AsyncStorage.getAllKeys();
-              const toRemove = keys.filter((k) => !PRESERVED_KEYS.has(k));
-              if (toRemove.length > 0) await AsyncStorage.multiRemove(toRemove);
-              await AsyncStorage.removeItem(RECENT_CRASHES_KEY);
-              logger.clearRecentErrors();
-              this.setState({ hasError: false, error: null, crashLoopDetected: false });
-            } catch (err) {
-              logger.error("Storage", "Failed to reset app data", err);
-            }
-          },
+          onPress: () => this.confirmFullReset(),
         },
       ],
     );
+  };
+
+  confirmFullReset = () => {
+    Alert.alert(
+      "Reset everything?",
+      "This wipes your history, glossary, saved pairs, streak, and settings. The crash report is preserved so you can still share it. This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset Everything",
+          style: "destructive",
+          onPress: () => this.performReset("full"),
+        },
+      ],
+    );
+  };
+
+  performReset = async (mode: "soft" | "full") => {
+    try {
+      const keys = await AsyncStorage.getAllKeys();
+      const toRemove = keys.filter((k) => {
+        if (CRASH_REPORT_KEYS.has(k)) return false; // always preserve crash report
+        if (mode === "full") return true;
+        // Soft reset: keep user data and preferences, drop everything else
+        return !USER_DATA_KEYS.has(k);
+      });
+      if (toRemove.length > 0) await AsyncStorage.multiRemove(toRemove);
+      // Always reset the crash loop counter so the user gets a clean runway
+      await AsyncStorage.removeItem(RECENT_CRASHES_KEY);
+      logger.clearRecentErrors();
+      logger.warn("Storage", `App data reset (${mode})`, { cleared: toRemove.length });
+      this.setState({ hasError: false, error: null, crashLoopDetected: false });
+    } catch (err) {
+      logger.error("Storage", "Failed to reset app data", err);
+    }
   };
 
   render() {
@@ -107,6 +168,9 @@ export default class ErrorBoundary extends Component<Props, State> {
           <Text style={[styles.title, { color: colors.primaryText }]}>Something went wrong</Text>
           <Text style={[styles.message, { color: colors.mutedText }]}>
             {error?.message || "An unexpected error occurred"}
+          </Text>
+          <Text style={[styles.versionTag, { color: colors.dimText }]}>
+            v{APP_VERSION} ({BUILD_NUMBER}) · {Platform.OS}
           </Text>
           {crashLoopDetected && (
             <Text style={[styles.warningBanner, { color: colors.errorText }]}>
@@ -126,10 +190,10 @@ export default class ErrorBoundary extends Component<Props, State> {
               style={[styles.buttonSecondary, { borderColor: colors.errorBorder }]}
               onPress={this.handleResetData}
               accessibilityRole="button"
-              accessibilityLabel="Reset app data to recover from repeated crashes"
-              accessibilityHint="Clears cached settings and history but preserves the crash report"
+              accessibilityLabel="Recover from repeated crashes"
+              accessibilityHint="Offers a soft clear of caches first, then a full reset if needed"
             >
-              <Text style={[styles.buttonText, { color: colors.errorText }]}>Reset App Data</Text>
+              <Text style={[styles.buttonText, { color: colors.errorText }]}>Recover from Crashes</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -159,8 +223,14 @@ const styles = StyleSheet.create({
   message: {
     fontSize: 14,
     textAlign: "center",
-    marginBottom: 24,
+    marginBottom: 8,
     lineHeight: 20,
+  },
+  versionTag: {
+    fontSize: 11,
+    textAlign: "center",
+    marginBottom: 24,
+    fontVariant: ["tabular-nums"],
   },
   warningBanner: {
     fontSize: 13,

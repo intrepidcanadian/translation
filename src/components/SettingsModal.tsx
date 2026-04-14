@@ -71,7 +71,14 @@ interface Props {
 function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const colors = useMemo(() => getColors(settings.theme), [settings.theme]);
   const [appleAvailable, setAppleAvailable] = useState(false);
-  const [lastCrash, setLastCrash] = useState<{ message: string; timestamp: number; stack?: string } | null>(null);
+  const [lastCrash, setLastCrash] = useState<{
+    message: string;
+    timestamp: number;
+    stack?: string;
+    appVersion?: string;
+    buildNumber?: string;
+    platform?: string;
+  } | null>(null);
   const [crashCopied, setCrashCopied] = useState(false);
 
   useEffect(() => {
@@ -91,9 +98,17 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const buildCrashReport = useCallback(() => {
     if (!lastCrash) return "";
     const recentErrors = logger.getRecentErrors();
+    // Prefer the version stamped on the crash record (captured at crash time);
+    // fall back to the live Platform info if the crash was saved before we
+    // started recording it.
+    const platformLine = lastCrash.platform ?? `${Platform.OS} ${Platform.Version}`;
+    const versionLine = lastCrash.appVersion
+      ? `Version: ${lastCrash.appVersion}${lastCrash.buildNumber ? ` (${lastCrash.buildNumber})` : ""}`
+      : "";
     return [
       `Live Translator crash report`,
-      `Platform: ${Platform.OS} ${Platform.Version}`,
+      versionLine,
+      `Platform: ${platformLine}`,
       `Crash: ${lastCrash.message}`,
       `Time: ${new Date(lastCrash.timestamp).toLocaleString()}`,
       lastCrash.stack ? `Stack: ${lastCrash.stack}` : "",
