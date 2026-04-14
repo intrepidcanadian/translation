@@ -233,6 +233,28 @@ const CATEGORIZED_PHRASES: Record<PhraseCategory, OfflinePhrase[]> = {
 // Flat list for backward compatibility with offlineTranslate
 const ALL_PHRASES: OfflinePhrase[] = Object.values(CATEGORIZED_PHRASES).flat();
 
+// Precomputed normalized lookup index: Map<`${lang}|${normalized}`, OfflinePhrase>
+// Built once at module load so offlineTranslate becomes O(1) instead of
+// iterating every phrase + re-normalizing every language value on each call.
+// A user typing 10 characters through type-ahead would otherwise trigger ~700
+// string normalizations per debounce — now it's a single Map lookup per lang.
+const PHRASE_INDEX: Map<string, OfflinePhrase> = new Map();
+const WORD_INDEX: Map<string, OfflinePhrase> = new Map();
+// Largest phrase length in any language — used to short-circuit the dictionary
+// lookup when the user's input is clearly longer than anything we could match.
+let MAX_PHRASE_LENGTH = 0;
+let MAX_WORD_LENGTH = 0;
+
+const NORMALIZE_TRAILING_PUNCT = /[?!.,。？！、]+$/;
+
+function normalizeForLookup(s: string): string {
+  return s.trim().toLowerCase().replace(NORMALIZE_TRAILING_PUNCT, "");
+}
+
+function indexKey(lang: string, normalized: string): string {
+  return `${lang}|${normalized}`;
+}
+
 export function getPhrasesForCategory(category: PhraseCategory): OfflinePhrase[] {
   return CATEGORIZED_PHRASES[category] || [];
 }
@@ -307,11 +329,41 @@ const COMMON_WORDS: OfflinePhrase[] = [
   { en: "wait", es: "esperar", fr: "attendre", de: "warten", it: "aspettare", pt: "esperar", ja: "待つ", zh: "等", ko: "기다리다", ar: "انتظر" },
 ];
 
+// Build normalized lookup indices for O(1) offline dictionary lookups.
+// Populated once at module load; avoids re-normalizing 700+ strings per call.
+for (const phrase of ALL_PHRASES) {
+  for (const lang of SUPPORTED_OFFLINE) {
+    const value = phrase[lang];
+    if (!value) continue;
+    const normalized = normalizeForLookup(value);
+    if (!normalized) continue;
+    // First writer wins — later duplicates (e.g. "How much?" in travel +
+    // shopping) defer to the earlier phrase, matching the pre-index behavior.
+    const key = indexKey(lang, normalized);
+    if (!PHRASE_INDEX.has(key)) PHRASE_INDEX.set(key, phrase);
+    if (normalized.length > MAX_PHRASE_LENGTH) MAX_PHRASE_LENGTH = normalized.length;
+  }
+}
+for (const word of COMMON_WORDS) {
+  for (const lang of SUPPORTED_OFFLINE) {
+    const value = word[lang];
+    if (!value) continue;
+    const normalized = normalizeForLookup(value);
+    if (!normalized) continue;
+    const key = indexKey(lang, normalized);
+    if (!WORD_INDEX.has(key)) WORD_INDEX.set(key, word);
+    if (normalized.length > MAX_WORD_LENGTH) MAX_WORD_LENGTH = normalized.length;
+  }
+}
+
 /**
  * Attempt to translate text using the built-in offline phrase dictionary.
  * Returns null if no match is found (caller should fall back to online).
  * Matching is case-insensitive and ignores trailing punctuation.
  * Tries exact phrase match first, then falls back to single-word dictionary.
+ *
+ * Lookup is O(1) via precomputed PHRASE_INDEX/WORD_INDEX; bails out early for
+ * inputs that are obviously longer than anything in the dictionary.
  */
 export function offlineTranslate(
   text: string,
@@ -324,37 +376,30 @@ export function offlineTranslate(
   if (!SUPPORTED_OFFLINE.includes(srcLang) && sourceLang !== "autodetect") return null;
   if (!SUPPORTED_OFFLINE.includes(tgtLang)) return null;
 
-  const normalized = text.trim().toLowerCase().replace(/[?!.,。？！、]+$/, "");
+  const normalized = normalizeForLookup(text);
+  if (!normalized) return null;
 
-  // Search categorized phrases first (exact phrase match)
-  for (const phrase of ALL_PHRASES) {
-    if (sourceLang === "autodetect") {
-      for (const lang of SUPPORTED_OFFLINE) {
-        if (phrase[lang].toLowerCase().replace(/[?!.,。？！、]+$/, "") === normalized) {
-          return phrase[tgtLang] || null;
-        }
-      }
-    } else {
-      const sourceValue = phrase[srcLang];
-      if (sourceValue && sourceValue.toLowerCase().replace(/[?!.,。？！、]+$/, "") === normalized) {
-        return phrase[tgtLang] || null;
-      }
+  // Short-circuit: anything longer than our longest dictionary entry can't
+  // possibly match. Skips ~80 Map lookups for every typed sentence.
+  const maxLookup = Math.max(MAX_PHRASE_LENGTH, MAX_WORD_LENGTH);
+  if (normalized.length > maxLookup) return null;
+
+  // Phrase lookup first — try the declared source language, then fall back
+  // across supported languages only when auto-detect is in use.
+  const phraseLangs: SupportedLang[] =
+    sourceLang === "autodetect" ? SUPPORTED_OFFLINE : [srcLang];
+  for (const lang of phraseLangs) {
+    const phrase = PHRASE_INDEX.get(indexKey(lang, normalized));
+    if (phrase) {
+      return phrase[tgtLang] || null;
     }
   }
 
-  // Fall back to common words dictionary (single word match)
-  for (const word of COMMON_WORDS) {
-    if (sourceLang === "autodetect") {
-      for (const lang of SUPPORTED_OFFLINE) {
-        if (word[lang].toLowerCase() === normalized) {
-          return word[tgtLang] || null;
-        }
-      }
-    } else {
-      const sourceValue = word[srcLang];
-      if (sourceValue && sourceValue.toLowerCase() === normalized) {
-        return word[tgtLang] || null;
-      }
+  // Common-word fallback — same approach at word granularity.
+  for (const lang of phraseLangs) {
+    const word = WORD_INDEX.get(indexKey(lang, normalized));
+    if (word) {
+      return word[tgtLang] || null;
     }
   }
 

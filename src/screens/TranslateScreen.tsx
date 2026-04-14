@@ -44,7 +44,7 @@ import {
   type Language,
 } from "../services/translation";
 import { logger } from "../services/logger";
-import { PHRASE_CATEGORIES, getPhraseOfTheDay } from "../services/offlinePhrases";
+import { PHRASE_CATEGORIES, getPhraseOfTheDay, offlineTranslate } from "../services/offlinePhrases";
 import { FONT_SIZE_SCALES } from "../components/SettingsModal";
 import { useRoute } from "@react-navigation/native";
 import { useSettings } from "../contexts/SettingsContext";
@@ -54,7 +54,7 @@ import { useTranslationData } from "../contexts/TranslationDataContext";
 import { useStreak } from "../contexts/StreakContext";
 import { useOfflineQueue } from "../contexts/OfflineQueueContext";
 import { useTheme } from "../contexts/ThemeContext";
-import type { HistoryItem } from "../types";
+import { newHistoryId, type HistoryItem } from "../types";
 import type { RootTabParamList } from "../navigation/types";
 
 // Consolidated UI panel state to reduce useState count
@@ -138,7 +138,7 @@ export default function TranslateScreen() {
           updated[pendingIdx] = { ...updated[pendingIdx], original, translated: translatedText, status: "ok" as const };
           return updated;
         }
-        return [...prev, { original, translated: translatedText, status: "ok" as const, timestamp: Date.now() }];
+        return [...prev, { id: newHistoryId(), original, translated: translatedText, status: "ok" as const, timestamp: Date.now() }];
       });
     });
     return unsubscribe;
@@ -197,7 +197,7 @@ export default function TranslateScreen() {
   const onTranslationComplete = useCallback((original: string, translated: string, speaker: "A" | "B" | undefined, confidence?: number, detectedLang?: string) => {
     setHistory((prev) => [
       ...prev,
-      { original, translated, status: "ok" as const, speaker, confidence, detectedLang, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() },
+      { id: newHistoryId(), original, translated, status: "ok" as const, speaker, confidence, detectedLang, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() },
     ]);
     maybeRequestReview();
     updateStreak();
@@ -318,14 +318,25 @@ export default function TranslateScreen() {
     if (typedTranslateTimer.current) clearTimeout(typedTranslateTimer.current);
     typedAbortRef.current?.abort();
     const text = typedText.trim();
-    if (!text || isListening) {
+    // Guard: skip type-ahead for empty / whitespace / single-character input to
+    // save API quota and avoid noisy single-letter "translations".
+    if (!text || text.length < 2 || isListening) {
       setTypedPreview("");
       return;
     }
     typedTranslateTimer.current = setTimeout(async () => {
+      // Glossary short-circuit — works offline, no network needed.
       const glossaryMatch = glossaryLookup(text, sourceLang.code, targetLang.code);
       if (glossaryMatch) {
         setTypedPreview(glossaryMatch);
+        return;
+      }
+      // Offline short-circuit — when disconnected, try the offline phrase
+      // dictionary directly. If nothing matches, show nothing instead of
+      // firing a network request that will fail and spam the error banner.
+      if (isOffline) {
+        const offlineHit = offlineTranslate(text, sourceLang.code, targetLang.code);
+        setTypedPreview(offlineHit ?? "");
         return;
       }
       const controller = new AbortController();
@@ -350,7 +361,7 @@ export default function TranslateScreen() {
       if (typedTranslateTimer.current) clearTimeout(typedTranslateTimer.current);
       typedAbortRef.current?.abort();
     };
-  }, [typedText, sourceLang.code, targetLang.code, settings.translationProvider, glossaryLookup, isListening, showError]);
+  }, [typedText, sourceLang.code, targetLang.code, settings.translationProvider, glossaryLookup, isListening, isOffline, showError]);
 
   // Stable ref snapshot so submitTypedText can have an empty useCallback deps array.
   // Previously submitTypedText depended on 12 values, breaking React.memo downstream
@@ -394,7 +405,7 @@ export default function TranslateScreen() {
 
     if (snap.isOffline) {
       snap.addToOfflineQueue({ text, sourceLang: snap.sourceLangCode, targetLang: snap.targetLangCode, timestamp: Date.now() });
-      snap.setHistory((prev) => [...prev, { original: text, translated: "Queued — will translate when online", status: "pending" as const, sourceLangCode: snap.sourceLangCode, targetLangCode: snap.targetLangCode, timestamp: Date.now() }]);
+      snap.setHistory((prev) => [...prev, { id: newHistoryId(), original: text, translated: "Queued — will translate when online", status: "pending" as const, sourceLangCode: snap.sourceLangCode, targetLangCode: snap.targetLangCode, timestamp: Date.now() }]);
       notifyWarning();
       return;
     }
@@ -411,7 +422,7 @@ export default function TranslateScreen() {
         ? { translatedText: glossaryMatch, confidence: 1.0 }
         : await translateText(text, snap.sourceLangCode, snap.targetLangCode, { signal: controller.signal, provider: snap.translationProvider });
       if (!controller.signal.aborted) {
-        snap.setHistory((prev) => [...prev, { original: text, translated: result.translatedText, status: "ok" as const, confidence: result.confidence, sourceLangCode: snap.sourceLangCode, targetLangCode: snap.targetLangCode, detectedLang: result.detectedLanguage, timestamp: Date.now() }]);
+        snap.setHistory((prev) => [...prev, { id: newHistoryId(), original: text, translated: result.translatedText, status: "ok" as const, confidence: result.confidence, sourceLangCode: snap.sourceLangCode, targetLangCode: snap.targetLangCode, detectedLang: result.detectedLanguage, timestamp: Date.now() }]);
         snap.maybeRequestReview();
         snap.updateStreak();
         snap.updateWidgetData(text, result.translatedText, snap.sourceLangCode, snap.targetLangCode);
@@ -420,7 +431,7 @@ export default function TranslateScreen() {
       if (!controller.signal.aborted) {
         const msg = err instanceof Error ? err.message : "Translation failed";
         snap.showError(msg);
-        snap.setHistory((prev) => [...prev, { original: text, translated: msg, status: "error" as const, sourceLangCode: snap.sourceLangCode, targetLangCode: snap.targetLangCode, timestamp: Date.now() }]);
+        snap.setHistory((prev) => [...prev, { id: newHistoryId(), original: text, translated: msg, status: "error" as const, sourceLangCode: snap.sourceLangCode, targetLangCode: snap.targetLangCode, timestamp: Date.now() }]);
       }
     } finally {
       if (!controller.signal.aborted) {
