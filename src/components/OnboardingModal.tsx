@@ -27,7 +27,7 @@ const steps = [
   { icon: "⚙️", title: "Customize Everything", desc: "Adjust font size, speech speed, theme, haptics, and even switch translation providers in Settings." },
 ];
 
-export default function OnboardingModal({ visible, onComplete, colors }: OnboardingModalProps) {
+function OnboardingModalBase({ visible, onComplete, colors }: OnboardingModalProps) {
   const [step, setStep] = useState(0);
 
   const current = steps[step];
@@ -169,3 +169,8 @@ const styles = StyleSheet.create({
     fontWeight: "700" as const,
   },
 });
+
+// Memoized so parent theme/state bumps don't re-render the modal when it's
+// hidden (visible=false path is cheap but still walks props).
+const OnboardingModal = React.memo(OnboardingModalBase);
+export default OnboardingModal;

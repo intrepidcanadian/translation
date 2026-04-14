@@ -8,7 +8,7 @@ interface SwipeableRowProps {
   colors?: ThemeColors;
 }
 
-export default function SwipeableRow({ onDelete, children, colors }: SwipeableRowProps) {
+function SwipeableRowBase({ onDelete, children, colors }: SwipeableRowProps) {
   const translateX = useRef(new Animated.Value(0)).current;
   const THRESHOLD = -80;
 
@@ -68,6 +68,13 @@ export default function SwipeableRow({ onDelete, children, colors }: SwipeableRo
     </View>
   );
 }
+
+// Memoized so list row re-renders from unrelated parent updates (e.g. history
+// refresh ticks) don't rebuild the PanResponder. onDelete is captured via a
+// ref inside the component, so even when callers pass a fresh closure each
+// render, the memo comparison on the rest of the props still holds.
+const SwipeableRow = React.memo(SwipeableRowBase);
+export default SwipeableRow;
 
 const styles = StyleSheet.create({
   container: {

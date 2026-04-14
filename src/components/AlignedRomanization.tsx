@@ -10,7 +10,7 @@ interface Props {
   fontSize?: number;
 }
 
-export default function AlignedRomanization({ text, langCode, textColor, romanColor, fontSize = 16 }: Props) {
+function AlignedRomanizationBase({ text, langCode, textColor, romanColor, fontSize = 16 }: Props) {
   const pairs = useMemo(() => romanizeAligned(text, langCode), [text, langCode]);
 
   if (!pairs) return null;
@@ -56,6 +56,12 @@ export default function AlignedRomanization({ text, langCode, textColor, romanCo
     </View>
   );
 }
+
+// Memoized: re-renders only when text/langCode/colors/fontSize actually change.
+// Parent list rows pass stable theme colors by reference, so this avoids
+// rebuilding the romanization pair layout on unrelated parent updates.
+const AlignedRomanization = React.memo(AlignedRomanizationBase);
+export default AlignedRomanization;
 
 const styles = StyleSheet.create({
   container: {

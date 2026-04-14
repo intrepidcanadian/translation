@@ -1,11 +1,24 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Platform, Share, Alert } from "react-native";
 import { Animated } from "react-native";
 import type { Camera, PhotoFile } from "react-native-vision-camera";
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
 import * as Clipboard from "expo-clipboard";
 import * as Speech from "expo-speech";
+import * as FileSystem from "expo-file-system";
 import { logger } from "../services/logger";
+
+// Best-effort delete of a captured photo temp file. Silent on failure — the OS
+// will reap the temp dir eventually, and we don't want cleanup errors to
+// surface to the user.
+async function deleteCapturedUri(uri: string | null): Promise<void> {
+  if (!uri) return;
+  try {
+    await FileSystem.deleteAsync(uri, { idempotent: true });
+  } catch (err) {
+    logger.warn("Camera", "Failed to delete captured photo temp file", err);
+  }
+}
 import type { TranslationProvider } from "../services/translation";
 import { translateCapturedLines, mapToScreenCoords } from "../services/ocrTranslation";
 
@@ -53,6 +66,21 @@ export function usePhotoCapture({
   const [capturedBlocks, setCapturedBlocks] = useState<CapturedBlock[]>([]);
   const [isProcessingCapture, setIsProcessingCapture] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
+
+  // Mirror of capturedUri for the unmount cleanup effect — a ref stays current
+  // without retriggering the effect, so unmount always sees the latest URI.
+  const capturedUriRef = useRef<string | null>(null);
+  useEffect(() => {
+    capturedUriRef.current = capturedUri;
+  }, [capturedUri]);
+
+  // Delete the captured photo temp file when the hook unmounts. Camera captures
+  // land in the app's temp dir and otherwise accumulate until the OS reaps them.
+  useEffect(() => {
+    return () => {
+      void deleteCapturedUri(capturedUriRef.current);
+    };
+  }, []);
 
   const handleCapture = useCallback(async () => {
     if (!captureRef.current || isProcessingCapture) return;
@@ -116,6 +144,8 @@ export function usePhotoCapture({
     } catch (err: unknown) {
       setCaptureError(err instanceof Error ? err.message : "Capture failed");
       setIsCaptured(false);
+      // Delete the stale capture if takePhoto succeeded but a later step failed.
+      void deleteCapturedUri(capturedUriRef.current);
       setCapturedUri(null);
     } finally {
       setIsProcessingCapture(false);
@@ -123,6 +153,9 @@ export function usePhotoCapture({
   }, [captureRef, sourceLangCode, targetLangCode, translationProvider, screenDims, isProcessingCapture, blockOpacities]);
 
   const handleRetake = useCallback(() => {
+    // Delete the previous photo before clearing state so we don't leak the
+    // temp file between capture → retake → capture cycles.
+    void deleteCapturedUri(capturedUriRef.current);
     setIsCaptured(false);
     setCapturedUri(null);
     setCapturedBlocks([]);

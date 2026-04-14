@@ -14,9 +14,12 @@ interface TranslatedBlock {
   frame: { top: number; left: number; width: number; height: number };
 }
 
-const MAX_CACHE_SIZE = 500;
+const MAX_CACHE_SIZE = 2000;
 
-// Module-level translation cache shared across OCR sessions
+// Module-level LRU translation cache shared across OCR sessions. Map iteration
+// order is insertion order, so "oldest = first key" gives us FIFO eviction for
+// free; promote-on-hit (delete + reinsert) upgrades that to true LRU so hot
+// camera-overlay phrases aren't evicted by a burst of one-off scans.
 const ocrTranslationCache = new Map<string, string>();
 
 export function clearOCRCache(): void {
@@ -25,6 +28,27 @@ export function clearOCRCache(): void {
 
 function getCacheKey(src: string, tgt: string, text: string): string {
   return `${src}|${tgt}|${text}`;
+}
+
+/** LRU get: returns the cached value and promotes it to "most recently used". */
+function cacheGet(key: string): string | undefined {
+  const value = ocrTranslationCache.get(key);
+  if (value === undefined) return undefined;
+  // Reinsert to move this entry to the end of the iteration order.
+  ocrTranslationCache.delete(key);
+  ocrTranslationCache.set(key, value);
+  return value;
+}
+
+/** LRU set with oldest-first eviction when the cache exceeds MAX_CACHE_SIZE. */
+function cacheSet(key: string, value: string): void {
+  // If key exists, delete first so the reinsert moves it to the end.
+  if (ocrTranslationCache.has(key)) ocrTranslationCache.delete(key);
+  ocrTranslationCache.set(key, value);
+  if (ocrTranslationCache.size > MAX_CACHE_SIZE) {
+    const oldestKey = ocrTranslationCache.keys().next().value;
+    if (oldestKey !== undefined) ocrTranslationCache.delete(oldestKey);
+  }
 }
 
 /**
@@ -43,8 +67,9 @@ export async function translateOCRLines(
 
   for (const line of lines) {
     const key = getCacheKey(sourceLangCode, targetLangCode, line.text);
-    if (ocrTranslationCache.has(key)) {
-      cachedMap.set(line.text, ocrTranslationCache.get(key)!);
+    const hit = cacheGet(key);
+    if (hit !== undefined) {
+      cachedMap.set(line.text, hit);
     } else {
       uncachedTexts.push(line.text);
     }
@@ -72,11 +97,7 @@ export async function translateOCRLines(
       // Cache the results
       for (let i = 0; i < uncachedTexts.length && i < translatedTexts.length; i++) {
         const key = getCacheKey(sourceLangCode, targetLangCode, uncachedTexts[i]);
-        ocrTranslationCache.set(key, translatedTexts[i]);
-        if (ocrTranslationCache.size > MAX_CACHE_SIZE) {
-          const firstKey = ocrTranslationCache.keys().next().value;
-          if (firstKey) ocrTranslationCache.delete(firstKey);
-        }
+        cacheSet(key, translatedTexts[i]);
       }
     } catch (err) {
       logger.warn("OCR", "Batch OCR translation failed, using originals", err);
