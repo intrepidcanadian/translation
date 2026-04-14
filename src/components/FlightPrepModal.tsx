@@ -155,6 +155,13 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
   const [showAllLanguages, setShowAllLanguages] = useState(false);
   const [moduleAvailability, setModuleAvailability] = useState<ModuleAvailability>("ok");
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  // Tracks the last VoiceOver announcement payload so opening the modal
+  // repeatedly with the same moduleAvailability state doesn't fire duplicate
+  // announcements (#142). Reset to null when the modal closes so the next
+  // open is free to re-announce. Keyed on a `${visible}|${moduleAvailability}`
+  // composite string so an availability flip while the modal is still open
+  // still triggers a fresh announcement.
+  const lastAnnouncedRef = useRef<string | null>(null);
 
   // Filter languages: don't show the crew's own language as a download target
   const displayLanguages = useMemo(() => {
@@ -183,10 +190,23 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
   // open the modal to a non-ok module state. `accessibilityLiveRegion` alone
   // is unreliable on iOS for content that is already rendered on mount, so we
   // fire an explicit announcement once the banner transitions into view. (#136)
+  //
+  // Dedup via `lastAnnouncedRef` (#142): a user flicking the modal open/close
+  // while network-checking language packs would otherwise repeatedly fire the
+  // same announcement at VoiceOver, drowning out other UI feedback. Keyed on
+  // `${visible}|${moduleAvailability}` so a state transition while the modal
+  // stays open (e.g. retry recovers) still yields a fresh announcement.
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      // Reset so the next open is free to announce again.
+      lastAnnouncedRef.current = null;
+      return;
+    }
     if (Platform.OS !== "ios") return;
     if (moduleAvailability === "ok") return;
+    const key = `${visible}|${moduleAvailability}`;
+    if (lastAnnouncedRef.current === key) return;
+    lastAnnouncedRef.current = key;
     const message =
       moduleAvailability === "unsupported"
         ? "Apple Translation unavailable. Your iOS version does not support on-device Translation. Cloud translation will be used instead."

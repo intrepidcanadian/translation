@@ -298,7 +298,11 @@ export default function DualStreamView({
           // systematically-failing mic path is visible in diagnostics even
           // in release builds where debug ring buffers are empty.
           telemetry.increment("speech.translateFail");
-          logger.warn("Translation", "DualStream speech translate failed", err);
+          // Tag as "Speech" (not "Translation") so the errors-by-tag crash
+          // report line and Settings diagnostics rolling fail count lump all
+          // speech-translate failures together regardless of which pipeline
+          // (primary vs. DualStream secondary) produced them. (#141)
+          logger.warn("Speech", "DualStream speech translate failed", err);
         } finally {
           if (!controller.signal.aborted && isMountedRef.current) {
             setIsSpeechTranslating(false);

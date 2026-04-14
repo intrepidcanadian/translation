@@ -30,18 +30,27 @@ const TELEMETRY_STORAGE_KEY = "@live_translator_telemetry_v1";
 const PERSIST_DEBOUNCE_MS = 5000;
 
 /**
- * Known telemetry keys. Adding a new key here gives it type-safe access
- * everywhere; unknown strings are rejected at compile time so a typo can't
- * silently create an orphan counter.
+ * Known telemetry keys, split into per-feature unions (#124) so adding a new
+ * namespace (OCR, offline queue, ...) doesn't force every caller to re-import
+ * a sprawling flat union. `TelemetryKey` is the aggregate type consumers pass
+ * to `increment()` / `get()`; the narrower unions are exported so callsites
+ * that only touch one namespace can constrain their parameter types.
+ *
+ * Unknown strings are rejected at compile time so a typo can't silently create
+ * an orphan counter.
  */
-export type TelemetryKey =
+export type TypeAheadKey =
   | "typeAhead.glossary"
   | "typeAhead.offlineHit"
   | "typeAhead.offlineMiss"
   | "typeAhead.network"
-  | "typeAhead.error"
+  | "typeAhead.error";
+
+export type SpeechKey =
   | "speech.translateSuccess"
   | "speech.translateFail";
+
+export type TelemetryKey = TypeAheadKey | SpeechKey;
 
 const counters: Record<TelemetryKey, number> = {
   "typeAhead.glossary": 0,
@@ -71,6 +80,27 @@ let persistEnabled = false;
 let hydrationInFlight: Promise<void> | null = null;
 const pendingDeltas: Partial<Record<TelemetryKey, number>> = {};
 
+/**
+ * Safety cap on the pendingDeltas map (#139). In practice only one entry per
+ * known key lands during hydration (~7 keys today), but a pathologically slow
+ * AsyncStorage read plus a future telemetry namespace explosion could let the
+ * map drift. Keyed-by-TelemetryKey means the effective ceiling is the union
+ * size — but we enforce an explicit ceiling so a bug that starts writing with
+ * a fresh string key per increment can't balloon memory silently.
+ */
+const PENDING_DELTAS_MAX_KEYS = 64;
+let pendingDeltasCapLogged = false;
+
+/**
+ * Module-load metadata from the most recent `initTelemetry()` run. Consumers
+ * (Settings → Translation Diagnostics crash-report builder) read this to
+ * surface "the persisted blob contained unknown keys — your client may have
+ * rolled back from a newer build" events (#143). `info`-level logger entries
+ * don't land in the error ring so the prune event is otherwise invisible in
+ * production crash reports.
+ */
+let didPruneUnknownKeysFlag = false;
+
 function schedulePersist(): void {
   if (!persistEnabled) return;
   if (persistTimer) return; // already scheduled — coalesce
@@ -99,6 +129,7 @@ export async function initTelemetry(): Promise<void> {
 
   hydrationInFlight = (async () => {
     let storedHadUnknownKeys = false;
+    didPruneUnknownKeysFlag = false;
     try {
       const raw = await AsyncStorage.getItem(TELEMETRY_STORAGE_KEY);
       if (raw) {
@@ -127,7 +158,11 @@ export async function initTelemetry(): Promise<void> {
       logger.warn("Telemetry", "Failed to hydrate telemetry counters", err);
     } finally {
       if (storedHadUnknownKeys) {
-        logger.info(
+        didPruneUnknownKeysFlag = true;
+        // Promote to `warn` so the prune event lands in the error ring — the
+        // crash report and Settings → Translation Diagnostics can then surface
+        // it. An `info`-level entry would be invisible in production.
+        logger.warn(
           "Telemetry",
           "Pruning unknown keys from persisted telemetry blob"
         );
@@ -136,6 +171,9 @@ export async function initTelemetry(): Promise<void> {
       for (const k of Object.keys(pendingDeltas) as TelemetryKey[]) {
         delete pendingDeltas[k];
       }
+      // Reset the one-shot cap-breach log so a *future* hydration (after a
+      // manual reset, say) can log the breach again if it recurs.
+      pendingDeltasCapLogged = false;
       hydrationInFlight = null;
       persistEnabled = true;
       // Schedule a flush so the post-hydration state (baseline + deltas) is
@@ -153,7 +191,25 @@ export function increment(key: TelemetryKey, delta: number = 1): void {
   // If hydration is still in flight, stash the delta so it survives the
   // baseline copy-over inside initTelemetry(). See hydrationInFlight above.
   if (hydrationInFlight) {
-    pendingDeltas[key] = (pendingDeltas[key] ?? 0) + delta;
+    // Safety cap (#139): a pathologically slow AsyncStorage read combined
+    // with a future bug that writes a fresh string per call could let the
+    // staging map grow unboundedly. Keys are type-constrained to
+    // `TelemetryKey` today so the effective ceiling is ~7, but enforce an
+    // explicit cap — dropping new deltas once it's hit rather than risking
+    // memory pressure. Already-tracked keys still accumulate so existing
+    // counters stay accurate.
+    if (
+      pendingDeltas[key] !== undefined ||
+      Object.keys(pendingDeltas).length < PENDING_DELTAS_MAX_KEYS
+    ) {
+      pendingDeltas[key] = (pendingDeltas[key] ?? 0) + delta;
+    } else if (!pendingDeltasCapLogged) {
+      pendingDeltasCapLogged = true;
+      logger.warn(
+        "Telemetry",
+        `pendingDeltas cap reached (${PENDING_DELTAS_MAX_KEYS}) during hydration; dropping new-key delta for ${key}`
+      );
+    }
   }
   schedulePersist();
 }
@@ -210,4 +266,19 @@ export function getTypeAheadLocalRatio(): number {
   const total = getTypeAheadTotal();
   if (total === 0) return 0;
   return (counters["typeAhead.glossary"] + counters["typeAhead.offlineHit"]) / total;
+}
+
+/**
+ * Did the most recent `initTelemetry()` run find — and prune — unknown keys
+ * in the persisted blob? Typically indicates a client downgrade (a newer
+ * build wrote keys this build doesn't know about) or a forward-compat field
+ * that was later removed. Surfaced by Settings → Translation Diagnostics and
+ * the crash-report builder so the signal isn't lost in production where
+ * `info`-level logs aren't ringed (#143).
+ *
+ * Returns false until hydration completes; cleared back to false on the next
+ * `initTelemetry()` that finds a clean blob.
+ */
+export function didPruneUnknownKeys(): boolean {
+  return didPruneUnknownKeysFlag;
 }

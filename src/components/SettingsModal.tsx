@@ -25,7 +25,11 @@ import {
   type TranslationProvider,
 } from "../services/translation";
 import { logger } from "../services/logger";
-import { getAll as getTelemetrySnapshot, reset as resetTelemetry } from "../services/telemetry";
+import {
+  getAll as getTelemetrySnapshot,
+  reset as resetTelemetry,
+  didPruneUnknownKeys,
+} from "../services/telemetry";
 import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
 import CollapsibleSection from "./CollapsibleSection";
@@ -130,6 +134,13 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const [cacheStats, setCacheStats] = useState<TranslationCacheStats | null>(null);
   const [typeAheadStats, setTypeAheadStats] = useState<TypeAheadStats | null>(null);
   const [speechStats, setSpeechStats] = useState<SpeechStats | null>(null);
+  // Rolling-window speech fail count (#141). Sourced from the logger error
+  // ring via `logger.countByRolling` so it only reflects recent failures —
+  // a stale breaker from hours ago stops dominating the signal. 60s window
+  // is the common "is anything on fire right now" time scale; tune as we
+  // get real telemetry from prod.
+  const SPEECH_FAIL_WINDOW_MS = 60_000;
+  const [speechFailLast60s, setSpeechFailLast60s] = useState(0);
   // Collapsible debug sub-sections. Each defaults to collapsed; we auto-expand
   // an urgent section (open breaker, last crash) the first time the modal
   // renders so the user notices what needs attention.
@@ -148,6 +159,18 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   // Circuit breaker state and cache stats are in-memory only, so we re-read
   // them on open rather than subscribing. Also auto-expands the diagnostics
   // section on open when any breaker is open so the user sees the issue.
+  // Helper — count speech-tagged warn/error entries that landed in the last
+  // SPEECH_FAIL_WINDOW_MS window. Returned as a single integer so the caller
+  // can drop it straight into state. Uses `logger.countByRolling` (#125).
+  const computeSpeechFailWindow = useCallback((): number => {
+    const byTag = logger.countByRolling(
+      { tags: ["Speech"], levels: ["warn", "error"] },
+      () => "speech",
+      SPEECH_FAIL_WINDOW_MS
+    );
+    return byTag.speech ?? 0;
+  }, []);
+
   useEffect(() => {
     if (!visible) return;
     const snapshots = getCircuitSnapshots();
@@ -155,15 +178,17 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     setCacheStats(getTranslationCacheStats());
     setTypeAheadStats(computeTypeAheadStats());
     setSpeechStats(computeSpeechStats());
+    setSpeechFailLast60s(computeSpeechFailWindow());
     if (snapshots.some((s) => s.open)) setDiagnosticsExpanded(true);
-  }, [visible]);
+  }, [visible, computeSpeechFailWindow]);
 
   const refreshDiagnostics = useCallback(() => {
     setCircuitSnapshots(getCircuitSnapshots());
     setCacheStats(getTranslationCacheStats());
     setTypeAheadStats(computeTypeAheadStats());
     setSpeechStats(computeSpeechStats());
-  }, []);
+    setSpeechFailLast60s(computeSpeechFailWindow());
+  }, [computeSpeechFailWindow]);
 
   const handleResetCircuits = useCallback(() => {
     resetCircuits();
@@ -265,11 +290,34 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
             `  Type-ahead: glossary=${telemetry.glossary} offHit=${telemetry.offlineHit} offMiss=${telemetry.offlineMiss} net=${telemetry.network}`
           );
         }
+        // Surface telemetry prune events (#143). Signals a client downgrade —
+        // the persisted blob contained keys this build doesn't recognize, so
+        // the hydrator dropped them. Invaluable when debugging A/B rollouts
+        // where some users may have rolled back from a newer build.
+        if (didPruneUnknownKeys()) {
+          diagnosticsLines.push(
+            `  Telemetry: pruned unknown keys from persisted blob (downgrade or stale forward-compat field)`
+          );
+        }
         const speech = computeSpeechStats();
         if (speech.total > 0) {
           const failPct = Math.round((speech.fail / speech.total) * 100);
           diagnosticsLines.push(
             `  Speech translate: ok=${speech.success} fail=${speech.fail} (${failPct}% fail)`
+          );
+        }
+        // Rolling 60s speech fail count (#141) via logger.countByRolling —
+        // gives the person reading the report a "right now" signal that the
+        // session total can't: a 500-fail session number is ambiguous without
+        // knowing if it stopped an hour ago or is actively burning.
+        const speechFailRolling = logger.countByRolling(
+          { tags: ["Speech"], levels: ["warn", "error"] },
+          () => "speech",
+          60_000
+        ).speech ?? 0;
+        if (speechFailRolling > 0) {
+          diagnosticsLines.push(
+            `  Speech translate (last 60s): ${speechFailRolling} fail${speechFailRolling === 1 ? "" : "s"}`
           );
         }
         // Errors-by-tag breakdown via logger.countBy (#119). Gives the person
@@ -640,6 +688,23 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                       {s.provider}: {s.open ? `open (${Math.ceil(s.msUntilReset / 1000)}s)` : "closed"} · failures {s.failures}
                     </Text>
                   ))}
+                  {/* Telemetry prune notice (#143) — visible when the last
+                      `initTelemetry()` dropped unknown keys from the persisted
+                      blob. Typically indicates a client downgrade from a
+                      newer build; surfacing it lets us catch rollouts that
+                      accidentally removed a counter key. */}
+                  {didPruneUnknownKeys() && (
+                    <Text
+                      style={[
+                        styles.infoText,
+                        dynamicStyles.infoText,
+                        { color: colors.dimText, marginTop: 4 },
+                      ]}
+                      accessibilityLabel="Telemetry pruned unknown keys — client may have been downgraded"
+                    >
+                      ⚠ Telemetry pruned unknown keys (possible downgrade)
+                    </Text>
+                  )}
                   {/* Type-ahead telemetry — glossary/offline/network hit breakdown so
                       we can measure how often the offline short-circuit saves API
                       quota vs. hitting the network. Session-scoped (cleared when the
@@ -680,6 +745,23 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                       >
                         OK: {speechStats.success} · Fail: {speechStats.fail} ({Math.round((speechStats.fail / speechStats.total) * 100)}% fail of {speechStats.total})
                       </Text>
+                      {/* Rolling 60s fail count (#141) — answers "is it on
+                          fire right now" without having to squint at the
+                          session total. Session counter keeps growing even
+                          after the outage clears, so a 60s rolling window is
+                          the honest "current health" signal. */}
+                      {speechFailLast60s > 0 && (
+                        <Text
+                          style={[
+                            styles.infoText,
+                            dynamicStyles.infoText,
+                            { color: colors.errorText },
+                          ]}
+                          accessibilityLabel={`${speechFailLast60s} speech translation failures in the last 60 seconds`}
+                        >
+                          Last 60s: {speechFailLast60s} fail{speechFailLast60s === 1 ? "" : "s"}
+                        </Text>
+                      )}
                     </View>
                   )}
                   <View style={styles.crashActions}>

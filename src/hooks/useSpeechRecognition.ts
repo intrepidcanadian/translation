@@ -9,6 +9,7 @@ import { impactLight, impactMedium } from "../services/haptics";
 import { translateText } from "../services/translation";
 import type { TranslationProvider } from "../services/translation";
 import { increment as telemetryIncrement } from "../services/telemetry";
+import { logger } from "../services/logger";
 
 interface UseSpeechRecognitionOptions {
   sourceLangCode: string;
@@ -161,6 +162,12 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
         } catch (err) {
           if (controller.signal.aborted) return;
           telemetryIncrement("speech.translateFail");
+          // #141: emit a tagged Speech error into the logger ring in addition
+          // to the session counter, so `logger.countBy`/`countByRolling` can
+          // surface a rolling fail rate in Settings diagnostics and the
+          // crash-report "Errors by tag" line includes speech failures. The
+          // user-facing error banner is still fired via onShowError below.
+          logger.warn("Speech", "Translation failed", err);
           const msg = err instanceof Error ? err.message : "Translation failed";
           onShowError(msg);
         } finally {
