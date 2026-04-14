@@ -48,7 +48,13 @@ export type TypeAheadKey =
 
 export type SpeechKey =
   | "speech.translateSuccess"
-  | "speech.translateFail";
+  | "speech.translateFail"
+  // #152: routine no-speech recognition errors are logged at debug level so
+  // they don't flood the error ring, but in production the debug ring is
+  // `__DEV__`-gated and the signal vanishes. A dedicated counter lets the
+  // dashboard distinguish "silent user / quiet environment" from "broken
+  // mic" without relying on the error ring.
+  | "speech.noSpeech";
 
 export type TelemetryKey = TypeAheadKey | SpeechKey;
 
@@ -60,6 +66,7 @@ const counters: Record<TelemetryKey, number> = {
   "typeAhead.error": 0,
   "speech.translateSuccess": 0,
   "speech.translateFail": 0,
+  "speech.noSpeech": 0,
 };
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;

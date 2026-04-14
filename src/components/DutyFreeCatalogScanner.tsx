@@ -23,7 +23,7 @@ import {
 import TextRecognition, {
   TextRecognitionScript,
 } from "@react-native-ml-kit/text-recognition";
-import * as Clipboard from "expo-clipboard";
+import { copyWithAutoClear } from "../services/clipboard";
 import { impactMedium, impactLight, notifySuccess } from "../services/haptics";
 import { logger } from "../services/logger";
 import { translateText, translateAppleBatch, type TranslationProvider } from "../services/translation";
@@ -227,7 +227,9 @@ export default function DutyFreeCatalogScanner({
 
   const copyText = useCallback(async (text: string) => {
     try {
-      await Clipboard.setStringAsync(text);
+      // copyWithAutoClear: duty-free catalog copies follow the same auto-wipe
+      // rule as the rest of the content-copy surfaces. (#128)
+      await copyWithAutoClear(text);
       notifySuccess();
       setCopiedText(text);
       setTimeout(() => setCopiedText(null), 1500);

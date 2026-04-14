@@ -18,7 +18,7 @@ import {
   useCameraPermission,
   useCodeScanner,
 } from "react-native-vision-camera";
-import * as Clipboard from "expo-clipboard";
+import { copyWithAutoClear } from "../services/clipboard";
 import { impactMedium, notifySuccess } from "../services/haptics";
 import {
   lookupBarcode,
@@ -110,7 +110,9 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
 
   const copyText = useCallback(async (text: string) => {
     try {
-      await Clipboard.setStringAsync(text);
+      // copyWithAutoClear: product scans can include private purchase details.
+      // 60s auto-wipe keeps parity with history copies. (#128)
+      await copyWithAutoClear(text);
       notifySuccess();
       setCopiedText(text);
       setTimeout(() => setCopiedText(null), 1500);

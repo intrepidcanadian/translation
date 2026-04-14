@@ -20,7 +20,7 @@ import {
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
 import { logger } from "../services/logger";
 import { Linking } from "react-native";
-import * as Clipboard from "expo-clipboard";
+import { copyWithAutoClear } from "../services/clipboard";
 import { impactMedium, notifySuccess, impactLight } from "../services/haptics";
 import {
   generateListing,
@@ -203,7 +203,10 @@ function ListingGenerator({
 
   const handleCopy = useCallback(async (text: string, field: string) => {
     try {
-      await Clipboard.setStringAsync(text);
+      // copyWithAutoClear: listing drafts may contain price / contact info
+      // the seller pastes into marketplaces; 60s auto-wipe matches the rest
+      // of the app's content-copy UX. (#128)
+      await copyWithAutoClear(text);
       impactLight();
       setCopiedField(field);
       setTimeout(() => setCopiedField(null), 1500);

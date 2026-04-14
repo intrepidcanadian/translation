@@ -16,7 +16,7 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import { loadNotes, deleteNote, updateNoteTitle, clearAllNotes, type SavedNote } from "../services/notes";
 import { getScannerMode } from "../services/scannerModes";
-import * as Clipboard from "expo-clipboard";
+import { copyWithAutoClear } from "../services/clipboard";
 import { notifySuccess, notifyWarning } from "../services/haptics";
 import { useSettings } from "../contexts/SettingsContext";
 import { getColors, type ThemeColors } from "../theme";
@@ -178,7 +178,9 @@ export default function NotesScreen() {
 
   const handleCopy = useCallback(async (text: string, id: string) => {
     try {
-      await Clipboard.setStringAsync(text);
+      // copyWithAutoClear: scanned notes often contain personal/medical OCR
+      // content — reuse the 60s auto-wipe ladder from history copies. (#128)
+      await copyWithAutoClear(text);
       notifySuccess();
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 1500);

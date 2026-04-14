@@ -52,6 +52,10 @@ interface TypeAheadStats {
 interface SpeechStats {
   success: number;
   fail: number;
+  /** #152: routine no-speech recognition errors — tracked separately so the
+   * dashboard can distinguish "silent user" sessions from broken-mic failures
+   * without polluting the translate-fail rate. */
+  noSpeech: number;
   total: number;
 }
 
@@ -68,7 +72,8 @@ function computeSpeechStats(): SpeechStats {
   const t = getTelemetrySnapshot();
   const success = t["speech.translateSuccess"];
   const fail = t["speech.translateFail"];
-  return { success, fail, total: success + fail };
+  const noSpeech = t["speech.noSpeech"];
+  return { success, fail, noSpeech, total: success + fail };
 }
 
 export type FontSizeOption = "small" | "medium" | "large" | "xlarge";
@@ -315,6 +320,12 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
           diagnosticsLines.push(
             `  Speech translate: ok=${speech.success} fail=${speech.fail} (${failPct}% fail)`
           );
+        }
+        // #152: routine no-speech recognition errors are counted separately
+        // from translate failures so a silent-environment user and a
+        // broken-mic user don't look the same in the crash report.
+        if (speech.noSpeech > 0) {
+          diagnosticsLines.push(`  Speech recognition: ${speech.noSpeech} no-speech event(s)`);
         }
         // Rolling 60s speech fail count (#141) via logger.countByRolling —
         // gives the person reading the report a "right now" signal that the
@@ -751,22 +762,37 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                       translate successes/failures so systematically-failing mic
                       paths are visible in diagnostics + crash reports even
                       though speech errors are silent to the user (#132). */}
-                  {speechStats && speechStats.total > 0 && (
+                  {speechStats && (speechStats.total > 0 || speechStats.noSpeech > 0) && (
                     <View style={styles.telemetryBlock}>
                       <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
                         Speech translate (session):
                       </Text>
-                      <Text
-                        style={[
-                          styles.infoText,
-                          dynamicStyles.infoText,
-                          speechStats.fail > 0 && speechStats.fail / speechStats.total >= 0.25
-                            ? { color: colors.errorText }
-                            : null,
-                        ]}
-                      >
-                        OK: {speechStats.success} · Fail: {speechStats.fail} ({Math.round((speechStats.fail / speechStats.total) * 100)}% fail of {speechStats.total})
-                      </Text>
+                      {speechStats.total > 0 && (
+                        <Text
+                          style={[
+                            styles.infoText,
+                            dynamicStyles.infoText,
+                            speechStats.fail > 0 && speechStats.fail / speechStats.total >= 0.25
+                              ? { color: colors.errorText }
+                              : null,
+                          ]}
+                        >
+                          OK: {speechStats.success} · Fail: {speechStats.fail} ({Math.round((speechStats.fail / speechStats.total) * 100)}% fail of {speechStats.total})
+                        </Text>
+                      )}
+                      {/* #152: `no-speech` is a recognition-level event
+                          (silent mic, quiet environment), not a translate
+                          failure. Surfaced as a separate line so a user who
+                          speaks fluently but never gets recognized doesn't
+                          hide behind an otherwise-healthy translate rate. */}
+                      {speechStats.noSpeech > 0 && (
+                        <Text
+                          style={[styles.infoText, dynamicStyles.infoText]}
+                          accessibilityLabel={`${speechStats.noSpeech} no-speech events this session`}
+                        >
+                          No-speech events: {speechStats.noSpeech}
+                        </Text>
+                      )}
                       {/* Rolling 60s fail count (#141) — answers "is it on
                           fire right now" without having to squint at the
                           session total. Session counter keeps growing even

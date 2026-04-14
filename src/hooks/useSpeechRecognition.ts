@@ -242,7 +242,11 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     // flood the error ring for silent users.
     const code = event.error;
     if (code === "no-speech") {
+      // #152: debug-level log keeps the error ring quiet, but increment a
+      // production-visible counter so the diagnostics dashboard can tell a
+      // silent-user session apart from a broken-mic session.
       logger.debug("Speech", `recognition no-speech (${code})`);
+      telemetryIncrement("speech.noSpeech");
     } else {
       logger.warn("Speech", `recognition error (${code})`);
     }

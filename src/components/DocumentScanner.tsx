@@ -26,7 +26,7 @@ import {
   type ExtractedField,
 } from "../services/scannerModes";
 import { saveNote } from "../services/notes";
-import * as Clipboard from "expo-clipboard";
+import { copyWithAutoClear } from "../services/clipboard";
 import { notifySuccess, impactMedium } from "../services/haptics";
 import type { ThemeColors } from "../theme";
 import CameraPhase from "./scanner/CameraPhase";
@@ -150,7 +150,9 @@ function DocumentScanner({
 
   const copyText = useCallback(async (text: string) => {
     try {
-      await Clipboard.setStringAsync(text);
+      // copyWithAutoClear: scanned documents frequently contain sensitive
+      // data (receipts, medical forms, IDs). 60s auto-wipe. (#128)
+      await copyWithAutoClear(text);
       notifySuccess();
       setCopiedText(text);
       setTimeout(() => setCopiedText(null), 1500);

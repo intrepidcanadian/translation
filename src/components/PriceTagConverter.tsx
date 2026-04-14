@@ -23,7 +23,7 @@ import {
 import TextRecognition, {
   TextRecognitionScript,
 } from "@react-native-ml-kit/text-recognition";
-import * as Clipboard from "expo-clipboard";
+import { copyWithAutoClear } from "../services/clipboard";
 import { impactMedium, impactLight, notifySuccess } from "../services/haptics";
 import { logger } from "../services/logger";
 import {
@@ -164,7 +164,9 @@ export default function PriceTagConverter({
 
   const copyConversion = useCallback(async (text: string) => {
     try {
-      await Clipboard.setStringAsync(text);
+      // copyWithAutoClear: converted-price outputs mirror receipt content;
+      // 60s auto-wipe is appropriate. (#128)
+      await copyWithAutoClear(text);
       notifySuccess();
       setCopiedText(text);
       setTimeout(() => setCopiedText(null), 1500);

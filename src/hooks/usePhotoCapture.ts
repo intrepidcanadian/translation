@@ -3,7 +3,7 @@ import { Platform, Share, Alert } from "react-native";
 import { Animated } from "react-native";
 import type { Camera, PhotoFile } from "react-native-vision-camera";
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
-import * as Clipboard from "expo-clipboard";
+import { copyWithAutoClear } from "../services/clipboard";
 import * as Speech from "expo-speech";
 import * as FileSystem from "expo-file-system";
 import { logger } from "../services/logger";
@@ -185,12 +185,14 @@ export function usePhotoCapture({
       block.originalText,
       [
         {
+          // copyWithAutoClear: OCR blocks captured from the camera can contain
+          // signs, labels, or document snippets; reuse the 60s auto-wipe. (#128)
           text: "Copy Translation",
-          onPress: () => Clipboard.setStringAsync(block.translatedText),
+          onPress: () => { copyWithAutoClear(block.translatedText); },
         },
         {
           text: "Copy Original",
-          onPress: () => Clipboard.setStringAsync(block.originalText),
+          onPress: () => { copyWithAutoClear(block.originalText); },
         },
         {
           text: "Speak",

@@ -175,4 +175,68 @@ describe("telemetry hydration", () => {
     // network had no stored value, only the in-flight delta
     expect(tm.get("typeAhead.network")).toBe(4);
   });
+
+  /**
+   * #154: pins the PENDING_DELTAS_MAX_KEYS = 64 safety cap on the hydration
+   * staging map. Real TelemetryKey space is ~8 keys today so the cap is
+   * anti-bug insurance rather than a live constraint — but if a future
+   * refactor drops the cap (or raises it unbounded) a type-safety regression
+   * in the caller could balloon memory during a slow hydrate. This test
+   * casts synthetic string keys through `as unknown as TelemetryKey` to
+   * exercise the cap path deterministically without having to explode the
+   * real TelemetryKey union.
+   *
+   * Asserts three things:
+   *  1. Already-tracked keys keep accumulating even after the cap is hit
+   *     (the cap rejects *new* keys, not updates to existing staging entries).
+   *  2. The cap-breach warn fires exactly once (one-shot via
+   *     `pendingDeltasCapLogged`, not once per dropped delta).
+   *  3. After the hydrate finally flushes, counters for staged keys still
+   *     reflect the deltas that landed before the cap.
+   */
+  it("enforces the pendingDeltas cap during a slow hydrate (#139/#154)", async () => {
+    storage.store[STORAGE_KEY] = JSON.stringify({ "typeAhead.glossary": 1 });
+    // Long enough that we can pump 70+ synchronous increments in before
+    // the AsyncStorage read resolves. Jest's timer is real here so the
+    // setTimeout in the mock runs against wall-clock time.
+    storage.hydrateDelayMs = 50;
+
+    const tm = loadTelemetry();
+    const { logger } = require("../services/logger") as typeof import("../services/logger");
+    (logger.warn as jest.Mock).mockClear();
+
+    const hydrationPromise = tm.initTelemetry();
+
+    // Pump 70 distinct synthetic keys — more than the 64-key ceiling — so
+    // the last 6 must be dropped. Cast through `unknown` so TypeScript lets
+    // us invoke `increment` with strings the real union doesn't know about;
+    // this is exactly the pathological case the cap defends against.
+    const CAP = 64;
+    const OVERSHOOT = 6;
+    type UnsafeKey = Parameters<typeof tm.increment>[0];
+    for (let i = 0; i < CAP + OVERSHOOT; i++) {
+      tm.increment(`fake.k${i}` as unknown as UnsafeKey);
+    }
+    // Bump an already-tracked staging entry *after* the cap. This must
+    // still accumulate — the cap rejects new keys, not updates to existing
+    // ones, otherwise legitimate keys would stop counting mid-hydrate.
+    tm.increment(`fake.k0` as unknown as UnsafeKey, 2);
+
+    await hydrationPromise;
+
+    // One-shot warn: one cap-breach log covers every dropped new-key delta,
+    // not one warn per rejected increment. Check by tag so unrelated
+    // AsyncStorage / JSON warnings in the same test file don't pollute the
+    // count.
+    const warnCalls = (logger.warn as jest.Mock).mock.calls.filter((call) => {
+      const msg = typeof call[1] === "string" ? call[1] : "";
+      return msg.includes("pendingDeltas cap reached");
+    });
+    expect(warnCalls.length).toBe(1);
+
+    // Staged key k0 accumulated 1 (initial) + 2 (post-cap bump) = 3.
+    expect(tm.get(`fake.k0` as unknown as UnsafeKey)).toBe(3);
+    // Real typed key from the persisted baseline is unaffected.
+    expect(tm.get("typeAhead.glossary")).toBe(1);
+  });
 });

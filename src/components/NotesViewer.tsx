@@ -14,7 +14,7 @@ import {
 import { loadNotes, deleteNote, updateNoteTitle, clearAllNotes, type SavedNote } from "../services/notes";
 import { getScannerMode } from "../services/scannerModes";
 import { logger } from "../services/logger";
-import * as Clipboard from "expo-clipboard";
+import { copyWithAutoClear } from "../services/clipboard";
 import { notifySuccess, notifyWarning } from "../services/haptics";
 import type { ThemeColors } from "../theme";
 
@@ -117,7 +117,9 @@ export default function NotesViewer({
 
   const handleCopy = useCallback(async (text: string, id: string) => {
     try {
-      await Clipboard.setStringAsync(text);
+      // copyWithAutoClear: scanned notes may contain medical/personal data
+      // from OCR'd documents, so the 60s auto-wipe applies here too. (#128)
+      await copyWithAutoClear(text);
       notifySuccess();
       setCopiedId(id);
       setTimeout(() => setCopiedId(null), 1500);
