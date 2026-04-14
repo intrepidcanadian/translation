@@ -8,14 +8,26 @@
  * regardless of build configuration so the dashboard — and crash reports that
  * include a diagnostics block — shows real numbers in production too.
  *
- * Scope: counters are session-scoped (cleared when the JS runtime restarts).
- * If we ever need cross-session persistence, wire this through AsyncStorage
- * but watch out for write frequency — don't persist on every `increment`.
+ * Scope: counters live in-memory for fast reads/writes, and are optionally
+ * persisted to AsyncStorage so a crash mid-session doesn't lose the telemetry
+ * baseline that would have helped diagnose the crash (#122). Persistence is
+ * debounced — we never write on every `increment` — so the hot path stays
+ * lock-free and allocation-free. Callers wire `initTelemetry()` during app
+ * start to hydrate counters from disk.
  *
  * Intentionally small: no tags, no time windows, no rates. Just a typed key
  * and integer counters. Callers compose these into higher-level metrics
  * (e.g. the type-ahead dashboard computes `local / total` itself).
  */
+
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { logger } from "./logger";
+
+const TELEMETRY_STORAGE_KEY = "@live_translator_telemetry_v1";
+/** Debounced write delay. 5s matches what #122 recommends — short enough
+ * that a crash usually still flushes the last write, long enough that a
+ * type-ahead burst at 2 increments/sec batches into a single writeback. */
+const PERSIST_DEBOUNCE_MS = 5000;
 
 /**
  * Known telemetry keys. Adding a new key here gives it type-safe access
@@ -27,7 +39,9 @@ export type TelemetryKey =
   | "typeAhead.offlineHit"
   | "typeAhead.offlineMiss"
   | "typeAhead.network"
-  | "typeAhead.error";
+  | "typeAhead.error"
+  | "speech.translateSuccess"
+  | "speech.translateFail";
 
 const counters: Record<TelemetryKey, number> = {
   "typeAhead.glossary": 0,
@@ -35,11 +49,56 @@ const counters: Record<TelemetryKey, number> = {
   "typeAhead.offlineMiss": 0,
   "typeAhead.network": 0,
   "typeAhead.error": 0,
+  "speech.translateSuccess": 0,
+  "speech.translateFail": 0,
 };
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let persistEnabled = false;
+
+function schedulePersist(): void {
+  if (!persistEnabled) return;
+  if (persistTimer) return; // already scheduled — coalesce
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    AsyncStorage.setItem(TELEMETRY_STORAGE_KEY, JSON.stringify(counters)).catch((err) =>
+      logger.warn("Telemetry", "Failed to persist telemetry counters", err)
+    );
+  }, PERSIST_DEBOUNCE_MS);
+}
+
+/**
+ * Hydrate counters from AsyncStorage and enable debounced persistence for
+ * subsequent writes. Call once at app startup; subsequent calls are no-ops.
+ * Silently falls back to empty counters if the stored blob is missing or
+ * malformed so a corrupted write can't prevent the app from booting.
+ */
+export async function initTelemetry(): Promise<void> {
+  if (persistEnabled) return;
+  try {
+    const raw = await AsyncStorage.getItem(TELEMETRY_STORAGE_KEY);
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        const stored = parsed as Record<string, unknown>;
+        for (const key of Object.keys(counters) as TelemetryKey[]) {
+          const v = stored[key];
+          if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+            counters[key] = Math.floor(v);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn("Telemetry", "Failed to hydrate telemetry counters", err);
+  }
+  persistEnabled = true;
+}
 
 /** Increment a counter by 1 (or a given delta). No-ops on unknown keys. */
 export function increment(key: TelemetryKey, delta: number = 1): void {
   counters[key] = (counters[key] ?? 0) + delta;
+  schedulePersist();
 }
 
 /** Read a single counter's current value. */
@@ -58,6 +117,18 @@ export function getAll(): Record<TelemetryKey, number> {
 export function reset(): void {
   for (const key of Object.keys(counters) as TelemetryKey[]) {
     counters[key] = 0;
+  }
+  // Persist the zero state immediately — otherwise a fresh install or a user
+  // who just hit "Reset Telemetry" could get their old numbers back after a
+  // quick restart, since the debounced writer wouldn't have flushed yet.
+  if (persistEnabled) {
+    if (persistTimer) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
+    AsyncStorage.setItem(TELEMETRY_STORAGE_KEY, JSON.stringify(counters)).catch((err) =>
+      logger.warn("Telemetry", "Failed to persist reset telemetry", err)
+    );
   }
 }
 

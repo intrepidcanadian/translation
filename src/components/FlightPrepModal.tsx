@@ -145,11 +145,14 @@ interface Props {
   crewBaseLang?: string; // The crew member's primary language, defaults to "en"
 }
 
+type ModuleAvailability = "ok" | "unsupported" | "batch_failed";
+
 function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Props) {
   const [languagePacks, setLanguagePacks] = useState<LanguagePackState[]>([]);
   const [selectedRoute, setSelectedRoute] = useState<string | null>(null);
   const [isDownloadingAll, setIsDownloadingAll] = useState(false);
   const [showAllLanguages, setShowAllLanguages] = useState(false);
+  const [moduleAvailability, setModuleAvailability] = useState<ModuleAvailability>("ok");
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   // Filter languages: don't show the crew's own language as a download target
@@ -202,6 +205,7 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
         status: "checking" as DownloadStatus,
       }));
       setLanguagePacks(initial);
+      setModuleAvailability("ok");
 
       if (Platform.OS !== "ios") {
         // Android: ML Kit models — mark all as "supported" (downloadable)
@@ -215,6 +219,7 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
         const AppleTranslation = await import("../../modules/apple-translation");
         const available = await AppleTranslation.isAvailable();
         if (!available) {
+          setModuleAvailability("unsupported");
           setLanguagePacks(
             ALL_LANGUAGES.map((l) => ({ ...l, status: "unsupported" as DownloadStatus }))
           );
@@ -234,6 +239,7 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
         );
       } catch (err) {
         logger.warn("Translation", "Apple language status batch check failed", err);
+        setModuleAvailability("batch_failed");
         setLanguagePacks(
           ALL_LANGUAGES.map((l) => ({ ...l, status: "error" as DownloadStatus }))
         );
@@ -317,6 +323,30 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
           </View>
 
           <ScrollView style={styles.list} showsVerticalScrollIndicator={false}>
+            {/* Apple Translation unavailable banner */}
+            {Platform.OS === "ios" && moduleAvailability !== "ok" && (
+              <View
+                style={[
+                  styles.unavailableBanner,
+                  { backgroundColor: colors.cardBg, borderColor: colors.errorText },
+                ]}
+                accessibilityRole="alert"
+                accessibilityLabel="Apple Translation unavailable"
+              >
+                <Text style={styles.unavailableIcon}>⚠️</Text>
+                <View style={styles.unavailableTextCol}>
+                  <Text style={[styles.unavailableTitle, { color: colors.primaryText }]}>
+                    Apple Translation unavailable
+                  </Text>
+                  <Text style={[styles.unavailableHint, { color: colors.dimText }]}>
+                    {moduleAvailability === "unsupported"
+                      ? "Your iOS version doesn't support on-device Translation (iOS 17.4+ required). Cloud translation will be used instead."
+                      : "The on-device Translation framework isn't responding. Retrying individual languages is unlikely to help — cloud translation will be used as a fallback."}
+                  </Text>
+                </View>
+              </View>
+            )}
+
             {/* Status Summary */}
             <View style={[styles.statusCard, { backgroundColor: allInstalled ? colors.successBg : colors.cardBg, borderColor: allInstalled ? colors.successText : colors.border }]}>
               <Text style={styles.statusIcon}>{allInstalled ? "✅" : "✈️"}</Text>
@@ -528,6 +558,33 @@ const styles = StyleSheet.create({
   },
   list: {
     paddingHorizontal: 20,
+  },
+
+  // Unavailable banner
+  unavailableBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 12,
+    marginBottom: 16,
+  },
+  unavailableIcon: {
+    fontSize: 22,
+    marginTop: 2,
+  },
+  unavailableTextCol: {
+    flex: 1,
+  },
+  unavailableTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  unavailableHint: {
+    fontSize: 13,
+    marginTop: 4,
+    lineHeight: 18,
   },
 
   // Status card

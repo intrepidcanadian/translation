@@ -22,7 +22,8 @@ type LogTag =
   | "Settings"
   | "Render"
   | "Scanner"
-  | "History";
+  | "History"
+  | "Telemetry";
 
 export interface LogEntry {
   level: LogLevel;

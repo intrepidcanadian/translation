@@ -28,6 +28,7 @@ import { clearOCRCache } from "../services/ocrTranslation";
 import { useLiveOCR } from "../hooks/useLiveOCR";
 import { impactLight, impactMedium } from "../services/haptics";
 import { logger } from "../services/logger";
+import * as telemetry from "../services/telemetry";
 import type { ThemeColors } from "../theme";
 
 interface DetectedBlock {
@@ -288,12 +289,16 @@ export default function DualStreamView({
           if (!controller.signal.aborted && isMountedRef.current) {
             setSpeechTranslated(result.translatedText);
             lastSpeechTranslatedRef.current = text.trim();
+            telemetry.increment("speech.translateSuccess");
           }
         } catch (err) {
           if (controller.signal.aborted) return;
           // Speech translation is secondary to OCR, so we don't surface an
-          // error banner — but still log so failing mic paths are debuggable.
-          logger.debug("Translation", "DualStream speech translate failed", err);
+          // error banner — but still log + increment a counter so a
+          // systematically-failing mic path is visible in diagnostics even
+          // in release builds where debug ring buffers are empty.
+          telemetry.increment("speech.translateFail");
+          logger.warn("Translation", "DualStream speech translate failed", err);
         } finally {
           if (!controller.signal.aborted && isMountedRef.current) {
             setIsSpeechTranslating(false);

@@ -45,6 +45,12 @@ interface TypeAheadStats {
   total: number;
 }
 
+interface SpeechStats {
+  success: number;
+  fail: number;
+  total: number;
+}
+
 function computeTypeAheadStats(): TypeAheadStats {
   const t = getTelemetrySnapshot();
   const glossary = t["typeAhead.glossary"];
@@ -52,6 +58,13 @@ function computeTypeAheadStats(): TypeAheadStats {
   const offlineMiss = t["typeAhead.offlineMiss"];
   const network = t["typeAhead.network"];
   return { glossary, offlineHit, offlineMiss, network, total: glossary + offlineHit + offlineMiss + network };
+}
+
+function computeSpeechStats(): SpeechStats {
+  const t = getTelemetrySnapshot();
+  const success = t["speech.translateSuccess"];
+  const fail = t["speech.translateFail"];
+  return { success, fail, total: success + fail };
 }
 
 export type FontSizeOption = "small" | "medium" | "large" | "xlarge";
@@ -116,6 +129,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const [circuitSnapshots, setCircuitSnapshots] = useState<CircuitSnapshot[]>([]);
   const [cacheStats, setCacheStats] = useState<TranslationCacheStats | null>(null);
   const [typeAheadStats, setTypeAheadStats] = useState<TypeAheadStats | null>(null);
+  const [speechStats, setSpeechStats] = useState<SpeechStats | null>(null);
   // Collapsible debug sub-sections. Each defaults to collapsed; we auto-expand
   // an urgent section (open breaker, last crash) the first time the modal
   // renders so the user notices what needs attention.
@@ -140,6 +154,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     setCircuitSnapshots(snapshots);
     setCacheStats(getTranslationCacheStats());
     setTypeAheadStats(computeTypeAheadStats());
+    setSpeechStats(computeSpeechStats());
     if (snapshots.some((s) => s.open)) setDiagnosticsExpanded(true);
   }, [visible]);
 
@@ -147,6 +162,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     setCircuitSnapshots(getCircuitSnapshots());
     setCacheStats(getTranslationCacheStats());
     setTypeAheadStats(computeTypeAheadStats());
+    setSpeechStats(computeSpeechStats());
   }, []);
 
   const handleResetCircuits = useCallback(() => {
@@ -247,6 +263,13 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
         if (telemetry.total > 0) {
           diagnosticsLines.push(
             `  Type-ahead: glossary=${telemetry.glossary} offHit=${telemetry.offlineHit} offMiss=${telemetry.offlineMiss} net=${telemetry.network}`
+          );
+        }
+        const speech = computeSpeechStats();
+        if (speech.total > 0) {
+          const failPct = Math.round((speech.fail / speech.total) * 100);
+          diagnosticsLines.push(
+            `  Speech translate: ok=${speech.success} fail=${speech.fail} (${failPct}% fail)`
           );
         }
         // Errors-by-tag breakdown via logger.countBy (#119). Gives the person
@@ -635,6 +658,28 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                           Local short-circuit: {Math.round(((typeAheadStats.glossary + typeAheadStats.offlineHit) / typeAheadStats.total) * 100)}% of {typeAheadStats.total}
                         </Text>
                       )}
+                    </View>
+                  )}
+                  {/* Speech translation reliability — counts DualStream speech
+                      translate successes/failures so systematically-failing mic
+                      paths are visible in diagnostics + crash reports even
+                      though speech errors are silent to the user (#132). */}
+                  {speechStats && speechStats.total > 0 && (
+                    <View style={styles.telemetryBlock}>
+                      <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
+                        Speech translate (session):
+                      </Text>
+                      <Text
+                        style={[
+                          styles.infoText,
+                          dynamicStyles.infoText,
+                          speechStats.fail > 0 && speechStats.fail / speechStats.total >= 0.25
+                            ? { color: colors.errorText }
+                            : null,
+                        ]}
+                      >
+                        OK: {speechStats.success} · Fail: {speechStats.fail} ({Math.round((speechStats.fail / speechStats.total) * 100)}% fail of {speechStats.total})
+                      </Text>
                     </View>
                   )}
                   <View style={styles.crashActions}>

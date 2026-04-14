@@ -14,6 +14,30 @@ export interface GlossaryEntry {
   targetLang: string;
 }
 
+// Cheap validator for a single parsed entry. Tightened beyond the previous
+// "is it an object with 4 string fields" check so that entries with blank
+// source/target or obviously-bogus language codes get dropped at load time
+// instead of leaking into the live app as "ghost" rows (#130).
+const LANG_CODE_RE = /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/;
+
+function isValidGlossaryEntry(e: unknown): e is GlossaryEntry {
+  if (!e || typeof e !== "object") return false;
+  const entry = e as Record<string, unknown>;
+  if (typeof entry.source !== "string" || entry.source.trim() === "") return false;
+  if (typeof entry.target !== "string" || entry.target.trim() === "") return false;
+  if (typeof entry.sourceLang !== "string" || !LANG_CODE_RE.test(entry.sourceLang)) return false;
+  if (typeof entry.targetLang !== "string" || !LANG_CODE_RE.test(entry.targetLang)) return false;
+  return true;
+}
+
+// If more than half of the entries in a stored glossary fail validation we
+// treat the file as corrupted and fall back to empty rather than leaking a
+// half-sanitized dictionary into the UI (#130 follow-up). The 50% threshold
+// is deliberately lenient — the common case is "one bad CSV import added a
+// handful of bogus rows"; a true file corruption usually wrecks almost
+// everything and trips this guard.
+const CORRUPTION_DROP_RATIO = 0.5;
+
 interface GlossaryContextValue {
   glossary: GlossaryEntry[];
   glossaryLookup: (text: string, srcLang: string, tgtLang: string) => string | null;
@@ -36,24 +60,28 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
           try {
             const parsed = JSON.parse(val);
             if (Array.isArray(parsed)) {
-              // Filter to only well-formed entries so a partial corruption
-              // doesn't poison the whole glossary.
-              const valid = parsed.filter(
-                (e): e is GlossaryEntry =>
-                  e &&
-                  typeof e === "object" &&
-                  typeof e.source === "string" &&
-                  typeof e.target === "string" &&
-                  typeof e.sourceLang === "string" &&
-                  typeof e.targetLang === "string"
-              );
-              if (valid.length < parsed.length) {
+              // Strict per-entry validation + whole-file corruption check.
+              // A partial corruption still salvages the valid rows, but if
+              // the majority of the file fails validation we treat it as
+              // structural corruption and fall back to empty rather than
+              // leaking a half-sanitized glossary into the live app.
+              const valid = parsed.filter(isValidGlossaryEntry);
+              const dropped = parsed.length - valid.length;
+              if (parsed.length > 0 && dropped / parsed.length > CORRUPTION_DROP_RATIO) {
                 logger.warn(
                   "Glossary",
-                  `Dropped ${parsed.length - valid.length} malformed glossary entries`
+                  `Glossary looks corrupted (${dropped}/${parsed.length} invalid); falling back to empty`
                 );
+                setGlossary([]);
+              } else {
+                if (dropped > 0) {
+                  logger.warn(
+                    "Glossary",
+                    `Dropped ${dropped} malformed glossary entries`
+                  );
+                }
+                setGlossary(valid);
               }
-              setGlossary(valid);
             } else {
               logger.warn("Glossary", "Stored glossary was not an array, discarding");
             }
@@ -119,7 +147,17 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const importGlossaryEntries = useCallback((entries: GlossaryEntry[]) => {
-    setGlossary(entries);
+    // Validate imported entries so CSV/clipboard imports can't sneak bogus
+    // lang codes or blank rows past the same guards that run on load (#130).
+    const valid = entries.filter(isValidGlossaryEntry);
+    const dropped = entries.length - valid.length;
+    if (dropped > 0) {
+      logger.warn(
+        "Glossary",
+        `Dropped ${dropped} invalid entries during import`
+      );
+    }
+    setGlossary(valid);
   }, []);
 
   const value = useMemo(

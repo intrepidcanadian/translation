@@ -180,7 +180,8 @@ function DocumentScanner({
       onNoteSaved?.();
     } catch (err) {
       logger.warn("Notes", "Failed to save scanned note", err);
-      Alert.alert("Error", "Failed to save note");
+      const reason = err instanceof Error && err.message ? err.message : "Unknown error";
+      Alert.alert("Error", `Failed to save note: ${reason}`);
     }
   }, [noteSaved, modeFields, mode, originalText, translatedText, selectedMode, sourceLangCode, targetLangCode, onNoteSaved]);
 
