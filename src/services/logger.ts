@@ -40,9 +40,16 @@ export interface LogQuery {
 }
 
 const DEFAULT_BUFFER_SIZE = 50;
+// Debug entries live in their own bounded ring so they don't crowd out actual
+// error reports, and so that production builds can skip the allocation
+// entirely. Sized generously because telemetry dashboards (#113) want a
+// meaningful sample of recent events, not just the last handful.
+const DEFAULT_DEBUG_BUFFER_SIZE = 200;
 
 let bufferSize = DEFAULT_BUFFER_SIZE;
+let debugBufferSize = DEFAULT_DEBUG_BUFFER_SIZE;
 const recentErrors: LogEntry[] = [];
+const recentDebug: LogEntry[] = [];
 
 function log(level: LogLevel, tag: LogTag, message: string, error?: unknown) {
   const entry: LogEntry = { level, tag, message, error, timestamp: Date.now() };
@@ -52,6 +59,13 @@ function log(level: LogLevel, tag: LogTag, message: string, error?: unknown) {
     // Use while rather than a single shift so that if bufferSize is lowered at
     // runtime (tuning via configureBufferSize) excess entries drain in one go.
     while (recentErrors.length > bufferSize) recentErrors.shift();
+  } else if (level === "debug" && __DEV__) {
+    // Debug ring is dev-only — production builds skip this allocation
+    // entirely and logger.query({ levels: ["debug"] }) returns empty. That's
+    // the intended behavior: the dashboard is a dev aid, not a prod feature,
+    // and we avoid burning memory on events end users won't see.
+    recentDebug.push(entry);
+    while (recentDebug.length > debugBufferSize) recentDebug.shift();
   }
 
   const prefix = `[${tag}]`;
@@ -78,6 +92,22 @@ function matches(entry: LogEntry, query: LogQuery): boolean {
   return true;
 }
 
+function queryAll(q: LogQuery): LogEntry[] {
+  // Decide which rings to scan based on the requested levels. Omitting
+  // `levels` falls back to errors-only for backwards compatibility — callers
+  // who specifically want debug events must opt in via `levels: ["debug"]`.
+  const wantsDebug = q.levels?.includes("debug") ?? false;
+  const wantsErrors = q.levels ? q.levels.some((l) => l !== "debug") : true;
+  const out: LogEntry[] = [];
+  if (wantsErrors) {
+    for (const e of recentErrors) if (matches(e, q)) out.push(e);
+  }
+  if (wantsDebug) {
+    for (const e of recentDebug) if (matches(e, q)) out.push(e);
+  }
+  return out;
+}
+
 export const logger = {
   debug: (tag: LogTag, message: string, error?: unknown) => log("debug", tag, message, error),
   info: (tag: LogTag, message: string) => log("info", tag, message),
@@ -89,12 +119,13 @@ export const logger = {
 
   /** Filter recent entries by tag/level/since — useful for debug panels, test
    * assertions, and targeted crash-report sections (e.g. only Network errors
-   * in the last 30 seconds). */
-  query: (q: LogQuery): readonly LogEntry[] =>
-    recentErrors.filter((e) => matches(e, q)),
+   * in the last 30 seconds). Scans the error ring by default; include `debug`
+   * in `levels` to also scan the dev-only debug ring used by telemetry
+   * dashboards. */
+  query: (q: LogQuery): readonly LogEntry[] => queryAll(q),
 
   /** Clear recent error buffer */
-  clearRecentErrors: () => { recentErrors.length = 0; },
+  clearRecentErrors: () => { recentErrors.length = 0; recentDebug.length = 0; },
 
   /**
    * Tune the ring buffer size at runtime. Useful so we can calibrate against
@@ -108,6 +139,19 @@ export const logger = {
     return clamped;
   },
 
+  /** Tune the debug ring capacity. Clamped to [10, 1000] — debug rings can be
+   * bigger because they are dev-only and used by telemetry dashboards that
+   * benefit from longer windows. */
+  configureDebugBufferSize: (size: number) => {
+    const clamped = Math.max(10, Math.min(1000, Math.floor(size)));
+    debugBufferSize = clamped;
+    while (recentDebug.length > debugBufferSize) recentDebug.shift();
+    return clamped;
+  },
+
   /** Current ring buffer capacity (for debug UI and tests). */
   getBufferSize: (): number => bufferSize,
+
+  /** Current debug ring capacity. */
+  getDebugBufferSize: (): number => debugBufferSize,
 };

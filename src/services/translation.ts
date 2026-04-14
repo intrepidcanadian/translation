@@ -330,8 +330,10 @@ export async function translateText(
     // Move to end of Map iteration order so frequently-used entries survive eviction
     translationCache.delete(cacheKey);
     translationCache.set(cacheKey, cached);
+    cacheHitCount++;
     return { translatedText: cached };
   }
+  cacheMissCount++;
 
   const trimmed = text.trim();
 
@@ -409,6 +411,12 @@ export function clearTranslationCache(provider?: TranslationProvider): number {
   if (!provider) {
     const count = translationCache.size;
     translationCache.clear();
+    // Wipe hit/miss counters alongside a full clear so the dashboard's hit
+    // rate reflects only post-clear traffic. Per-provider clears keep
+    // counters intact — they're session totals and partial cache flushes
+    // shouldn't reset them.
+    cacheHitCount = 0;
+    cacheMissCount = 0;
     return count;
   }
   // Cache keys are `${provider}|${sourceLang}|${targetLang}|${text}` — match
@@ -442,7 +450,22 @@ export interface TranslationCacheStats {
   size: number;
   max: number;
   byProvider: Record<string, number>;
+  /** Total cache hits since process start (or last resetCacheCounters). */
+  hits: number;
+  /** Total cache misses since process start (or last resetCacheCounters).
+   * A "miss" means the request reached a provider — offline-dictionary
+   * short-circuits and empty inputs are excluded so the ratio reflects real
+   * API-quota savings. */
+  misses: number;
 }
+
+// Session-scoped cache telemetry counters. Production-safe (no dev gating)
+// because they're just two ints — they let the Settings diagnostics dashboard
+// show actual cache hit rate, which is the metric that tells us whether the
+// 200-entry LRU is sized well. Reset alongside the cache so clearing the
+// cache also resets the ratio to avoid stale denominators.
+let cacheHitCount = 0;
+let cacheMissCount = 0;
 
 /** Snapshot of every provider circuit breaker's current state. */
 export function getCircuitSnapshots(): CircuitSnapshot[] {
@@ -471,7 +494,7 @@ export function resetCircuits(): void {
   }
 }
 
-/** Current translation cache size + per-provider breakdown. */
+/** Current translation cache size + per-provider breakdown + hit/miss counters. */
 export function getTranslationCacheStats(): TranslationCacheStats {
   const byProvider: Record<string, number> = {};
   for (const key of translationCache.keys()) {
@@ -479,7 +502,20 @@ export function getTranslationCacheStats(): TranslationCacheStats {
     const provider = key.slice(0, key.indexOf("|"));
     byProvider[provider] = (byProvider[provider] || 0) + 1;
   }
-  return { size: translationCache.size, max: CACHE_MAX_SIZE, byProvider };
+  return {
+    size: translationCache.size,
+    max: CACHE_MAX_SIZE,
+    byProvider,
+    hits: cacheHitCount,
+    misses: cacheMissCount,
+  };
+}
+
+/** Reset the hit/miss counters without touching cache contents. Useful in
+ * tests and when the diagnostics dashboard wants a fresh measurement window. */
+export function resetCacheCounters(): void {
+  cacheHitCount = 0;
+  cacheMissCount = 0;
 }
 
 export interface WordAlternative {

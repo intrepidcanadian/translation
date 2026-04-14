@@ -27,8 +27,39 @@ import {
 import { logger } from "../services/logger";
 import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
+import CollapsibleSection from "./CollapsibleSection";
 
 export type { TranslationProvider };
+
+// Type-ahead telemetry shape — counts of where each debounced preview landed.
+// Sourced from logger.query() against the session-scoped debug ring buffer.
+// Lets us measure how often the offline short-circuit saves API quota without
+// shipping Sentry (#113).
+interface TypeAheadStats {
+  glossary: number;
+  offlineHit: number;
+  offlineMiss: number;
+  network: number;
+  total: number;
+}
+
+// String matchers must stay in sync with the logger.debug calls in
+// TranslateScreen's translate-as-you-type effect. Worth a brief comment over
+// each so a future rename doesn't silently break the dashboard.
+function computeTypeAheadStats(): TypeAheadStats {
+  const entries = logger.query({ tags: ["Translation"], levels: ["debug"] });
+  let glossary = 0;
+  let offlineHit = 0;
+  let offlineMiss = 0;
+  let network = 0;
+  for (const e of entries) {
+    if (e.message === "type-ahead: glossary hit") glossary++;
+    else if (e.message === "type-ahead: offline dict hit") offlineHit++;
+    else if (e.message === "type-ahead: offline dict miss") offlineMiss++;
+    else if (e.message === "type-ahead: network request") network++;
+  }
+  return { glossary, offlineHit, offlineMiss, network, total: glossary + offlineHit + offlineMiss + network };
+}
 
 export type FontSizeOption = "small" | "medium" | "large" | "xlarge";
 
@@ -85,11 +116,14 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const [crashCopied, setCrashCopied] = useState(false);
   const [circuitSnapshots, setCircuitSnapshots] = useState<CircuitSnapshot[]>([]);
   const [cacheStats, setCacheStats] = useState<TranslationCacheStats | null>(null);
+  const [typeAheadStats, setTypeAheadStats] = useState<TypeAheadStats | null>(null);
   // Collapsible debug sub-sections. Each defaults to collapsed; we auto-expand
   // an urgent section (open breaker, last crash) the first time the modal
   // renders so the user notices what needs attention.
   const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
   const [crashSectionExpanded, setCrashSectionExpanded] = useState(false);
+  const toggleDiagnostics = useCallback(() => setDiagnosticsExpanded((v) => !v), []);
+  const toggleCrashSection = useCallback(() => setCrashSectionExpanded((v) => !v), []);
 
   useEffect(() => {
     if (Platform.OS === "ios") {
@@ -106,12 +140,14 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     const snapshots = getCircuitSnapshots();
     setCircuitSnapshots(snapshots);
     setCacheStats(getTranslationCacheStats());
+    setTypeAheadStats(computeTypeAheadStats());
     if (snapshots.some((s) => s.open)) setDiagnosticsExpanded(true);
   }, [visible]);
 
   const refreshDiagnostics = useCallback(() => {
     setCircuitSnapshots(getCircuitSnapshots());
     setCacheStats(getTranslationCacheStats());
+    setTypeAheadStats(computeTypeAheadStats());
   }, []);
 
   const handleResetCircuits = useCallback(() => {
@@ -169,6 +205,38 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     const versionLine = lastCrash.appVersion
       ? `Version: ${lastCrash.appVersion}${lastCrash.buildNumber ? ` (${lastCrash.buildNumber})` : ""}`
       : "";
+    // Snapshot live translation diagnostics so shared reports reveal which
+    // provider was down at crash-share time. Circuit state is in-memory only,
+    // so this is the only place it survives into the shared bundle. Skips
+    // entirely when nothing interesting is happening to keep the report clean.
+    const circuits = getCircuitSnapshots();
+    const cache = getTranslationCacheStats();
+    const telemetry = computeTypeAheadStats();
+    const diagnosticsLines: string[] = [];
+    if (circuits.some((c) => c.open || c.failures > 0) || cache.size > 0 || telemetry.total > 0) {
+      diagnosticsLines.push("\nTranslation diagnostics:");
+      if (cache.size > 0) {
+        diagnosticsLines.push(`  Cache: ${cache.size}/${cache.max}`);
+      }
+      const cacheTotal = cache.hits + cache.misses;
+      if (cacheTotal > 0) {
+        diagnosticsLines.push(
+          `  Cache hit rate: ${Math.round((cache.hits / cacheTotal) * 100)}% (${cache.hits}/${cacheTotal})`
+        );
+      }
+      for (const c of circuits) {
+        if (c.open || c.failures > 0) {
+          diagnosticsLines.push(
+            `  ${c.provider}: ${c.open ? `OPEN (${Math.ceil(c.msUntilReset / 1000)}s)` : "closed"} · failures ${c.failures}`
+          );
+        }
+      }
+      if (telemetry.total > 0) {
+        diagnosticsLines.push(
+          `  Type-ahead: glossary=${telemetry.glossary} offHit=${telemetry.offlineHit} offMiss=${telemetry.offlineMiss} net=${telemetry.network}`
+        );
+      }
+    }
     return [
       `Live Translator crash report`,
       versionLine,
@@ -176,6 +244,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
       `Crash: ${lastCrash.message}`,
       `Time: ${new Date(lastCrash.timestamp).toLocaleString()}`,
       lastCrash.stack ? `Stack: ${lastCrash.stack}` : "",
+      ...diagnosticsLines,
       recentErrors.length > 0 ? `\nRecent errors (${recentErrors.length}):` : "",
       ...recentErrors.slice(-10).map((e) => `  [${e.tag}] ${e.message}`),
     ].filter(Boolean).join("\n");
@@ -461,152 +530,162 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
             {/* Translation diagnostics — circuit breakers + cache stats */}
             {(circuitSnapshots.length > 0 || (cacheStats && cacheStats.size > 0)) && (
               <View style={styles.infoSection}>
-                <TouchableOpacity
-                  style={styles.collapsibleHeader}
-                  onPress={() => setDiagnosticsExpanded((v) => !v)}
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: diagnosticsExpanded }}
-                  accessibilityLabel="Translation Diagnostics section"
-                  accessibilityHint={diagnosticsExpanded ? "Double tap to collapse" : "Double tap to expand"}
+                <CollapsibleSection
+                  title="Translation Diagnostics"
+                  expanded={diagnosticsExpanded}
+                  onToggle={toggleDiagnostics}
+                  urgent={circuitSnapshots.some((s) => s.open)}
+                  colors={colors}
                 >
-                  <Text style={[styles.infoTitle, dynamicStyles.infoTitle, styles.collapsibleTitle]}>
-                    {diagnosticsExpanded ? "▾" : "▸"}  Translation Diagnostics
-                    {!diagnosticsExpanded && circuitSnapshots.some((s) => s.open) ? "  ⚠" : ""}
-                  </Text>
-                </TouchableOpacity>
-                {diagnosticsExpanded && cacheStats && (
-                  <>
-                    <Text style={[styles.infoText, dynamicStyles.infoText]}>
-                      Cache: {cacheStats.size}/{cacheStats.max}
-                    </Text>
-                    {Object.entries(cacheStats.byProvider).map(([provider, count]) => (
-                      <View key={provider} style={styles.cacheProviderRow}>
-                        <Text style={[styles.infoText, dynamicStyles.infoText, styles.cacheProviderLabel]}>
-                          {provider}: {count}
+                  {cacheStats && (
+                    <>
+                      <Text style={[styles.infoText, dynamicStyles.infoText]}>
+                        Cache: {cacheStats.size}/{cacheStats.max}
+                      </Text>
+                      {(cacheStats.hits + cacheStats.misses) > 0 && (
+                        <Text style={[styles.infoText, dynamicStyles.infoText]}>
+                          Hit rate: {Math.round((cacheStats.hits / (cacheStats.hits + cacheStats.misses)) * 100)}% ({cacheStats.hits}/{cacheStats.hits + cacheStats.misses})
                         </Text>
-                        <TouchableOpacity
-                          style={[styles.cacheProviderClear, { backgroundColor: colors.cardBg }]}
-                          onPress={() => handleClearProviderCache(provider)}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Clear ${provider} cache entries`}
-                          accessibilityHint={`Removes ${count} cached ${provider} translations`}
-                        >
-                          <Text style={[styles.cacheProviderClearText, { color: colors.dimText }]}>Clear</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ))}
-                  </>
-                )}
-                {diagnosticsExpanded && circuitSnapshots.map((s) => (
-                  <Text
-                    key={s.provider}
-                    style={[
-                      styles.infoText,
-                      dynamicStyles.infoText,
-                      s.open ? { color: colors.errorText } : null,
-                    ]}
-                  >
-                    {s.provider}: {s.open ? `open (${Math.ceil(s.msUntilReset / 1000)}s)` : "closed"} · failures {s.failures}
-                  </Text>
-                ))}
-                {diagnosticsExpanded && (
-                <View style={styles.crashActions}>
-                  <TouchableOpacity
-                    style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                    onPress={refreshDiagnostics}
-                    accessibilityRole="button"
-                    accessibilityLabel="Refresh translation diagnostics"
-                  >
-                    <Text style={[styles.crashActionText, { color: colors.primary }]}>Refresh</Text>
-                  </TouchableOpacity>
-                  {circuitSnapshots.some((s) => s.open || s.failures > 0) && (
+                      )}
+                      {Object.entries(cacheStats.byProvider).map(([provider, count]) => (
+                        <View key={provider} style={styles.cacheProviderRow}>
+                          <Text style={[styles.infoText, dynamicStyles.infoText, styles.cacheProviderLabel]}>
+                            {provider}: {count}
+                          </Text>
+                          <TouchableOpacity
+                            style={[styles.cacheProviderClear, { backgroundColor: colors.cardBg }]}
+                            onPress={() => handleClearProviderCache(provider)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Clear ${provider} cache entries`}
+                            accessibilityHint={`Removes ${count} cached ${provider} translations`}
+                          >
+                            <Text style={[styles.cacheProviderClearText, { color: colors.dimText }]}>Clear</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </>
+                  )}
+                  {circuitSnapshots.map((s) => (
+                    <Text
+                      key={s.provider}
+                      style={[
+                        styles.infoText,
+                        dynamicStyles.infoText,
+                        s.open ? { color: colors.errorText } : null,
+                      ]}
+                    >
+                      {s.provider}: {s.open ? `open (${Math.ceil(s.msUntilReset / 1000)}s)` : "closed"} · failures {s.failures}
+                    </Text>
+                  ))}
+                  {/* Type-ahead telemetry — glossary/offline/network hit breakdown so
+                      we can measure how often the offline short-circuit saves API
+                      quota vs. hitting the network. Session-scoped (cleared when the
+                      process dies). */}
+                  {typeAheadStats && (
+                    <View style={styles.telemetryBlock}>
+                      <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
+                        Type-ahead (session):
+                      </Text>
+                      <Text style={[styles.infoText, dynamicStyles.infoText]}>
+                        Glossary: {typeAheadStats.glossary} · Offline hit: {typeAheadStats.offlineHit} · Offline miss: {typeAheadStats.offlineMiss} · Network: {typeAheadStats.network}
+                      </Text>
+                      {typeAheadStats.total > 0 && (
+                        <Text style={[styles.infoText, dynamicStyles.infoText]}>
+                          Local short-circuit: {Math.round(((typeAheadStats.glossary + typeAheadStats.offlineHit) / typeAheadStats.total) * 100)}% of {typeAheadStats.total}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                  <View style={styles.crashActions}>
                     <TouchableOpacity
                       style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                      onPress={handleResetCircuits}
+                      onPress={refreshDiagnostics}
                       accessibilityRole="button"
-                      accessibilityLabel="Reset translation circuit breakers"
+                      accessibilityLabel="Refresh translation diagnostics"
                     >
-                      <Text style={[styles.crashActionText, { color: colors.primary }]}>Reset Circuits</Text>
+                      <Text style={[styles.crashActionText, { color: colors.primary }]}>Refresh</Text>
                     </TouchableOpacity>
-                  )}
-                  {cacheStats && cacheStats.size > 0 && (
-                    <TouchableOpacity
-                      style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                      onPress={handleClearTranslationCache}
-                      accessibilityRole="button"
-                      accessibilityLabel="Clear translation cache"
-                    >
-                      <Text style={[styles.crashActionText, { color: colors.dimText }]}>Clear Cache</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-                )}
+                    {circuitSnapshots.some((s) => s.open || s.failures > 0) && (
+                      <TouchableOpacity
+                        style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
+                        onPress={handleResetCircuits}
+                        accessibilityRole="button"
+                        accessibilityLabel="Reset translation circuit breakers"
+                      >
+                        <Text style={[styles.crashActionText, { color: colors.primary }]}>Reset Circuits</Text>
+                      </TouchableOpacity>
+                    )}
+                    {cacheStats && cacheStats.size > 0 && (
+                      <TouchableOpacity
+                        style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
+                        onPress={handleClearTranslationCache}
+                        accessibilityRole="button"
+                        accessibilityLabel="Clear translation cache"
+                      >
+                        <Text style={[styles.crashActionText, { color: colors.dimText }]}>Clear Cache</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </CollapsibleSection>
               </View>
             )}
 
             {/* Debug / crash report section — collapsible */}
             {(lastCrash || logger.getRecentErrors().length > 0) && (
               <View style={styles.infoSection}>
-                <TouchableOpacity
-                  style={styles.collapsibleHeader}
-                  onPress={() => setCrashSectionExpanded((v) => !v)}
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: crashSectionExpanded }}
-                  accessibilityLabel="Debug section"
-                  accessibilityHint={crashSectionExpanded ? "Double tap to collapse" : "Double tap to expand"}
+                <CollapsibleSection
+                  title="Debug"
+                  expanded={crashSectionExpanded}
+                  onToggle={toggleCrashSection}
+                  urgent={!!lastCrash}
+                  colors={colors}
                 >
-                  <Text style={[styles.infoTitle, dynamicStyles.infoTitle, styles.collapsibleTitle]}>
-                    {crashSectionExpanded ? "▾" : "▸"}  Debug
-                    {!crashSectionExpanded && lastCrash ? "  ⚠" : ""}
-                  </Text>
-                </TouchableOpacity>
-                {crashSectionExpanded && lastCrash && (
-                  <View style={[styles.crashCard, { backgroundColor: colors.errorBg, borderColor: colors.errorBorder }]}>
-                    <Text style={[styles.crashTitle, { color: colors.errorText }]}>Last Crash</Text>
-                    <Text style={[styles.crashMessage, { color: colors.errorText }]} numberOfLines={3}>
-                      {lastCrash.message}
+                  {lastCrash && (
+                    <View style={[styles.crashCard, { backgroundColor: colors.errorBg, borderColor: colors.errorBorder }]}>
+                      <Text style={[styles.crashTitle, { color: colors.errorText }]}>Last Crash</Text>
+                      <Text style={[styles.crashMessage, { color: colors.errorText }]} numberOfLines={3}>
+                        {lastCrash.message}
+                      </Text>
+                      <Text style={[styles.crashTime, { color: colors.dimText }]}>
+                        {new Date(lastCrash.timestamp).toLocaleString()}
+                      </Text>
+                    </View>
+                  )}
+                  {logger.getRecentErrors().length > 0 && (
+                    <Text style={[styles.infoText, dynamicStyles.infoText]}>
+                      {logger.getRecentErrors().length} recent error{logger.getRecentErrors().length === 1 ? "" : "s"} logged
                     </Text>
-                    <Text style={[styles.crashTime, { color: colors.dimText }]}>
-                      {new Date(lastCrash.timestamp).toLocaleString()}
-                    </Text>
+                  )}
+                  <View style={styles.crashActions}>
+                    <TouchableOpacity
+                      style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
+                      onPress={copyCrashReport}
+                      accessibilityRole="button"
+                      accessibilityLabel="Copy crash report to clipboard"
+                    >
+                      <Text style={[styles.crashActionText, { color: colors.primary }]}>
+                        {crashCopied ? "Copied!" : "Copy"}
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
+                      onPress={shareCrashReport}
+                      accessibilityRole="button"
+                      accessibilityLabel="Share crash report via system share sheet"
+                      accessibilityHint="Opens the share sheet to send the crash report to another app"
+                    >
+                      <Text style={[styles.crashActionText, { color: colors.primary }]}>Share</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
+                      onPress={clearCrashReport}
+                      accessibilityRole="button"
+                      accessibilityLabel="Clear crash report"
+                    >
+                      <Text style={[styles.crashActionText, { color: colors.dimText }]}>Clear</Text>
+                    </TouchableOpacity>
                   </View>
-                )}
-                {crashSectionExpanded && logger.getRecentErrors().length > 0 && (
-                  <Text style={[styles.infoText, dynamicStyles.infoText]}>
-                    {logger.getRecentErrors().length} recent error{logger.getRecentErrors().length === 1 ? "" : "s"} logged
-                  </Text>
-                )}
-                {crashSectionExpanded && (
-                <View style={styles.crashActions}>
-                  <TouchableOpacity
-                    style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                    onPress={copyCrashReport}
-                    accessibilityRole="button"
-                    accessibilityLabel="Copy crash report to clipboard"
-                  >
-                    <Text style={[styles.crashActionText, { color: colors.primary }]}>
-                      {crashCopied ? "Copied!" : "Copy"}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                    onPress={shareCrashReport}
-                    accessibilityRole="button"
-                    accessibilityLabel="Share crash report via system share sheet"
-                    accessibilityHint="Opens the share sheet to send the crash report to another app"
-                  >
-                    <Text style={[styles.crashActionText, { color: colors.primary }]}>Share</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                    onPress={clearCrashReport}
-                    accessibilityRole="button"
-                    accessibilityLabel="Clear crash report"
-                  >
-                    <Text style={[styles.crashActionText, { color: colors.dimText }]}>Clear</Text>
-                  </TouchableOpacity>
-                </View>
-                )}
+                </CollapsibleSection>
               </View>
             )}
           </ScrollView>
@@ -748,11 +827,14 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: 8,
   },
-  collapsibleHeader: {
-    paddingVertical: 4,
+  telemetryBlock: {
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(127,127,127,0.3)",
   },
-  collapsibleTitle: {
-    marginBottom: 4,
+  telemetryTitle: {
+    fontWeight: "600",
   },
   cacheProviderRow: {
     flexDirection: "row",
