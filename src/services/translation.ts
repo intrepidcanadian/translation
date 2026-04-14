@@ -397,8 +397,32 @@ export async function translateText(
   return result;
 }
 
-export function clearTranslationCache() {
-  translationCache.clear();
+/**
+ * Clear the in-memory translation cache.
+ *
+ * If `provider` is omitted, wipes every cached entry (used by the Settings
+ * diagnostics "Clear Cache" action). If a provider is given, only entries
+ * for that provider are dropped — useful when a user switches providers and
+ * wants to make sure stale cloud results aren't served from the cache.
+ */
+export function clearTranslationCache(provider?: TranslationProvider): number {
+  if (!provider) {
+    const count = translationCache.size;
+    translationCache.clear();
+    return count;
+  }
+  // Cache keys are `${provider}|${sourceLang}|${targetLang}|${text}` — match
+  // the provider prefix exactly (up to the first `|`) so "apple" doesn't
+  // accidentally also match a hypothetical "apple-beta" provider.
+  const prefix = `${provider}|`;
+  let removed = 0;
+  for (const key of translationCache.keys()) {
+    if (key.startsWith(prefix)) {
+      translationCache.delete(key);
+      removed++;
+    }
+  }
+  return removed;
 }
 
 // ─── Diagnostics API ──────────────────────────────────────────────────────────

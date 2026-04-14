@@ -1,6 +1,8 @@
 // Built-in offline phrase dictionary organized by category
 // Provides basic offline capability without requiring a local ML model
 
+import { normalizeForLookup } from "../utils/stringNormalize";
+
 export type PhraseLangCode = "en" | "es" | "fr" | "de" | "it" | "pt" | "ja" | "zh" | "ko" | "ar";
 
 export interface OfflinePhrase extends Record<PhraseLangCode, string> {
@@ -244,12 +246,6 @@ const WORD_INDEX: Map<string, OfflinePhrase> = new Map();
 // lookup when the user's input is clearly longer than anything we could match.
 let MAX_PHRASE_LENGTH = 0;
 let MAX_WORD_LENGTH = 0;
-
-const NORMALIZE_TRAILING_PUNCT = /[?!.,。？！、]+$/;
-
-function normalizeForLookup(s: string): string {
-  return s.trim().toLowerCase().replace(NORMALIZE_TRAILING_PUNCT, "");
-}
 
 function indexKey(lang: string, normalized: string): string {
   return `${lang}|${normalized}`;

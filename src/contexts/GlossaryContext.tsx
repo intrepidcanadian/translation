@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { impactLight, impactMedium } from "../services/haptics";
 import { logger } from "../services/logger";
+import { normalizeForLookup, lookupKey } from "../utils/stringNormalize";
 import { useLanguage } from "./LanguageContext";
 
 const GLOSSARY_KEY = "user_glossary";
@@ -54,7 +55,9 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
   const glossaryMap = useMemo(() => {
     const map = new Map<string, string>();
     for (const g of glossary) {
-      const key = `${g.sourceLang}|${g.targetLang}|${g.source.toLowerCase()}`;
+      // Use shared normalizer so trailing punctuation ("hello!" / "hello")
+      // collapses to the same key as the offline phrase dictionary.
+      const key = lookupKey(g.sourceLang, g.targetLang, normalizeForLookup(g.source));
       map.set(key, g.target);
     }
     return map;
@@ -62,7 +65,7 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
 
   const glossaryLookup = useCallback(
     (text: string, srcLang: string, tgtLang: string): string | null => {
-      const key = `${srcLang}|${tgtLang}|${text.trim().toLowerCase()}`;
+      const key = lookupKey(srcLang, tgtLang, normalizeForLookup(text));
       return glossaryMap.get(key) ?? null;
     },
     [glossaryMap]
@@ -72,11 +75,12 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
     (src: string, tgt: string) => {
       if (!src || !tgt) return;
       impactLight();
+      const normalizedSrc = normalizeForLookup(src);
       setGlossary((prev) => {
         const filtered = prev.filter(
           (g) =>
             !(
-              g.source.toLowerCase() === src.toLowerCase() &&
+              normalizeForLookup(g.source) === normalizedSrc &&
               g.sourceLang === sourceLang.code &&
               g.targetLang === targetLang.code
             )

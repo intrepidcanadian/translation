@@ -85,6 +85,11 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const [crashCopied, setCrashCopied] = useState(false);
   const [circuitSnapshots, setCircuitSnapshots] = useState<CircuitSnapshot[]>([]);
   const [cacheStats, setCacheStats] = useState<TranslationCacheStats | null>(null);
+  // Collapsible debug sub-sections. Each defaults to collapsed; we auto-expand
+  // an urgent section (open breaker, last crash) the first time the modal
+  // renders so the user notices what needs attention.
+  const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
+  const [crashSectionExpanded, setCrashSectionExpanded] = useState(false);
 
   useEffect(() => {
     if (Platform.OS === "ios") {
@@ -94,11 +99,14 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
 
   // Refresh live translation diagnostics every time the modal is shown.
   // Circuit breaker state and cache stats are in-memory only, so we re-read
-  // them on open rather than subscribing.
+  // them on open rather than subscribing. Also auto-expands the diagnostics
+  // section on open when any breaker is open so the user sees the issue.
   useEffect(() => {
     if (!visible) return;
-    setCircuitSnapshots(getCircuitSnapshots());
+    const snapshots = getCircuitSnapshots();
+    setCircuitSnapshots(snapshots);
     setCacheStats(getTranslationCacheStats());
+    if (snapshots.some((s) => s.open)) setDiagnosticsExpanded(true);
   }, [visible]);
 
   const refreshDiagnostics = useCallback(() => {
@@ -118,6 +126,18 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     notifySuccess();
   }, [refreshDiagnostics]);
 
+  // Per-provider eviction — dumps just one provider's cached entries so users
+  // switching providers can drop stale cloud results without nuking the whole
+  // cache. Uses the new clearTranslationCache(provider) overload.
+  const handleClearProviderCache = useCallback(
+    (provider: string) => {
+      clearTranslationCache(provider as TranslationProvider);
+      refreshDiagnostics();
+      notifySuccess();
+    },
+    [refreshDiagnostics]
+  );
+
   // Load last crash report when settings opens. The stored blob runs through
   // migrateCrashReport so reports written by older app versions (pre-
   // schemaVersion) still render instead of being silently dropped.
@@ -129,6 +149,9 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
         try {
           const migrated = migrateCrashReport(JSON.parse(val));
           setLastCrash(migrated);
+          // A real stored crash is more important than a general debug panel —
+          // auto-expand so it can't be missed behind the disclosure triangle.
+          setCrashSectionExpanded(true);
         } catch (err) {
           logger.warn("Settings", "Failed to parse crash report", err);
         }
@@ -438,15 +461,43 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
             {/* Translation diagnostics — circuit breakers + cache stats */}
             {(circuitSnapshots.length > 0 || (cacheStats && cacheStats.size > 0)) && (
               <View style={styles.infoSection}>
-                <Text style={[styles.infoTitle, dynamicStyles.infoTitle]}>Translation Diagnostics</Text>
-                {cacheStats && (
-                  <Text style={[styles.infoText, dynamicStyles.infoText]}>
-                    Cache: {cacheStats.size}/{cacheStats.max}
-                    {Object.keys(cacheStats.byProvider).length > 0 ? " · " : ""}
-                    {Object.entries(cacheStats.byProvider).map(([p, n]) => `${p}:${n}`).join(" ")}
+                <TouchableOpacity
+                  style={styles.collapsibleHeader}
+                  onPress={() => setDiagnosticsExpanded((v) => !v)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: diagnosticsExpanded }}
+                  accessibilityLabel="Translation Diagnostics section"
+                  accessibilityHint={diagnosticsExpanded ? "Double tap to collapse" : "Double tap to expand"}
+                >
+                  <Text style={[styles.infoTitle, dynamicStyles.infoTitle, styles.collapsibleTitle]}>
+                    {diagnosticsExpanded ? "▾" : "▸"}  Translation Diagnostics
+                    {!diagnosticsExpanded && circuitSnapshots.some((s) => s.open) ? "  ⚠" : ""}
                   </Text>
+                </TouchableOpacity>
+                {diagnosticsExpanded && cacheStats && (
+                  <>
+                    <Text style={[styles.infoText, dynamicStyles.infoText]}>
+                      Cache: {cacheStats.size}/{cacheStats.max}
+                    </Text>
+                    {Object.entries(cacheStats.byProvider).map(([provider, count]) => (
+                      <View key={provider} style={styles.cacheProviderRow}>
+                        <Text style={[styles.infoText, dynamicStyles.infoText, styles.cacheProviderLabel]}>
+                          {provider}: {count}
+                        </Text>
+                        <TouchableOpacity
+                          style={[styles.cacheProviderClear, { backgroundColor: colors.cardBg }]}
+                          onPress={() => handleClearProviderCache(provider)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Clear ${provider} cache entries`}
+                          accessibilityHint={`Removes ${count} cached ${provider} translations`}
+                        >
+                          <Text style={[styles.cacheProviderClearText, { color: colors.dimText }]}>Clear</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </>
                 )}
-                {circuitSnapshots.map((s) => (
+                {diagnosticsExpanded && circuitSnapshots.map((s) => (
                   <Text
                     key={s.provider}
                     style={[
@@ -458,6 +509,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                     {s.provider}: {s.open ? `open (${Math.ceil(s.msUntilReset / 1000)}s)` : "closed"} · failures {s.failures}
                   </Text>
                 ))}
+                {diagnosticsExpanded && (
                 <View style={styles.crashActions}>
                   <TouchableOpacity
                     style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
@@ -488,14 +540,27 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                     </TouchableOpacity>
                   )}
                 </View>
+                )}
               </View>
             )}
 
-            {/* Debug / crash report section */}
+            {/* Debug / crash report section — collapsible */}
             {(lastCrash || logger.getRecentErrors().length > 0) && (
               <View style={styles.infoSection}>
-                <Text style={[styles.infoTitle, dynamicStyles.infoTitle]}>Debug</Text>
-                {lastCrash && (
+                <TouchableOpacity
+                  style={styles.collapsibleHeader}
+                  onPress={() => setCrashSectionExpanded((v) => !v)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: crashSectionExpanded }}
+                  accessibilityLabel="Debug section"
+                  accessibilityHint={crashSectionExpanded ? "Double tap to collapse" : "Double tap to expand"}
+                >
+                  <Text style={[styles.infoTitle, dynamicStyles.infoTitle, styles.collapsibleTitle]}>
+                    {crashSectionExpanded ? "▾" : "▸"}  Debug
+                    {!crashSectionExpanded && lastCrash ? "  ⚠" : ""}
+                  </Text>
+                </TouchableOpacity>
+                {crashSectionExpanded && lastCrash && (
                   <View style={[styles.crashCard, { backgroundColor: colors.errorBg, borderColor: colors.errorBorder }]}>
                     <Text style={[styles.crashTitle, { color: colors.errorText }]}>Last Crash</Text>
                     <Text style={[styles.crashMessage, { color: colors.errorText }]} numberOfLines={3}>
@@ -506,11 +571,12 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                     </Text>
                   </View>
                 )}
-                {logger.getRecentErrors().length > 0 && (
+                {crashSectionExpanded && logger.getRecentErrors().length > 0 && (
                   <Text style={[styles.infoText, dynamicStyles.infoText]}>
                     {logger.getRecentErrors().length} recent error{logger.getRecentErrors().length === 1 ? "" : "s"} logged
                   </Text>
                 )}
+                {crashSectionExpanded && (
                 <View style={styles.crashActions}>
                   <TouchableOpacity
                     style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
@@ -540,6 +606,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                     <Text style={[styles.crashActionText, { color: colors.dimText }]}>Clear</Text>
                   </TouchableOpacity>
                 </View>
+                )}
               </View>
             )}
           </ScrollView>
@@ -680,6 +747,32 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
     marginBottom: 8,
+  },
+  collapsibleHeader: {
+    paddingVertical: 4,
+  },
+  collapsibleTitle: {
+    marginBottom: 4,
+  },
+  cacheProviderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 2,
+  },
+  cacheProviderLabel: {
+    marginBottom: 0,
+    flex: 1,
+  },
+  cacheProviderClear: {
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    marginLeft: 8,
+  },
+  cacheProviderClearText: {
+    fontSize: 12,
+    fontWeight: "600",
   },
   infoText: {
     fontSize: 14,

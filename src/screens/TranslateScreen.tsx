@@ -329,6 +329,7 @@ export default function TranslateScreen() {
       const glossaryMatch = glossaryLookup(text, sourceLang.code, targetLang.code);
       if (glossaryMatch) {
         setTypedPreview(glossaryMatch);
+        logger.debug("Translation", "type-ahead: glossary hit", { length: text.length });
         return;
       }
       // Offline short-circuit — when disconnected, try the offline phrase
@@ -337,10 +338,19 @@ export default function TranslateScreen() {
       if (isOffline) {
         const offlineHit = offlineTranslate(text, sourceLang.code, targetLang.code);
         setTypedPreview(offlineHit ?? "");
+        logger.debug(
+          "Translation",
+          offlineHit ? "type-ahead: offline dict hit" : "type-ahead: offline dict miss",
+          { length: text.length }
+        );
         return;
       }
       const controller = new AbortController();
       typedAbortRef.current = controller;
+      logger.debug("Translation", "type-ahead: network request", {
+        length: text.length,
+        provider: settings.translationProvider,
+      });
       try {
         const result = await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider });
         if (!controller.signal.aborted) {
