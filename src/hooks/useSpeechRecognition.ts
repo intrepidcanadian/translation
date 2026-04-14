@@ -8,6 +8,7 @@ import * as Speech from "expo-speech";
 import { impactLight, impactMedium } from "../services/haptics";
 import { translateText } from "../services/translation";
 import type { TranslationProvider } from "../services/translation";
+import { increment as telemetryIncrement } from "../services/telemetry";
 
 interface UseSpeechRecognitionOptions {
   sourceLangCode: string;
@@ -150,9 +151,16 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
             lastConfidenceRef.current = result.confidence;
             lastDetectedLangRef.current = result.detectedLanguage;
             updateWidgetData(text.trim(), result.translatedText, fromCode, toCode);
+            // #135: count the primary speech-translation pipeline too, not
+            // just DualStreamView's secondary path. Without this the session
+            // dashboard undercounts real speech usage and the fail-rate UI
+            // in Settings > Translation Diagnostics can't distinguish "no
+            // speech traffic" from "everything is succeeding".
+            telemetryIncrement("speech.translateSuccess");
           }
         } catch (err) {
           if (controller.signal.aborted) return;
+          telemetryIncrement("speech.translateFail");
           const msg = err instanceof Error ? err.message : "Translation failed";
           onShowError(msg);
         } finally {

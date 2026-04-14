@@ -148,6 +148,39 @@ export const logger = {
     return out;
   },
 
+  /**
+   * Rolling-window variant of `countBy` (#125). Counts only entries within
+   * the last `windowMs` milliseconds, so dashboards can render "errors per
+   * minute" without additional plumbing. Composes with the `LogQuery`'s
+   * existing `since` field by taking the *later* of the two timestamps, so a
+   * caller that already narrowed to a specific range doesn't accidentally
+   * widen it.
+   *
+   * Example:
+   *   // Warn/error count per tag over the last 60 seconds:
+   *   logger.countByRolling(
+   *     { levels: ["warn", "error"] },
+   *     (e) => e.tag,
+   *     60_000,
+   *   )
+   */
+  countByRolling: <K extends string>(
+    q: LogQuery,
+    keyFn: (entry: LogEntry) => K | null | undefined,
+    windowMs: number
+  ): Record<K, number> => {
+    const cutoff = Date.now() - Math.max(0, windowMs);
+    const effectiveSince =
+      q.since !== undefined ? Math.max(q.since, cutoff) : cutoff;
+    const out = {} as Record<K, number>;
+    for (const entry of queryAll({ ...q, since: effectiveSince })) {
+      const key = keyFn(entry);
+      if (key == null) continue;
+      out[key] = (out[key] ?? 0) + 1;
+    }
+    return out;
+  },
+
   /** Clear recent error buffer */
   clearRecentErrors: () => { recentErrors.length = 0; recentDebug.length = 0; },
 

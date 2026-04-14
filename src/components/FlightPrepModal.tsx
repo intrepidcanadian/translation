@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
   Animated,
+  AccessibilityInfo,
 } from "react-native";
 import { type ThemeColors, getColors } from "../theme";
 import { type LanguageStatus } from "../../modules/apple-translation";
@@ -178,6 +179,21 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
     return `${mb} MB`;
   };
 
+  // Announce the Apple Translation unavailable banner when VoiceOver users
+  // open the modal to a non-ok module state. `accessibilityLiveRegion` alone
+  // is unreliable on iOS for content that is already rendered on mount, so we
+  // fire an explicit announcement once the banner transitions into view. (#136)
+  useEffect(() => {
+    if (!visible) return;
+    if (Platform.OS !== "ios") return;
+    if (moduleAvailability === "ok") return;
+    const message =
+      moduleAvailability === "unsupported"
+        ? "Apple Translation unavailable. Your iOS version does not support on-device Translation. Cloud translation will be used instead."
+        : "Apple Translation unavailable. The on-device Translation framework is not responding. Cloud translation will be used as a fallback.";
+    AccessibilityInfo.announceForAccessibility(message);
+  }, [visible, moduleAvailability]);
+
   // Pulse animation for downloading indicator
   useEffect(() => {
     if (isDownloadingAll) {
@@ -332,6 +348,7 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
                 ]}
                 accessibilityRole="alert"
                 accessibilityLabel="Apple Translation unavailable"
+                accessibilityLiveRegion="polite"
               >
                 <Text style={styles.unavailableIcon}>⚠️</Text>
                 <View style={styles.unavailableTextCol}>

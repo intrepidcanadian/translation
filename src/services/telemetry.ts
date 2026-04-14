@@ -55,6 +55,21 @@ const counters: Record<TelemetryKey, number> = {
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let persistEnabled = false;
+/**
+ * Hydration race guard (#134). `initTelemetry()` is fire-and-forget from
+ * App.tsx's mount useEffect, so any `increment()` that lands while the
+ * AsyncStorage read is still in flight would otherwise be clobbered when the
+ * hydration loop copies the stored values on top of the in-memory counters.
+ *
+ * We track the in-flight hydration promise plus a staging deltas map: while
+ * hydration is pending, `increment()` both updates the live counter (so
+ * current-session reads stay accurate) and records the delta so we can re-
+ * apply it on top of the hydrated baseline once the read resolves. After
+ * hydration the deltas map is discarded and `increment()` takes its normal
+ * fast path.
+ */
+let hydrationInFlight: Promise<void> | null = null;
+const pendingDeltas: Partial<Record<TelemetryKey, number>> = {};
 
 function schedulePersist(): void {
   if (!persistEnabled) return;
@@ -72,32 +87,74 @@ function schedulePersist(): void {
  * subsequent writes. Call once at app startup; subsequent calls are no-ops.
  * Silently falls back to empty counters if the stored blob is missing or
  * malformed so a corrupted write can't prevent the app from booting.
+ *
+ * Returns the in-flight hydration promise so callers that specifically want
+ * to await completion can; App.tsx's mount useEffect fires-and-forgets and
+ * relies on the hydration race guard (see `hydrationInFlight` / `pendingDeltas`
+ * above) to preserve increments that landed during the read.
  */
 export async function initTelemetry(): Promise<void> {
   if (persistEnabled) return;
-  try {
-    const raw = await AsyncStorage.getItem(TELEMETRY_STORAGE_KEY);
-    if (raw) {
-      const parsed: unknown = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
-        const stored = parsed as Record<string, unknown>;
-        for (const key of Object.keys(counters) as TelemetryKey[]) {
-          const v = stored[key];
-          if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
-            counters[key] = Math.floor(v);
+  if (hydrationInFlight) return hydrationInFlight;
+
+  hydrationInFlight = (async () => {
+    let storedHadUnknownKeys = false;
+    try {
+      const raw = await AsyncStorage.getItem(TELEMETRY_STORAGE_KEY);
+      if (raw) {
+        const parsed: unknown = JSON.parse(raw);
+        if (parsed && typeof parsed === "object") {
+          const stored = parsed as Record<string, unknown>;
+          const knownKeys = Object.keys(counters) as TelemetryKey[];
+          const knownSet = new Set<string>(knownKeys);
+          for (const k of Object.keys(stored)) {
+            if (!knownSet.has(k)) {
+              storedHadUnknownKeys = true;
+              break;
+            }
+          }
+          for (const key of knownKeys) {
+            const v = stored[key];
+            if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+              // Stored baseline + any delta that landed during the read.
+              const delta = pendingDeltas[key] ?? 0;
+              counters[key] = Math.floor(v) + delta;
+            }
           }
         }
       }
+    } catch (err) {
+      logger.warn("Telemetry", "Failed to hydrate telemetry counters", err);
+    } finally {
+      if (storedHadUnknownKeys) {
+        logger.info(
+          "Telemetry",
+          "Pruning unknown keys from persisted telemetry blob"
+        );
+      }
+      // Discard pending deltas now that they've been folded in.
+      for (const k of Object.keys(pendingDeltas) as TelemetryKey[]) {
+        delete pendingDeltas[k];
+      }
+      hydrationInFlight = null;
+      persistEnabled = true;
+      // Schedule a flush so the post-hydration state (baseline + deltas) is
+      // durable even if the app crashes before the next increment.
+      schedulePersist();
     }
-  } catch (err) {
-    logger.warn("Telemetry", "Failed to hydrate telemetry counters", err);
-  }
-  persistEnabled = true;
+  })();
+
+  return hydrationInFlight;
 }
 
 /** Increment a counter by 1 (or a given delta). No-ops on unknown keys. */
 export function increment(key: TelemetryKey, delta: number = 1): void {
   counters[key] = (counters[key] ?? 0) + delta;
+  // If hydration is still in flight, stash the delta so it survives the
+  // baseline copy-over inside initTelemetry(). See hydrationInFlight above.
+  if (hydrationInFlight) {
+    pendingDeltas[key] = (pendingDeltas[key] ?? 0) + delta;
+  }
   schedulePersist();
 }
 
