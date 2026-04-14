@@ -1,13 +1,13 @@
 import { useState, useReducer, useRef, useCallback, useEffect } from "react";
 import { Alert, Share, LayoutAnimation } from "react-native";
 import * as Speech from "expo-speech";
-import * as Clipboard from "expo-clipboard";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { impactLight, impactMedium, notifySuccess, notifyWarning } from "../services/haptics";
 import { translateText, getWordAlternatives, type WordAlternative } from "../services/translation";
 import type { TranslationProvider } from "../services/translation";
 import { logger } from "../services/logger";
+import { copyWithAutoClear } from "../services/clipboard";
 import { escapeHtml } from "../utils/htmlEscape";
 import type { HistoryItem } from "../types";
 
@@ -117,7 +117,11 @@ export function useHistoryActions({
 
   const copyToClipboard = useCallback(async (text: string) => {
     try {
-      await Clipboard.setStringAsync(text);
+      // copyWithAutoClear schedules a 60s clipboard wipe so copied translations
+      // (which can include sensitive content like medical notes or personal
+      // conversations) don't linger indefinitely. The clear is skipped if the
+      // user has already copied something else.
+      await copyWithAutoClear(text);
       notifySuccess();
       setCopiedText(text);
       setTimeout(() => setCopiedText(null), 1500);
