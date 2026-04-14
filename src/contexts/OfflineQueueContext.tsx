@@ -8,11 +8,28 @@ import { useSettings } from "./SettingsContext";
 
 const OFFLINE_QUEUE_KEY = "offline_translation_queue";
 
+// Exponential backoff tuning for per-item retries. After MAX_ATTEMPTS failures
+// an item is dead-lettered (dropped + logged) so one permanently-failing phrase
+// can't wedge the queue forever.
+const MAX_ATTEMPTS = 5;
+const BASE_BACKOFF_MS = 2_000;    // 2s before the first retry
+const MAX_BACKOFF_MS = 300_000;   // cap at 5 minutes
+
+/** Exponential backoff with a ceiling. attempts starts at 1 (first failure). */
+function computeBackoff(attempts: number): number {
+  const expo = BASE_BACKOFF_MS * 2 ** Math.max(0, attempts - 1);
+  return Math.min(expo, MAX_BACKOFF_MS);
+}
+
 interface OfflineQueueItem {
   text: string;
   sourceLang: string;
   targetLang: string;
   timestamp: number;
+  /** Number of failed attempts so far. Undefined = never attempted (legacy items). */
+  attempts?: number;
+  /** Epoch ms when this item becomes eligible for another attempt. Undefined = ready now. */
+  nextAttemptAt?: number;
 }
 
 type OnTranslatedCallback = (original: string, translated: string) => void;
@@ -100,6 +117,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
     let remaining: OfflineQueueItem[] = [...queue];
     let processed = 0;
     let consecutiveFailures = 0;
+    const now = Date.now();
 
     const persistRemaining = () => {
       offlineQueueRef.current = remaining;
@@ -120,6 +138,12 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
           // Circuit-break: leave the rest in the queue for a future attempt.
           break;
         }
+        // Per-item backoff: an item failed recently and isn't eligible yet.
+        // Leave it in `remaining` untouched and move on. The sweep effect
+        // below will re-trigger processing when the soonest item is ready.
+        if (item.nextAttemptAt !== undefined && item.nextAttemptAt > now) {
+          continue;
+        }
         try {
           const result = await translateText(item.text, item.sourceLang, item.targetLang, { provider: settings.translationProvider });
           onTranslatedListenersRef.current.forEach((cb) => {
@@ -139,8 +163,24 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
         } catch (err) {
           logger.warn("Network", "Offline queue translation failed", err);
           consecutiveFailures++;
-          // Leave failed items in `remaining` so they'll be retried next time
-          // the network comes back.
+          // Per-item backoff + dead-letter: count the failure, schedule the
+          // next attempt, and drop the item entirely once it's been tried
+          // MAX_ATTEMPTS times. Dead-lettering stops one poison phrase from
+          // blocking the whole queue forever.
+          const attempts = (item.attempts ?? 0) + 1;
+          if (attempts >= MAX_ATTEMPTS) {
+            logger.warn("Network", "Offline queue item dead-lettered after max attempts", {
+              text: item.text.slice(0, 40),
+              attempts,
+            });
+            remaining = remaining.filter((r) => r !== item);
+          } else {
+            const nextAttemptAt = Date.now() + computeBackoff(attempts);
+            remaining = remaining.map((r) =>
+              r === item ? { ...r, attempts, nextAttemptAt } : r
+            );
+          }
+          persistRemaining();
         }
       }
 
@@ -165,6 +205,26 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
       processOfflineQueue();
     }
   }, [netInfo.isConnected, processOfflineQueue]);
+
+  // Sweep scheduler: if every ready item has failed and the remaining items
+  // are all in a backoff window, schedule a one-shot timer for the soonest
+  // nextAttemptAt so the queue self-heals without needing a network toggle.
+  // Re-runs whenever the queue changes (including after a failure bumps
+  // nextAttemptAt) so the timer always points at the current soonest.
+  useEffect(() => {
+    if (!netInfo.isConnected) return;
+    const now = Date.now();
+    const pending = offlineQueue
+      .filter((i) => i.nextAttemptAt !== undefined && i.nextAttemptAt > now)
+      .map((i) => i.nextAttemptAt as number);
+    if (pending.length === 0) return;
+    const soonest = Math.min(...pending);
+    const delay = Math.max(0, soonest - now);
+    const timer = setTimeout(() => {
+      processOfflineQueue();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [offlineQueue, netInfo.isConnected, processOfflineQueue]);
 
   const queueLength = offlineQueue.length;
 

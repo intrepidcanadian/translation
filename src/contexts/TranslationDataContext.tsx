@@ -12,8 +12,6 @@ interface TranslationDataContextValue {
   setHistory: React.Dispatch<React.SetStateAction<HistoryItem[]>>;
   hasMoreHistory: boolean;
   loadMoreHistory: () => void;
-  notesRefreshKey: number;
-  incrementNotesRefresh: () => void;
   updateWidgetData: (original: string, translated: string, from: string, to: string) => Promise<void>;
 }
 
@@ -23,7 +21,6 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const allHistoryRef = useRef<HistoryItem[]>([]);
   const [historyPage, setHistoryPage] = useState(1);
-  const [notesRefreshKey, setNotesRefreshKey] = useState(0);
 
   const hasMoreHistory = useMemo(
     () => allHistoryRef.current.length > history.length,
@@ -102,19 +99,13 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
     }
   }, []);
 
-  const incrementNotesRefresh = useCallback(() => {
-    setNotesRefreshKey((k) => k + 1);
-  }, []);
-
   const value = useMemo(() => ({
     history,
     setHistory,
     hasMoreHistory,
     loadMoreHistory,
-    notesRefreshKey,
-    incrementNotesRefresh,
     updateWidgetData,
-  }), [history, hasMoreHistory, loadMoreHistory, notesRefreshKey, incrementNotesRefresh, updateWidgetData]);
+  }), [history, hasMoreHistory, loadMoreHistory, updateWidgetData]);
 
   return (
     <TranslationDataContext.Provider value={value}>{children}</TranslationDataContext.Provider>

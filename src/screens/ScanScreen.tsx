@@ -19,7 +19,6 @@ import PriceTagConverter from "../components/PriceTagConverter";
 import DutyFreeCatalogScanner from "../components/DutyFreeCatalogScanner";
 import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
-import { useTranslationData } from "../contexts/TranslationDataContext";
 import { getColors } from "../theme";
 import { SCANNER_MODES, type ScannerModeKey } from "../services/scannerModes";
 import type { RootTabParamList } from "../navigation/types";
@@ -48,7 +47,6 @@ export default function ScanScreen({ route }: Props) {
   const isFocused = useIsFocused();
   const { settings } = useSettings();
   const { sourceLang, targetLang } = useLanguage();
-  const { incrementNotesRefresh } = useTranslationData();
   const colors = getColors(settings.theme);
 
   const initialMode = route.params?.mode || "live";
@@ -165,7 +163,6 @@ export default function ScanScreen({ route }: Props) {
             translationProvider={settings.translationProvider}
             colors={colors}
             initialMode={selectedMode as ScannerModeKey}
-            onNoteSaved={incrementNotesRefresh}
           />
         );
     }
