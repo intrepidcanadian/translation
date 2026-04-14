@@ -20,6 +20,7 @@ import {
   groupIntoSessions,
   ConversationSession,
 } from "../utils/conversationSessions";
+import { escapeHtml } from "../utils/htmlEscape";
 
 interface ConversationPlaybackProps {
   visible: boolean;
@@ -378,14 +379,6 @@ function ConversationPlayback({
       </View>
     </Modal>
   );
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 const styles = StyleSheet.create({

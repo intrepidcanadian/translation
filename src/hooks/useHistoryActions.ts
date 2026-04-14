@@ -2,10 +2,13 @@ import { useState, useReducer, useRef, useCallback, useEffect } from "react";
 import { Alert, Share, LayoutAnimation } from "react-native";
 import * as Speech from "expo-speech";
 import * as Clipboard from "expo-clipboard";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 import { impactLight, impactMedium, notifySuccess, notifyWarning } from "../services/haptics";
 import { translateText, getWordAlternatives, type WordAlternative } from "../services/translation";
 import type { TranslationProvider } from "../services/translation";
 import { logger } from "../services/logger";
+import { escapeHtml } from "../utils/htmlEscape";
 import type { HistoryItem } from "../types";
 
 // Consolidated modal state to reduce independent re-renders
@@ -220,9 +223,65 @@ export function useHistoryActions({
     );
   }, [history.length, setHistory]);
 
-  const shareHistory = useCallback(async (format: "text" | "csv" | "json" = "text") => {
+  const shareHistoryAsPdf = useCallback(async (exportable: HistoryItem[]) => {
+    // Render translations as a printable PDF via expo-print. Uses the native
+    // share sheet afterwards so the user can AirDrop, save to Files, or email it.
+    const rows = exportable
+      .map((item, i) => {
+        const time = item.timestamp
+          ? new Date(item.timestamp).toLocaleString()
+          : "";
+        return `<tr>
+          <td class="idx">${i + 1}</td>
+          <td>${escapeHtml(item.original)}${item.favorited ? ' <span class="star">★</span>' : ""}</td>
+          <td>${escapeHtml(item.translated)}</td>
+          <td class="time">${escapeHtml(time)}</td>
+        </tr>`;
+      })
+      .join("");
+
+    const html = `
+      <html>
+      <head><meta charset="utf-8" />
+      <style>
+        body { font-family: -apple-system, "Segoe UI", Roboto, sans-serif; padding: 24px; color: #222; }
+        h2 { margin: 0 0 4px; }
+        p { color: #666; margin-top: 0; font-size: 13px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        th { text-align: left; border-bottom: 2px solid #333; padding: 8px; font-size: 12px; text-transform: uppercase; }
+        td { padding: 8px; border-bottom: 1px solid #ddd; vertical-align: top; font-size: 14px; }
+        td.idx { color: #888; width: 36px; }
+        td.time { color: #888; font-size: 11px; white-space: nowrap; }
+        .star { color: #e9a800; }
+      </style></head>
+      <body>
+        <h2>Live Translator</h2>
+        <p>${exportable.length} translation${exportable.length === 1 ? "" : "s"} &bull; Exported ${escapeHtml(new Date().toLocaleString())}</p>
+        <table>
+          <thead><tr><th>#</th><th>Original</th><th>Translation</th><th>When</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </body></html>`;
+
+    const { uri } = await Print.printToFileAsync({ html });
+    // Sharing.shareAsync supports file URIs where Share.share({ message }) doesn't.
+    if (await Sharing.isAvailableAsync()) {
+      await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: "Share translations" });
+    }
+  }, []);
+
+  const shareHistory = useCallback(async (format: "text" | "csv" | "json" | "pdf" = "text") => {
     const exportable = history.filter((item) => item.status === "ok");
     if (exportable.length === 0) return;
+
+    if (format === "pdf") {
+      try {
+        await shareHistoryAsPdf(exportable);
+      } catch (err) {
+        logger.warn("Translation", "PDF export failed", err);
+      }
+      return;
+    }
 
     let message: string;
     if (format === "csv") {
@@ -242,7 +301,7 @@ export function useHistoryActions({
       message = `Live Translator - ${exportable.length} translation(s)\n\n${lines.join("\n\n")}`;
     }
     try { await Share.share({ message }); } catch (err) { logger.warn("Translation", "Share failed", err); }
-  }, [history]);
+  }, [history, shareHistoryAsPdf]);
 
   const showExportPicker = useCallback(() => {
     const exportable = history.filter((item) => item.status === "ok");
@@ -251,6 +310,7 @@ export function useHistoryActions({
       { text: "Text", onPress: () => shareHistory("text") },
       { text: "CSV", onPress: () => shareHistory("csv") },
       { text: "JSON", onPress: () => shareHistory("json") },
+      { text: "PDF", onPress: () => shareHistory("pdf") },
       { text: "Cancel", style: "cancel" },
     ]);
   }, [history, shareHistory]);

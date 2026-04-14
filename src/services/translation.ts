@@ -339,9 +339,16 @@ export async function translateText(
   if (isCircuitOpen(provider)) {
     logger.warn("Translation", `Circuit breaker open for ${provider}, falling back`);
     if (provider !== "mymemory" && !isCircuitOpen("mymemory")) {
-      const fallback = await translateMyMemory(trimmed, sourceLang, targetLang, signal);
-      recordSuccess("mymemory");
-      return { ...fallback, translatedText: fallback.translatedText };
+      try {
+        const fallback = await translateMyMemory(trimmed, sourceLang, targetLang, signal);
+        recordSuccess("mymemory");
+        return fallback;
+      } catch (err) {
+        // MyMemory failed too — record the failure so its own breaker can trip,
+        // instead of hammering a down service on every subsequent translate call.
+        recordFailure("mymemory");
+        throw err;
+      }
     }
     throw new Error(`Translation service temporarily unavailable. Try again in 30 seconds.`);
   }
@@ -363,8 +370,10 @@ export async function translateText(
     recordSuccess(provider);
   } catch (err: unknown) {
     recordFailure(provider);
-    // Auto-fallback: if on-device provider fails, try MyMemory cloud as fallback
-    if (provider !== "mymemory") {
+    // Auto-fallback: if on-device provider fails, try MyMemory cloud as fallback —
+    // but only if MyMemory's own circuit breaker isn't already open, to avoid
+    // pointless retries against a known-down cloud provider.
+    if (provider !== "mymemory" && !isCircuitOpen("mymemory")) {
       try {
         result = await translateMyMemory(trimmed, sourceLang, targetLang, signal);
         recordSuccess("mymemory");

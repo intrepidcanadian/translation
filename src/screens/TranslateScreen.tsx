@@ -36,6 +36,7 @@ import TranslationShareCard from "../components/TranslationShareCard";
 import PhrasebookModal from "../components/PhrasebookModal";
 import { HistoryActionsProvider, type HistoryActions } from "../contexts/HistoryActionsContext";
 import { HistoryDisplayProvider, type HistoryDisplayState } from "../contexts/HistoryDisplayContext";
+import { SelectStateProvider, type SelectState } from "../contexts/SelectStateContext";
 import {
   translateText,
   LANGUAGES,
@@ -476,14 +477,14 @@ export default function TranslateScreen() {
   const onCloseShareCard = useCallback(() => setShareCardIndex(null), []);
 
   // Display state for HistoryList — published via context so HistoryList doesn't
-  // have to accept nine separate props for filter/select/display flags.
+  // have to accept separate props for each filter/display flag. Selection state
+  // is split into its own SelectStateContext so checkbox toggles don't bump
+  // this context and force non-selection consumers to re-render.
   const historyDisplayValue = useMemo<HistoryDisplayState>(() => ({
     searchQuery,
     showFavoritesOnly,
     hasFavorites,
     hasMoreHistory,
-    selectMode,
-    selectedIndices,
     confidenceThreshold: settings.confidenceThreshold,
     autoScroll: settings.autoScroll,
     showRomanization: settings.showRomanization,
@@ -492,12 +493,15 @@ export default function TranslateScreen() {
     showFavoritesOnly,
     hasFavorites,
     hasMoreHistory,
-    selectMode,
-    selectedIndices,
     settings.confidenceThreshold,
     settings.autoScroll,
     settings.showRomanization,
   ]);
+
+  const selectStateValue = useMemo<SelectState>(() => ({
+    selectMode,
+    selectedIndices,
+  }), [selectMode, selectedIndices]);
 
   // Memoized history actions for context — avoids re-creating object each render
   const historyActionsValue = useMemo<HistoryActions>(() => ({
@@ -710,6 +714,7 @@ export default function TranslateScreen() {
             {/* History + live translation */}
             <HistoryActionsProvider value={historyActionsValue}>
               <HistoryDisplayProvider value={historyDisplayValue}>
+                <SelectStateProvider value={selectStateValue}>
                 <HistoryList
                   history={history}
                   filteredHistory={filteredHistory}
@@ -729,6 +734,7 @@ export default function TranslateScreen() {
                   skeletonAnim={skeletonAnim}
                   phraseOfTheDay={phraseOfTheDay}
                 />
+                </SelectStateProvider>
               </HistoryDisplayProvider>
             </HistoryActionsProvider>
 

@@ -20,6 +20,7 @@ import ChatBubble from "./ChatBubble";
 import { Platform } from "react-native";
 import { useHistoryActionsContext } from "../contexts/HistoryActionsContext";
 import { useHistoryDisplay } from "../contexts/HistoryDisplayContext";
+import { useSelectState } from "../contexts/SelectStateContext";
 
 type DynamicFontSizes = {
   original: { fontSize: number };
@@ -279,12 +280,11 @@ function HistoryList({
     showFavoritesOnly,
     hasFavorites,
     hasMoreHistory,
-    selectMode,
-    selectedIndices,
     confidenceThreshold,
     autoScroll,
     showRomanization,
   } = useHistoryDisplay();
+  const { selectMode, selectedIndices } = useSelectState();
   const listRef = useRef<FlatList>(null);
 
   const keyExtractor = useCallback(

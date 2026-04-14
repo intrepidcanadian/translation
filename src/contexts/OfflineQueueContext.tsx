@@ -60,9 +60,22 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
 
   const addToOfflineQueue = useCallback((item: OfflineQueueItem) => {
     setOfflineQueue((prev) => {
-      const updated = [...prev, item];
+      // Dedup on same (text, sourceLang, targetLang) — typing the same phrase
+      // twice while offline shouldn't balloon the queue. The most recent
+      // timestamp wins so the item stays "fresh" relative to other entries.
+      const filtered = prev.filter(
+        (q) =>
+          !(
+            q.text === item.text &&
+            q.sourceLang === item.sourceLang &&
+            q.targetLang === item.targetLang
+          )
+      );
+      const updated = [...filtered, item];
       offlineQueueRef.current = updated;
-      AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(updated));
+      AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(updated)).catch((err) =>
+        logger.warn("Storage", "Failed to persist offline queue", err)
+      );
       return updated;
     });
   }, []);
@@ -80,12 +93,27 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
     if (queue.length === 0) return;
     isProcessingQueue.current = true;
 
-    const failed: OfflineQueueItem[] = [];
+    // Track remaining queue so we can persist progress after each item. If the
+    // app is killed mid-processing we don't want to re-run already-translated
+    // items on the next launch — the listener fired and any history row was
+    // already written, so re-processing would create duplicates.
+    let remaining: OfflineQueueItem[] = [...queue];
     let processed = 0;
     let consecutiveFailures = 0;
 
+    const persistRemaining = () => {
+      offlineQueueRef.current = remaining;
+      setOfflineQueue(remaining);
+      AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining)).catch((e) =>
+        logger.warn("Storage", "Failed to persist offline queue", e)
+      );
+    };
+
     for (const item of queue) {
-      if (consecutiveFailures >= 3) { failed.push(item); continue; }
+      if (consecutiveFailures >= 3) {
+        // Circuit-break: leave the rest in the queue for a future attempt.
+        break;
+      }
       try {
         const result = await translateText(item.text, item.sourceLang, item.targetLang, { provider: settings.translationProvider });
         onTranslatedListenersRef.current.forEach((cb) => {
@@ -97,16 +125,22 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
         });
         processed++;
         consecutiveFailures = 0;
+        // Remove this item from remaining and persist. The reference comparison
+        // is safe here because `remaining` was seeded from `queue` and items
+        // are plain objects we never mutate.
+        remaining = remaining.filter((r) => r !== item);
+        persistRemaining();
       } catch (err) {
         logger.warn("Network", "Offline queue translation failed", err);
-        failed.push(item);
         consecutiveFailures++;
+        // Leave failed items in `remaining` so they'll be retried next time
+        // the network comes back.
       }
     }
 
-    offlineQueueRef.current = failed;
-    setOfflineQueue(failed);
-    AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(failed)).catch((e) => logger.warn("Storage", "Failed to persist offline queue", e));
+    // Final persist in case the loop exited via the circuit breaker (no success
+    // branch ran) — ensures the queue state on disk matches what's in memory.
+    persistRemaining();
     isProcessingQueue.current = false;
     if (processed > 0) notifySuccess();
   }, [settings.translationProvider]);
