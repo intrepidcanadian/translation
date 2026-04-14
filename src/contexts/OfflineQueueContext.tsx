@@ -40,6 +40,13 @@ interface OfflineQueueContextValue {
   addToOfflineQueue: (item: OfflineQueueItem) => void;
   isOffline: boolean;
   /**
+   * #126: true while a queue drain is actively translating items. Consumers
+   * can show a "processing…" indicator on the pending badge instead of just
+   * the queue count. Backed by useState so context consumers re-render on
+   * transitions (the previous ref-only flag was invisible to the UI).
+   */
+  isProcessingQueue: boolean;
+  /**
    * Register a listener invoked when a queued translation completes.
    * Returns an unsubscribe function. Multiple listeners are supported —
    * each is invoked in registration order on completion.
@@ -53,7 +60,14 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
   const { settings } = useSettings();
   const [offlineQueue, setOfflineQueue] = useState<OfflineQueueItem[]>([]);
   const offlineQueueRef = useRef<OfflineQueueItem[]>([]);
-  const isProcessingQueue = useRef(false);
+  // #126: isProcessingQueue is now both a ref (for tight loop guard) AND a
+  // state value (for UI subscription). The ref keeps the synchronous
+  // re-entrance check — a second processOfflineQueue() call that lands
+  // before React flushes the setter would still see `false` in state and
+  // double-process. The state value trails the ref by a render and is what
+  // consumers render off of.
+  const isProcessingQueueRef = useRef(false);
+  const [isProcessingQueue, setIsProcessingQueue] = useState(false);
   const onTranslatedListenersRef = useRef<Set<OnTranslatedCallback>>(new Set());
 
   const netInfo = useNetInfo();
@@ -105,10 +119,11 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const processOfflineQueue = useCallback(async () => {
-    if (isProcessingQueue.current) return;
+    if (isProcessingQueueRef.current) return;
     const queue = offlineQueueRef.current;
     if (queue.length === 0) return;
-    isProcessingQueue.current = true;
+    isProcessingQueueRef.current = true;
+    setIsProcessingQueue(true);
 
     // Track remaining queue so we can persist progress after each item. If the
     // app is killed mid-processing we don't want to re-run already-translated
@@ -196,7 +211,8 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
         }
       }
     } finally {
-      isProcessingQueue.current = false;
+      isProcessingQueueRef.current = false;
+      setIsProcessingQueue(false);
     }
   }, [settings.translationProvider]);
 
@@ -233,8 +249,9 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
     queueLength,
     addToOfflineQueue,
     isOffline,
+    isProcessingQueue,
     registerOnTranslated,
-  }), [offlineQueue, queueLength, addToOfflineQueue, isOffline, registerOnTranslated]);
+  }), [offlineQueue, queueLength, addToOfflineQueue, isOffline, isProcessingQueue, registerOnTranslated]);
 
   return (
     <OfflineQueueContext.Provider value={value}>{children}</OfflineQueueContext.Provider>

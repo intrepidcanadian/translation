@@ -10,6 +10,7 @@ import { translateText } from "../services/translation";
 import type { TranslationProvider } from "../services/translation";
 import { increment as telemetryIncrement } from "../services/telemetry";
 import { logger } from "../services/logger";
+import { isLikelyMicMuted } from "../utils/micMuted";
 
 interface UseSpeechRecognitionOptions {
   sourceLangCode: string;
@@ -55,6 +56,15 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
   const [finalText, setFinalText] = useState("");
   const [translatedText, setTranslatedText] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
+  // #160: session-scoped mic-muted pattern detector. We track successes and
+  // no-speech events locally (not just via telemetry) so the inline hint can
+  // clear immediately when the user lands a successful translation — the
+  // module-level telemetry counters are persisted and would stay elevated
+  // across a legitimate silent warm-up. `likelyMicMuted` is derived via the
+  // shared `isLikelyMicMuted` predicate in src/utils/micMuted.ts so Settings
+  // diagnostics and this inline path use the same threshold.
+  const [sessionNoSpeechCount, setSessionNoSpeechCount] = useState(0);
+  const [sessionSuccessCount, setSessionSuccessCount] = useState(0);
 
   const finalTextRef = useRef("");
   const lastTranslatedRef = useRef("");
@@ -158,6 +168,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
             // in Settings > Translation Diagnostics can't distinguish "no
             // speech traffic" from "everything is succeeding".
             telemetryIncrement("speech.translateSuccess");
+            setSessionSuccessCount((c) => c + 1);
           }
         } catch (err) {
           if (controller.signal.aborted) return;
@@ -247,6 +258,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
       // silent-user session apart from a broken-mic session.
       logger.debug("Speech", `recognition no-speech (${code})`);
       telemetryIncrement("speech.noSpeech");
+      setSessionNoSpeechCount((c) => c + 1);
     } else {
       logger.warn("Speech", `recognition error (${code})`);
     }
@@ -310,6 +322,8 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     ExpoSpeechRecognitionModule.stop();
   }, []);
 
+  const likelyMicMuted = isLikelyMicMuted(sessionNoSpeechCount, sessionSuccessCount);
+
   return {
     isListening,
     liveText,
@@ -325,5 +339,10 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     startListening,
     startListeningAs,
     stopListening,
+    /** #160: session-scoped "mic may be muted" hint — true when the user has
+     * logged ≥ MIC_MUTED_HINT_THRESHOLD no-speech events without a single
+     * successful speech translation in the same mount. Cleared automatically
+     * on the first successful translate. */
+    likelyMicMuted,
   };
 }

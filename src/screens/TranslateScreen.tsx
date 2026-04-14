@@ -125,7 +125,7 @@ export default function TranslateScreen() {
   const { glossaryLookup } = useGlossary();
   const { history, setHistory, hasMoreHistory, loadMoreHistory, updateWidgetData } = useTranslationData();
   const { updateStreak } = useStreak();
-  const { isOffline, queueLength, addToOfflineQueue, registerOnTranslated } = useOfflineQueue();
+  const { isOffline, queueLength, isProcessingQueue: isOfflineQueueProcessing, addToOfflineQueue, registerOnTranslated } = useOfflineQueue();
   const { colors } = useTheme();
   const route = useRoute<{ key: string; name: "Translate"; params?: RootTabParamList["Translate"] }>();
 
@@ -223,7 +223,7 @@ export default function TranslateScreen() {
     onShowError: showError,
   });
 
-  const { isListening, liveText, setLiveText, translatedText, isTranslating, setIsTranslating, lastDetectedLang, pulseAnim, pulseOpacity, skeletonAnim, startListening: startListeningBase, startListeningAs, stopListening, abortControllerRef } = speech;
+  const { isListening, liveText, setLiveText, translatedText, isTranslating, setIsTranslating, lastDetectedLang, pulseAnim, pulseOpacity, skeletonAnim, startListening: startListeningBase, startListeningAs, stopListening, abortControllerRef, likelyMicMuted } = speech;
 
   const startListening = useCallback(async () => {
     setErrorMessage("");
@@ -729,17 +729,25 @@ export default function TranslateScreen() {
               </View>
             )}
 
-            {/* Connection restored banner */}
-            {showOnlineBanner && !isOffline && (
+            {/* Connection restored / queue processing banner.
+                #126: `isOfflineQueueProcessing` is now reactive, so the banner
+                stays visible with a live "Processing…" state as long as the
+                queue is actively draining — not just during the 4s show
+                window. Once the queue is empty and processing stops, the
+                banner reverts to the plain "Back online" confirmation and
+                auto-dismisses on its normal timer. */}
+            {(showOnlineBanner || isOfflineQueueProcessing) && !isOffline && (
               <View
                 style={[styles.offlineBanner, { backgroundColor: colors.successBg, borderColor: colors.successText }]}
                 accessibilityRole="alert"
                 accessibilityLiveRegion="polite"
-                accessibilityLabel="Connection restored"
+                accessibilityLabel={isOfflineQueueProcessing ? `Processing ${queueLength} queued translations` : "Connection restored"}
               >
-                <Text style={styles.offlineIcon}>✓</Text>
+                <Text style={styles.offlineIcon}>{isOfflineQueueProcessing ? "⟳" : "✓"}</Text>
                 <Text style={[styles.offlineText, { color: colors.successText }]}>
-                  Back online{queueLength > 0 ? ` — processing ${queueLength} queued translation${queueLength === 1 ? "" : "s"}` : ""}
+                  {isOfflineQueueProcessing
+                    ? `Processing ${queueLength} queued translation${queueLength === 1 ? "" : "s"}…`
+                    : "Back online"}
                 </Text>
               </View>
             )}
@@ -812,6 +820,7 @@ export default function TranslateScreen() {
               sourceLangName={sourceLang.name}
               targetLangName={targetLang.name}
               silenceTimeout={settings.silenceTimeout}
+              likelyMicMuted={likelyMicMuted}
               pulseAnim={pulseAnim}
               pulseOpacity={pulseOpacity}
               onClearHistory={clearHistory}

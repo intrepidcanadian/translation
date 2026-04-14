@@ -51,3 +51,27 @@ export function cancelClipboardAutoClear(): void {
   }
   lastWritten = null;
 }
+
+/**
+ * Explicit opt-out of the auto-clear ladder (#155).
+ *
+ * A small number of copy sites are unambiguously *debug* content that the
+ * user must be able to paste into an external tool (bug tracker, GitHub
+ * comment, email to support) minutes or hours later — crash reports,
+ * glossary CSVs, technical session info. For those, auto-wiping the
+ * clipboard mid-paste is hostile.
+ *
+ * Calling this instead of `copyWithAutoClear` does two things:
+ *   1. Cancels any pending auto-clear timer left over from a prior
+ *      `copyWithAutoClear` call, so the new debug content isn't wiped
+ *      when the previous user-content timer fires.
+ *   2. Writes the text without scheduling a new timer.
+ *
+ * Prefer `copyWithAutoClear` for any content that could contain personal
+ * information (translations, OCR output, product notes). Reach for this
+ * helper only when the payload is clearly debug/metadata.
+ */
+export async function copyWithoutAutoClear(text: string): Promise<void> {
+  cancelClipboardAutoClear();
+  await Clipboard.setStringAsync(text);
+}

@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Clipboard from "expo-clipboard";
+import { copyWithoutAutoClear } from "../services/clipboard";
 import { type ThemeMode, type ThemeColors, getColors } from "../theme";
 import {
   isAppleTranslationAvailable,
@@ -32,6 +32,7 @@ import {
 } from "../services/telemetry";
 import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
+import { isLikelyMicMuted as isLikelyMicMutedPure } from "../utils/micMuted";
 import CollapsibleSection from "./CollapsibleSection";
 
 export type { TranslationProvider };
@@ -77,20 +78,13 @@ function computeSpeechStats(): SpeechStats {
 }
 
 /**
- * #156: detect the "mic may be muted / quiet environment" pattern. A user stuck
- * in a silent-mic loop produces repeated `no-speech` recognition errors but
- * never lands a successful translation, so `noSpeech` grows while `total`
- * stays 0. Surfaces as a soft hint in the Settings dashboard and crash report
- * — concrete enough to be actionable, not alarmist enough to nag users in a
- * genuinely quiet room after a single silent session.
- *
- * The threshold of 3 is a first guess — enough to filter single-tap silent
- * sessions but low enough to catch the pattern before it frustrates the user.
- * Tune once #90 (Sentry) exposes the real distribution of noSpeech per session.
+ * #156/#160: detect the "mic may be muted / quiet environment" pattern via the
+ * shared `src/utils/micMuted.ts` helper. Previously inlined here, now promoted
+ * so `useSpeechRecognition` can raise the same hint inline near the mic button
+ * with an identical threshold — the dashboard and inline hint stay in lockstep.
  */
-const MIC_MUTED_HINT_THRESHOLD = 3;
 function isLikelyMicMuted(stats: SpeechStats): boolean {
-  return stats.total === 0 && stats.noSpeech >= MIC_MUTED_HINT_THRESHOLD;
+  return isLikelyMicMutedPure(stats.noSpeech, stats.total);
 }
 
 export type FontSizeOption = "small" | "medium" | "large" | "xlarge";
@@ -168,8 +162,14 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   // renders so the user notices what needs attention.
   const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
   const [crashSectionExpanded, setCrashSectionExpanded] = useState(false);
+  // #153: local expand/collapse state for the prunedUnknownKeys list. The
+  // default-collapsed view shows the first 3 key names; tapping "Show all"
+  // reveals the full set so a major rollback (10+ keys) can be audited
+  // without opening the crash report.
+  const [prunedKeysExpanded, setPrunedKeysExpanded] = useState(false);
   const toggleDiagnostics = useCallback(() => setDiagnosticsExpanded((v) => !v), []);
   const toggleCrashSection = useCallback(() => setCrashSectionExpanded((v) => !v), []);
+  const togglePrunedKeys = useCallback(() => setPrunedKeysExpanded((v) => !v), []);
 
   useEffect(() => {
     if (Platform.OS === "ios") {
@@ -393,7 +393,12 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const copyCrashReport = useCallback(async () => {
     if (!lastCrash) return;
     try {
-      await Clipboard.setStringAsync(buildCrashReport());
+      // #155: crash report is unambiguously debug/metadata — users often paste
+      // it into a bug tracker or email minutes later, so the 60s auto-clear
+      // from `copyWithAutoClear` would be hostile here. `copyWithoutAutoClear`
+      // also cancels any pending user-content auto-clear timer so the report
+      // isn't wiped mid-paste by a prior translation copy.
+      await copyWithoutAutoClear(buildCrashReport());
       notifySuccess();
       setCrashCopied(true);
       setTimeout(() => setCrashCopied(false), 1500);
@@ -743,22 +748,48 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                     const pruned = prunedUnknownKeys();
                     if (pruned.length === 0) return null;
                     const MAX_RENDERED = 3;
-                    const shown = pruned.slice(0, MAX_RENDERED).join(", ");
-                    const suffix = pruned.length > MAX_RENDERED
+                    const hasMore = pruned.length > MAX_RENDERED;
+                    const visible = prunedKeysExpanded ? pruned : pruned.slice(0, MAX_RENDERED);
+                    const shown = visible.join(", ");
+                    const suffix = hasMore && !prunedKeysExpanded
                       ? ` +${pruned.length - MAX_RENDERED} more`
                       : "";
                     const label = `Telemetry pruned ${pruned.length} unknown key${pruned.length === 1 ? "" : "s"} — client may have been downgraded`;
                     return (
-                      <Text
-                        style={[
-                          styles.infoText,
-                          dynamicStyles.infoText,
-                          { color: colors.dimText, marginTop: 4 },
-                        ]}
-                        accessibilityLabel={label}
-                      >
-                        {`⚠ Telemetry pruned ${pruned.length}: ${shown}${suffix}`}
-                      </Text>
+                      <View style={{ marginTop: 4 }}>
+                        <Text
+                          style={[
+                            styles.infoText,
+                            dynamicStyles.infoText,
+                            { color: colors.dimText },
+                          ]}
+                          accessibilityLabel={label}
+                        >
+                          {`⚠ Telemetry pruned ${pruned.length}: ${shown}${suffix}`}
+                        </Text>
+                        {hasMore && (
+                          <TouchableOpacity
+                            onPress={togglePrunedKeys}
+                            accessibilityRole="button"
+                            accessibilityLabel={
+                              prunedKeysExpanded
+                                ? "Collapse pruned telemetry keys list"
+                                : `Show all ${pruned.length} pruned telemetry keys`
+                            }
+                            accessibilityState={{ expanded: prunedKeysExpanded }}
+                          >
+                            <Text
+                              style={[
+                                styles.infoText,
+                                dynamicStyles.infoText,
+                                { color: colors.primary, marginTop: 2 },
+                              ]}
+                            >
+                              {prunedKeysExpanded ? "Collapse" : `Show all ${pruned.length}`}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
                     );
                   })()}
                   {/* Type-ahead telemetry — glossary/offline/network hit breakdown so

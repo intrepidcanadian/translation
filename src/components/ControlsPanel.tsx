@@ -27,6 +27,11 @@ interface ControlsPanelProps {
   sourceLangName: string;
   targetLangName: string;
   silenceTimeout: number;
+  /** #160: session-scoped "mic may be muted / environment too quiet" hint from
+   * useSpeechRecognition. When true, renders a soft inline line below the mic
+   * indicator explaining the pattern — previously this hint was buried in
+   * Settings → Translation Diagnostics where a stuck user would never look. */
+  likelyMicMuted: boolean;
   pulseAnim: Animated.Value;
   pulseOpacity: Animated.Value;
   // Callbacks
@@ -62,6 +67,7 @@ function ControlsPanel({
   sourceLangName,
   targetLangName,
   silenceTimeout,
+  likelyMicMuted,
   pulseAnim,
   pulseOpacity,
   onClearHistory,
@@ -213,6 +219,18 @@ function ControlsPanel({
         </>
       )}
 
+      {likelyMicMuted && (
+        <View
+          style={styles.micMutedHint}
+          accessibilityLiveRegion="polite"
+          accessibilityLabel="Microphone may be muted or environment too quiet. Try speaking louder or checking your mute switch."
+        >
+          <Text style={[styles.micMutedHintText, { color: colors.errorText }]}>
+            ⚠ Mic may be muted or environment too quiet
+          </Text>
+        </View>
+      )}
+
       {!isListening && (
         <View>
           <View style={styles.textInputRow}>
@@ -285,6 +303,8 @@ const styles = StyleSheet.create({
   listeningIndicator: { flexDirection: "row", alignItems: "center", marginTop: 12, gap: 6 },
   listeningDot: { color: "#ff4757", fontSize: 10 },
   listeningLabel: { color: "#ff4757", fontSize: 13, fontWeight: "600" },
+  micMutedHint: { alignItems: "center", marginTop: 8, paddingHorizontal: 16 },
+  micMutedHintText: { fontSize: 12, fontWeight: "600", textAlign: "center" },
   convoControlsOuter: { alignItems: "center", gap: 12, width: "100%" },
   convoMicRow: { flexDirection: "row", justifyContent: "center", alignItems: "flex-end", gap: 40 },
   quickActionRow: { flexDirection: "row", gap: 10, width: "100%" },

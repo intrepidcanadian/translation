@@ -17,7 +17,11 @@ jest.mock("../services/logger", () => ({
 }));
 
 import * as Clipboard from "expo-clipboard";
-import { copyWithAutoClear, cancelClipboardAutoClear } from "../services/clipboard";
+import {
+  copyWithAutoClear,
+  cancelClipboardAutoClear,
+  copyWithoutAutoClear,
+} from "../services/clipboard";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const store = (Clipboard as any).__state as { value: string };
@@ -65,5 +69,47 @@ describe("clipboard auto-clear", () => {
     jest.advanceTimersByTime(600);
     await flushMicrotasks();
     expect(store.value).toBe("keep");
+  });
+});
+
+// #155: explicit debug copy path — bypasses auto-clear AND cancels any
+// pending auto-clear from a prior user-content copy, so the new debug
+// content isn't wiped out mid-paste by an earlier timer.
+describe("copyWithoutAutoClear", () => {
+  beforeEach(() => {
+    store.value = "";
+    cancelClipboardAutoClear();
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  test("copies text immediately like the auto-clear path", async () => {
+    await copyWithoutAutoClear("crash-report-v1");
+    expect(store.value).toBe("crash-report-v1");
+  });
+
+  test("does not schedule a timer — content survives past the default TTL", async () => {
+    await copyWithoutAutoClear("debug-metadata");
+    // 120s is well past the 60s default auto-clear window.
+    jest.advanceTimersByTime(120_000);
+    await flushMicrotasks();
+    expect(store.value).toBe("debug-metadata");
+  });
+
+  test("cancels a pending auto-clear from a prior copyWithAutoClear call", async () => {
+    await copyWithAutoClear("sensitive-translation", 500);
+    expect(store.value).toBe("sensitive-translation");
+    // User immediately copies a crash report before the 500ms timer fires.
+    await copyWithoutAutoClear("crash-report");
+    expect(store.value).toBe("crash-report");
+    // The original timer would have cleared at 500ms. Advance past it and
+    // confirm the debug copy is still there — the timer must have been
+    // cancelled, not allowed to wipe the new content.
+    jest.advanceTimersByTime(1000);
+    await flushMicrotasks();
+    expect(store.value).toBe("crash-report");
   });
 });
