@@ -46,7 +46,7 @@ import { PHRASE_CATEGORIES, getPhraseOfTheDay } from "../services/offlinePhrases
 import { FONT_SIZE_SCALES } from "../components/SettingsModal";
 import { useRoute } from "@react-navigation/native";
 import { useSettings } from "../contexts/SettingsContext";
-import { useLanguage } from "../contexts/LanguageContext";
+import { useLanguage, useLanguagePairs } from "../contexts/LanguageContext";
 import { useGlossary } from "../contexts/GlossaryContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
 import { useStreak } from "../contexts/StreakContext";
@@ -98,7 +98,20 @@ export default function TranslateScreen() {
   const isLandscape = width > height;
 
   const { settings, reduceMotion, maybeRequestReview } = useSettings();
-  const { sourceLang, targetLang, setSourceLang, setTargetLang, swapLanguages, recentLangCodes, trackRecentLang, savedPairs, isCurrentPairSaved, toggleSavePair, applyPair, removeSavedPair } = useLanguage();
+  const { sourceLang, targetLang, setSourceLang, setTargetLang, swapLanguages, applyPair } = useLanguage();
+  const { recentLangCodes, trackRecentLang, savedPairs, addSavedPair, removeSavedPair } = useLanguagePairs();
+  const isCurrentPairSaved = useMemo(
+    () => savedPairs.some((p) => p.sourceCode === sourceLang.code && p.targetCode === targetLang.code),
+    [savedPairs, sourceLang.code, targetLang.code]
+  );
+  const toggleSavePair = useCallback(() => {
+    if (sourceLang.code === "autodetect") return;
+    if (isCurrentPairSaved) {
+      removeSavedPair(sourceLang.code, targetLang.code);
+    } else {
+      addSavedPair(sourceLang.code, targetLang.code);
+    }
+  }, [sourceLang.code, targetLang.code, isCurrentPairSaved, addSavedPair, removeSavedPair]);
   const { glossaryLookup } = useGlossary();
   const { history, setHistory, hasMoreHistory, loadMoreHistory, updateWidgetData } = useTranslationData();
   const { updateStreak } = useStreak();
@@ -108,7 +121,7 @@ export default function TranslateScreen() {
 
   // Register callback for when offline queue items complete translation
   useEffect(() => {
-    registerOnTranslated((original, translatedText) => {
+    const unsubscribe = registerOnTranslated((original, translatedText) => {
       setHistory((prev) => {
         const pendingIdx = prev.findIndex((h) => h.status === "pending" && h.original === original);
         if (pendingIdx !== -1) {
@@ -119,6 +132,7 @@ export default function TranslateScreen() {
         return [...prev, { original, translated: translatedText, status: "ok" as const, timestamp: Date.now() }];
       });
     });
+    return unsubscribe;
   }, [registerOnTranslated, setHistory]);
 
   // Handle deep link params (e.g. livetranslator://translate/en/es)
@@ -398,6 +412,15 @@ export default function TranslateScreen() {
   const onOpenPlayback = useCallback(() => dispatchPanel({ type: "SET_PLAYBACK", value: true }), []);
   const onClosePlayback = useCallback(() => dispatchPanel({ type: "SET_PLAYBACK", value: false }), []);
 
+  // Stable close handlers for modals — inline closures would break React.memo
+  const onCloseCompare = useCallback(() => setCompareData(null), [setCompareData]);
+  const onCloseWordAlt = useCallback(() => setWordAltData(null), [setWordAltData]);
+  const onCloseCorrection = useCallback(() => setCorrectionPrompt(null), [setCorrectionPrompt]);
+  const onClosePassengerView = useCallback(() => setPassengerViewIndex(null), []);
+  const onCloseVisualCards = useCallback(() => setShowVisualCards(false), []);
+  const onClosePhrasebook = useCallback(() => setShowPhrasebook(false), []);
+  const onCloseShareCard = useCallback(() => setShareCardIndex(null), []);
+
   // Memoized history actions for context — avoids re-creating object each render
   const historyActionsValue = useMemo<HistoryActions>(() => ({
     onDeleteHistoryItem: deleteHistoryItem,
@@ -485,9 +508,9 @@ export default function TranslateScreen() {
             </View>
 
             {/* Modals */}
-            <ComparisonModal visible={!!compareData} data={compareData} onClose={() => setCompareData(null)} onCopy={copyToClipboard} copiedText={copiedText} colors={colors} />
-            <WordAlternativesModal visible={wordAltData !== null} data={wordAltData} onClose={() => setWordAltData(null)} onCopy={copyToClipboard} copiedText={copiedText} colors={colors} />
-            <CorrectionModal visible={correctionPrompt !== null} data={correctionPrompt} onClose={() => setCorrectionPrompt(null)} onSubmit={submitCorrection} colors={colors} />
+            <ComparisonModal visible={!!compareData} data={compareData} onClose={onCloseCompare} onCopy={copyToClipboard} copiedText={copiedText} colors={colors} />
+            <WordAlternativesModal visible={wordAltData !== null} data={wordAltData} onClose={onCloseWordAlt} onCopy={copyToClipboard} copiedText={copiedText} colors={colors} />
+            <CorrectionModal visible={correctionPrompt !== null} data={correctionPrompt} onClose={onCloseCorrection} onSubmit={submitCorrection} colors={colors} />
 
             {/* Language selectors */}
             <View style={styles.langRow}>
@@ -672,7 +695,7 @@ export default function TranslateScreen() {
       <ConversationPlayback visible={showPlayback} onClose={onClosePlayback} />
       <PassengerView
         visible={passengerViewIndex !== null}
-        onClose={() => setPassengerViewIndex(null)}
+        onClose={onClosePassengerView}
         history={history}
         initialIndex={passengerViewIndex ?? 0}
         colors={colors}
@@ -680,14 +703,14 @@ export default function TranslateScreen() {
       />
       <VisualCardsModal
         visible={showVisualCards}
-        onClose={() => setShowVisualCards(false)}
+        onClose={onCloseVisualCards}
         colors={colors}
         passengerLang={targetLang.code === "autodetect" ? undefined : targetLang.code}
         speechRate={settings.speechRate}
       />
       <PhrasebookModal
         visible={showPhrasebook}
-        onClose={() => setShowPhrasebook(false)}
+        onClose={onClosePhrasebook}
         sourceLangCode={sourceLang.code}
         targetLangCode={targetLang.code}
         colors={colors}
@@ -697,7 +720,7 @@ export default function TranslateScreen() {
       {shareCardIndex !== null && history[shareCardIndex] && (
         <TranslationShareCard
           visible
-          onClose={() => setShareCardIndex(null)}
+          onClose={onCloseShareCard}
           original={history[shareCardIndex].original}
           translated={history[shareCardIndex].translated}
           sourceLangCode={history[shareCardIndex].sourceLangCode}

@@ -22,7 +22,12 @@ interface OfflineQueueContextValue {
   queueLength: number;
   addToOfflineQueue: (item: OfflineQueueItem) => void;
   isOffline: boolean;
-  registerOnTranslated: (cb: OnTranslatedCallback) => void;
+  /**
+   * Register a listener invoked when a queued translation completes.
+   * Returns an unsubscribe function. Multiple listeners are supported —
+   * each is invoked in registration order on completion.
+   */
+  registerOnTranslated: (cb: OnTranslatedCallback) => () => void;
 }
 
 const OfflineQueueContext = createContext<OfflineQueueContextValue | null>(null);
@@ -32,7 +37,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
   const [offlineQueue, setOfflineQueue] = useState<OfflineQueueItem[]>([]);
   const offlineQueueRef = useRef<OfflineQueueItem[]>([]);
   const isProcessingQueue = useRef(false);
-  const onTranslatedRef = useRef<OnTranslatedCallback | null>(null);
+  const onTranslatedListenersRef = useRef<Set<OnTranslatedCallback>>(new Set());
 
   const netInfo = useNetInfo();
   const isOffline = netInfo.isConnected === false;
@@ -63,7 +68,10 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const registerOnTranslated = useCallback((cb: OnTranslatedCallback) => {
-    onTranslatedRef.current = cb;
+    onTranslatedListenersRef.current.add(cb);
+    return () => {
+      onTranslatedListenersRef.current.delete(cb);
+    };
   }, []);
 
   const processOfflineQueue = useCallback(async () => {
@@ -80,7 +88,13 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
       if (consecutiveFailures >= 3) { failed.push(item); continue; }
       try {
         const result = await translateText(item.text, item.sourceLang, item.targetLang, { provider: settings.translationProvider });
-        onTranslatedRef.current?.(item.text, result.translatedText);
+        onTranslatedListenersRef.current.forEach((cb) => {
+          try {
+            cb(item.text, result.translatedText);
+          } catch (cbErr) {
+            logger.warn("Network", "Offline queue listener threw", cbErr);
+          }
+        });
         processed++;
         consecutiveFailures = 0;
       } catch (err) {

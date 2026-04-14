@@ -71,7 +71,7 @@ function getMLKitScript(langCode: string): TextRecognitionScript {
 
 type Phase = "camera" | "processing" | "results";
 
-export default function DocumentScanner({
+function DocumentScanner({
   visible,
   onClose,
   sourceLangCode,
@@ -430,6 +430,8 @@ export default function DocumentScanner({
     </Animated.View>
   );
 }
+
+export default React.memo(DocumentScanner);
 
 // Fallback analysis for non-iOS platforms (regex-based)
 function basicAnalysis(text: string): DocumentAnalysis {

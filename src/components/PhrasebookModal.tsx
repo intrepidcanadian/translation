@@ -33,7 +33,7 @@ interface PhrasebookModalProps {
 
 const NEARBY_CATEGORY = { key: "nearby" as const, label: "Nearby", icon: "📍" };
 
-export default function PhrasebookModal({
+function PhrasebookModal({
   visible,
   onClose,
   sourceLangCode,
@@ -171,6 +171,8 @@ export default function PhrasebookModal({
     </Modal>
   );
 }
+
+export default React.memo(PhrasebookModal);
 
 const styles = StyleSheet.create({
   compareOverlay: {

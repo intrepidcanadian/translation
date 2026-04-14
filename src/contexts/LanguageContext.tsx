@@ -1,8 +1,77 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Language, LANGUAGES, LANGUAGE_MAP } from "../services/translation";
-import { impactLight, impactMedium } from "../services/haptics";
+import { impactLight } from "../services/haptics";
 import { logger } from "../services/logger";
+
+// Selection context: sourceLang/targetLang/setters/swap/applyPair
+// Pairs context (see LanguagePairsContext.tsx): savedPairs + recent langs
+//
+// Kept separate so consumers that only need sourceLang/targetLang
+// (GlossaryContext, SettingsScreen, ScanScreen, SplitConversation,
+// ConversationPlayback) don't re-render when the user stars a pair
+// or picks a new recent language.
+
+interface LanguageContextValue {
+  sourceLang: Language;
+  targetLang: Language;
+  setSourceLang: (lang: Language) => void;
+  setTargetLang: (lang: Language) => void;
+  swapLanguages: () => void;
+  applyPair: (sourceCode: string, targetCode: string) => void;
+}
+
+const LanguageContext = createContext<LanguageContextValue | null>(null);
+
+export function LanguageProvider({ children }: { children: React.ReactNode }) {
+  const [sourceLang, setSourceLang] = useState<Language>(LANGUAGES[0]); // English
+  const [targetLang, setTargetLang] = useState<Language>(LANGUAGES[1]); // Spanish
+
+  const swapLanguages = useCallback(() => {
+    impactLight();
+    if (sourceLang.code === "autodetect") {
+      setSourceLang(targetLang);
+      setTargetLang(LANGUAGES[0]); // English
+    } else {
+      const prev = sourceLang;
+      setSourceLang(targetLang);
+      setTargetLang(prev);
+    }
+  }, [sourceLang, targetLang]);
+
+  const applyPair = useCallback((sourceCode: string, targetCode: string) => {
+    const src = LANGUAGE_MAP.get(sourceCode);
+    const tgt = LANGUAGE_MAP.get(targetCode);
+    if (src && tgt) {
+      impactLight();
+      setSourceLang(src);
+      setTargetLang(tgt);
+    }
+  }, []);
+
+  const value = useMemo(() => ({
+    sourceLang,
+    targetLang,
+    setSourceLang,
+    setTargetLang,
+    swapLanguages,
+    applyPair,
+  }), [sourceLang, targetLang, swapLanguages, applyPair]);
+
+  return (
+    <LanguageContext.Provider value={value}>
+      <LanguagePairsProvider>{children}</LanguagePairsProvider>
+    </LanguageContext.Provider>
+  );
+}
+
+export function useLanguage(): LanguageContextValue {
+  const ctx = useContext(LanguageContext);
+  if (!ctx) throw new Error("useLanguage must be used within a LanguageProvider");
+  return ctx;
+}
+
+// --- Language Pairs Context (saved pairs + recent langs) ---
 
 const RECENT_LANGS_KEY = "recent_languages";
 const LANG_PAIRS_KEY = "saved_language_pairs";
@@ -12,26 +81,17 @@ interface SavedPair {
   targetCode: string;
 }
 
-interface LanguageContextValue {
-  sourceLang: Language;
-  targetLang: Language;
-  setSourceLang: (lang: Language) => void;
-  setTargetLang: (lang: Language) => void;
-  swapLanguages: () => void;
+interface LanguagePairsContextValue {
   recentLangCodes: string[];
   trackRecentLang: (code: string) => void;
   savedPairs: SavedPair[];
-  isCurrentPairSaved: boolean;
-  toggleSavePair: () => void;
-  applyPair: (sourceCode: string, targetCode: string) => void;
+  addSavedPair: (sourceCode: string, targetCode: string) => void;
   removeSavedPair: (sourceCode: string, targetCode: string) => void;
 }
 
-const LanguageContext = createContext<LanguageContextValue | null>(null);
+const LanguagePairsContext = createContext<LanguagePairsContextValue | null>(null);
 
-export function LanguageProvider({ children }: { children: React.ReactNode }) {
-  const [sourceLang, setSourceLang] = useState<Language>(LANGUAGES[0]); // English
-  const [targetLang, setTargetLang] = useState<Language>(LANGUAGES[1]); // Spanish
+function LanguagePairsProvider({ children }: { children: React.ReactNode }) {
   const [recentLangCodes, setRecentLangCodes] = useState<string[]>([]);
   const [savedPairs, setSavedPairs] = useState<SavedPair[]>([]);
 
@@ -53,50 +113,19 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const swapLanguages = useCallback(() => {
-    impactLight();
-    if (sourceLang.code === "autodetect") {
-      setSourceLang(targetLang);
-      setTargetLang(LANGUAGES[0]); // English
-    } else {
-      const prev = sourceLang;
-      setSourceLang(targetLang);
-      setTargetLang(prev);
-    }
-  }, [sourceLang, targetLang]);
-
-  const isCurrentPairSaved = useMemo(
-    () => savedPairs.some((p) => p.sourceCode === sourceLang.code && p.targetCode === targetLang.code),
-    [savedPairs, sourceLang.code, targetLang.code]
-  );
-
-  const toggleSavePair = useCallback(() => {
-    if (sourceLang.code === "autodetect") return;
+  const addSavedPair = useCallback((sourceCode: string, targetCode: string) => {
+    if (sourceCode === "autodetect") return;
     impactLight();
     setSavedPairs((prev) => {
-      const exists = prev.some(
-        (p) => p.sourceCode === sourceLang.code && p.targetCode === targetLang.code
-      );
-      const updated = exists
-        ? prev.filter((p) => !(p.sourceCode === sourceLang.code && p.targetCode === targetLang.code))
-        : [...prev, { sourceCode: sourceLang.code, targetCode: targetLang.code }].slice(0, 8);
+      if (prev.some((p) => p.sourceCode === sourceCode && p.targetCode === targetCode)) return prev;
+      const updated = [...prev, { sourceCode, targetCode }].slice(0, 8);
       AsyncStorage.setItem(LANG_PAIRS_KEY, JSON.stringify(updated));
       return updated;
     });
-  }, [sourceLang.code, targetLang.code]);
-
-  const applyPair = useCallback((sourceCode: string, targetCode: string) => {
-    const src = LANGUAGE_MAP.get(sourceCode);
-    const tgt = LANGUAGE_MAP.get(targetCode);
-    if (src && tgt) {
-      impactLight();
-      setSourceLang(src);
-      setTargetLang(tgt);
-    }
   }, []);
 
   const removeSavedPair = useCallback((sourceCode: string, targetCode: string) => {
-    impactMedium();
+    impactLight();
     setSavedPairs((prev) => {
       const updated = prev.filter((p) => !(p.sourceCode === sourceCode && p.targetCode === targetCode));
       AsyncStorage.setItem(LANG_PAIRS_KEY, JSON.stringify(updated));
@@ -105,27 +134,20 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const value = useMemo(() => ({
-    sourceLang,
-    targetLang,
-    setSourceLang,
-    setTargetLang,
-    swapLanguages,
     recentLangCodes,
     trackRecentLang,
     savedPairs,
-    isCurrentPairSaved,
-    toggleSavePair,
-    applyPair,
+    addSavedPair,
     removeSavedPair,
-  }), [sourceLang, targetLang, swapLanguages, recentLangCodes, trackRecentLang, savedPairs, isCurrentPairSaved, toggleSavePair, applyPair, removeSavedPair]);
+  }), [recentLangCodes, trackRecentLang, savedPairs, addSavedPair, removeSavedPair]);
 
   return (
-    <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>
+    <LanguagePairsContext.Provider value={value}>{children}</LanguagePairsContext.Provider>
   );
 }
 
-export function useLanguage(): LanguageContextValue {
-  const ctx = useContext(LanguageContext);
-  if (!ctx) throw new Error("useLanguage must be used within a LanguageProvider");
+export function useLanguagePairs(): LanguagePairsContextValue {
+  const ctx = useContext(LanguagePairsContext);
+  if (!ctx) throw new Error("useLanguagePairs must be used within a LanguageProvider");
   return ctx;
 }

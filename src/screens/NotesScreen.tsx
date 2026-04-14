@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   FlatList,
+  ScrollView,
   TextInput,
   Platform,
   Share,
@@ -214,91 +215,88 @@ export default function NotesScreen() {
               </TouchableOpacity>
             </View>
 
-            <FlatList
-              data={[{ key: "content" }]}
-              renderItem={() => (
-                <View style={styles.detailContent}>
-                  <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-                    {editingTitle ? (
-                      <View style={styles.titleEditRow}>
-                        <TextInput
-                          style={[styles.titleInput, { color: colors.primaryText, borderColor: colors.border }]}
-                          value={titleDraft}
-                          onChangeText={setTitleDraft}
-                          autoFocus
-                          onSubmitEditing={handleSaveTitle}
-                          returnKeyType="done"
-                        />
-                        <TouchableOpacity onPress={handleSaveTitle}>
-                          <Text style={[styles.headerAction, { color: colors.primary }]}>Save</Text>
-                        </TouchableOpacity>
-                      </View>
-                    ) : (
-                      <TouchableOpacity onPress={() => { setEditingTitle(true); setTitleDraft(selectedNote.title); }}>
-                        <Text style={[styles.noteDetailTitle, { color: colors.titleText }]}>{selectedNote.title}</Text>
-                        <Text style={[styles.editHint, { color: colors.dimText }]}>Tap to edit title</Text>
+            <ScrollView>
+              <View style={styles.detailContent}>
+                <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                  {editingTitle ? (
+                    <View style={styles.titleEditRow}>
+                      <TextInput
+                        style={[styles.titleInput, { color: colors.primaryText, borderColor: colors.border }]}
+                        value={titleDraft}
+                        onChangeText={setTitleDraft}
+                        autoFocus
+                        onSubmitEditing={handleSaveTitle}
+                        returnKeyType="done"
+                      />
+                      <TouchableOpacity onPress={handleSaveTitle}>
+                        <Text style={[styles.headerAction, { color: colors.primary }]}>Save</Text>
                       </TouchableOpacity>
-                    )}
-                  </View>
-
-                  <View style={[styles.metaRow, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-                    <Text style={[styles.metaText, { color: colors.dimText }]}>
-                      {selectedNote.sourceLang.toUpperCase()} → {selectedNote.targetLang.toUpperCase()}
-                    </Text>
-                    <Text style={[styles.metaText, { color: colors.dimText }]}>
-                      {new Date(selectedNote.timestamp).toLocaleString()}
-                    </Text>
-                  </View>
-
-                  {selectedNote.fields.length > 0 && (
-                    <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-                      <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Key Information</Text>
-                      {selectedNote.fields.map((f, i) => (
-                        <TouchableOpacity key={i} style={styles.fieldRow} onPress={() => handleCopy(f.value, `field_${i}`)}>
-                          <Text style={[styles.fieldLabel, { color: colors.dimText }]}>{f.label}</Text>
-                          <Text style={[styles.fieldValue, { color: colors.primaryText }]}>
-                            {copiedId === `field_${i}` ? "Copied!" : f.value}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
                     </View>
+                  ) : (
+                    <TouchableOpacity onPress={() => { setEditingTitle(true); setTitleDraft(selectedNote.title); }}>
+                      <Text style={[styles.noteDetailTitle, { color: colors.titleText }]}>{selectedNote.title}</Text>
+                      <Text style={[styles.editHint, { color: colors.dimText }]}>Tap to edit title</Text>
+                    </TouchableOpacity>
                   )}
-
-                  <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-                    <View style={styles.sectionHeader}>
-                      <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Translation</Text>
-                      <TouchableOpacity onPress={() => handleCopy(selectedNote.translatedText, "translated")}>
-                        <Text style={[styles.headerAction, { color: colors.primary }]}>
-                          {copiedId === "translated" ? "Copied!" : "Copy"}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                    <Text style={[styles.noteText, { color: colors.translatedText }]} selectable>
-                      {selectedNote.translatedText}
-                    </Text>
-                  </View>
-
-                  <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-                    <View style={styles.sectionHeader}>
-                      <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Original</Text>
-                      <TouchableOpacity onPress={() => handleCopy(selectedNote.originalText, "original")}>
-                        <Text style={[styles.headerAction, { color: colors.primary }]}>
-                          {copiedId === "original" ? "Copied!" : "Copy"}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                    <Text style={[styles.noteText, { color: colors.secondaryText }]} selectable>
-                      {selectedNote.originalText}
-                    </Text>
-                  </View>
-
-                  <TouchableOpacity style={[styles.deleteButton, { backgroundColor: colors.destructiveBg }]} onPress={() => handleDelete(selectedNote.id)}>
-                    <Text style={[styles.deleteButtonText, { color: colors.destructiveText }]}>Delete Note</Text>
-                  </TouchableOpacity>
-                  <View style={{ height: 40 }} />
                 </View>
-              )}
-            />
+
+                <View style={[styles.metaRow, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                  <Text style={[styles.metaText, { color: colors.dimText }]}>
+                    {selectedNote.sourceLang.toUpperCase()} → {selectedNote.targetLang.toUpperCase()}
+                  </Text>
+                  <Text style={[styles.metaText, { color: colors.dimText }]}>
+                    {new Date(selectedNote.timestamp).toLocaleString()}
+                  </Text>
+                </View>
+
+                {selectedNote.fields.length > 0 && (
+                  <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                    <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Key Information</Text>
+                    {selectedNote.fields.map((f, i) => (
+                      <TouchableOpacity key={i} style={styles.fieldRow} onPress={() => handleCopy(f.value, `field_${i}`)}>
+                        <Text style={[styles.fieldLabel, { color: colors.dimText }]}>{f.label}</Text>
+                        <Text style={[styles.fieldValue, { color: colors.primaryText }]}>
+                          {copiedId === `field_${i}` ? "Copied!" : f.value}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Translation</Text>
+                    <TouchableOpacity onPress={() => handleCopy(selectedNote.translatedText, "translated")}>
+                      <Text style={[styles.headerAction, { color: colors.primary }]}>
+                        {copiedId === "translated" ? "Copied!" : "Copy"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.noteText, { color: colors.translatedText }]} selectable>
+                    {selectedNote.translatedText}
+                  </Text>
+                </View>
+
+                <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                  <View style={styles.sectionHeader}>
+                    <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Original</Text>
+                    <TouchableOpacity onPress={() => handleCopy(selectedNote.originalText, "original")}>
+                      <Text style={[styles.headerAction, { color: colors.primary }]}>
+                        {copiedId === "original" ? "Copied!" : "Copy"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.noteText, { color: colors.secondaryText }]} selectable>
+                    {selectedNote.originalText}
+                  </Text>
+                </View>
+
+                <TouchableOpacity style={[styles.deleteButton, { backgroundColor: colors.destructiveBg }]} onPress={() => handleDelete(selectedNote.id)}>
+                  <Text style={[styles.deleteButtonText, { color: colors.destructiveText }]}>Delete Note</Text>
+                </TouchableOpacity>
+                <View style={{ height: 40 }} />
+              </View>
+            </ScrollView>
           </View>
         </Modal>
       </SafeAreaView>

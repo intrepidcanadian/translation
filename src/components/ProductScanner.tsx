@@ -37,7 +37,7 @@ interface ProductScannerProps {
 
 type Phase = "scanning" | "loading" | "results" | "not_found";
 
-export default function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
+function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
   const device = useCameraDevice("back");
   const { hasPermission, requestPermission } = useCameraPermission();
   const cameraRef = useRef<Camera>(null);
@@ -336,6 +336,8 @@ export default function ProductScanner({ visible, onClose, colors }: ProductScan
     </View>
   );
 }
+
+export default React.memo(ProductScanner);
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
