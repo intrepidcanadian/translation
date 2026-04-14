@@ -27,6 +27,12 @@ function withIOSWidget(config) {
     const project = config.modResults;
     const mainBundleId = config.ios?.bundleIdentifier || "com.tonylau.livetranslator";
     const widgetBundleId = mainBundleId + WIDGET_BUNDLE_ID_SUFFIX;
+    // Team ID required for signing the app extension target under Xcode 14+.
+    // Without DEVELOPMENT_TEAM on the widget target, xcodebuild fails with
+    // "requires setting the development team" — and Expo's log classifier
+    // reports that as XCODE_RESOURCE_BUNDLE_CODE_SIGNING_ERROR even though
+    // the failing target is the extension, not a CocoaPods resource bundle.
+    const appleTeamId = config.ios?.appleTeamId || "QV52UGHY49";
 
     // Copy widget source files to ios directory
     const iosDir = config.modRequest.platformProjectRoot;
@@ -173,13 +179,37 @@ function withIOSWidget(config) {
 
       // 4. Wire build phases into the widget native target
       const nativeTargets = objects["PBXNativeTarget"];
+      let widgetNativeTargetUuid = null;
       for (const key in nativeTargets) {
+        if (key.endsWith("_comment")) continue;
         const nt = nativeTargets[key];
         if (nt && nt.name && (nt.name === WIDGET_TARGET_NAME || nt.name === `"${WIDGET_TARGET_NAME}"`)) {
           nt.buildPhases = [
             { value: sourcesBuildPhaseUuid, comment: "Sources" },
             { value: frameworksBuildPhaseUuid, comment: "Frameworks" },
           ];
+          widgetNativeTargetUuid = key;
+          break;
+        }
+      }
+
+      // 5. Register TargetAttributes for the widget under the PBXProject so
+      // Xcode respects the automatic-signing settings on the target. Without
+      // this, Xcode may silently fall back to manual signing and refuse to
+      // pick a provisioning profile, producing "requires development team".
+      if (widgetNativeTargetUuid) {
+        const pbxProjectSection = objects["PBXProject"];
+        for (const key in pbxProjectSection) {
+          if (key.endsWith("_comment")) continue;
+          const proj = pbxProjectSection[key];
+          if (!proj || typeof proj !== "object") continue;
+          if (!proj.attributes) proj.attributes = {};
+          if (!proj.attributes.TargetAttributes) proj.attributes.TargetAttributes = {};
+          proj.attributes.TargetAttributes[widgetNativeTargetUuid] = {
+            CreatedOnToolsVersion: "15.0",
+            DevelopmentTeam: appleTeamId,
+            ProvisioningStyle: "Automatic",
+          };
           break;
         }
       }
@@ -203,6 +233,13 @@ function withIOSWidget(config) {
           config.buildSettings.CURRENT_PROJECT_VERSION = "1";
           config.buildSettings.GENERATE_INFOPLIST_FILE = "NO";
           config.buildSettings.SKIP_INSTALL = "YES";
+          // Signing — required under Xcode 14+ for app extension targets.
+          // Automatic signing + a team ID lets EAS's managed credentials flow
+          // register the widget bundle ID with the Apple Developer portal
+          // and pick a matching provisioning profile at build time.
+          config.buildSettings.DEVELOPMENT_TEAM = appleTeamId;
+          config.buildSettings.CODE_SIGN_STYLE = "Automatic";
+          config.buildSettings.CODE_SIGN_IDENTITY = '"Apple Development"';
         }
       }
     }
