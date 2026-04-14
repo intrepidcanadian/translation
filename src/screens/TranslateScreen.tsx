@@ -453,10 +453,15 @@ export default function TranslateScreen() {
 
   // Stable callbacks for ControlsPanel (React.memo) — prevents re-renders from unstable inline closures
   const onEnterSelectMode = useCallback(() => setSelectMode(true), [setSelectMode]);
+  // Snapshot ref so onOpenSplitScreen can be memoized with empty deps — stopListening
+  // is already stable, but isListening flipped this callback's identity on every
+  // mic toggle, breaking React.memo on ControlsPanel.
+  const isListeningRef = useRef(isListening);
+  useEffect(() => { isListeningRef.current = isListening; }, [isListening]);
   const onOpenSplitScreen = useCallback(() => {
-    if (isListening) stopListening();
+    if (isListeningRef.current) stopListening();
     dispatchPanel({ type: "SET_SPLIT_SCREEN", value: true });
-  }, [isListening, stopListening]);
+  }, [stopListening]);
   const onCloseSplitScreen = useCallback(() => dispatchPanel({ type: "SET_SPLIT_SCREEN", value: false }), []);
   const onOpenPlayback = useCallback(() => dispatchPanel({ type: "SET_PLAYBACK", value: true }), []);
   const onClosePlayback = useCallback(() => dispatchPanel({ type: "SET_PLAYBACK", value: false }), []);

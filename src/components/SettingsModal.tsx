@@ -17,6 +17,7 @@ import { type ThemeMode, type ThemeColors, getColors } from "../theme";
 import { isAppleTranslationAvailable, type TranslationProvider } from "../services/translation";
 import { logger } from "../services/logger";
 import { notifySuccess } from "../services/haptics";
+import { migrateCrashReport, type CrashReport } from "../types/crashReport";
 
 export type { TranslationProvider };
 
@@ -71,14 +72,7 @@ interface Props {
 function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const colors = useMemo(() => getColors(settings.theme), [settings.theme]);
   const [appleAvailable, setAppleAvailable] = useState(false);
-  const [lastCrash, setLastCrash] = useState<{
-    message: string;
-    timestamp: number;
-    stack?: string;
-    appVersion?: string;
-    buildNumber?: string;
-    platform?: string;
-  } | null>(null);
+  const [lastCrash, setLastCrash] = useState<CrashReport | null>(null);
   const [crashCopied, setCrashCopied] = useState(false);
 
   useEffect(() => {
@@ -87,11 +81,21 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     }
   }, []);
 
-  // Load last crash report when settings opens
+  // Load last crash report when settings opens. The stored blob runs through
+  // migrateCrashReport so reports written by older app versions (pre-
+  // schemaVersion) still render instead of being silently dropped.
   useEffect(() => {
     if (!visible) return;
     AsyncStorage.getItem("@live_translator_last_crash")
-      .then((val) => { if (val) setLastCrash(JSON.parse(val)); })
+      .then((val) => {
+        if (!val) return;
+        try {
+          const migrated = migrateCrashReport(JSON.parse(val));
+          setLastCrash(migrated);
+        } catch (err) {
+          logger.warn("Settings", "Failed to parse crash report", err);
+        }
+      })
       .catch((err) => logger.warn("Settings", "Failed to load crash report", err));
   }, [visible]);
 

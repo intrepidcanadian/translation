@@ -24,7 +24,7 @@ type LogTag =
   | "Scanner"
   | "History";
 
-interface LogEntry {
+export interface LogEntry {
   level: LogLevel;
   tag: LogTag;
   message: string;
@@ -32,15 +32,26 @@ interface LogEntry {
   timestamp: number;
 }
 
+export interface LogQuery {
+  tags?: readonly LogTag[];
+  levels?: readonly LogLevel[];
+  /** Only entries at or after this epoch ms */
+  since?: number;
+}
+
+const DEFAULT_BUFFER_SIZE = 50;
+
+let bufferSize = DEFAULT_BUFFER_SIZE;
 const recentErrors: LogEntry[] = [];
-const MAX_RECENT = 50;
 
 function log(level: LogLevel, tag: LogTag, message: string, error?: unknown) {
   const entry: LogEntry = { level, tag, message, error, timestamp: Date.now() };
 
   if (level === "warn" || level === "error") {
     recentErrors.push(entry);
-    if (recentErrors.length > MAX_RECENT) recentErrors.shift();
+    // Use while rather than a single shift so that if bufferSize is lowered at
+    // runtime (tuning via configureBufferSize) excess entries drain in one go.
+    while (recentErrors.length > bufferSize) recentErrors.shift();
   }
 
   const prefix = `[${tag}]`;
@@ -60,6 +71,13 @@ function log(level: LogLevel, tag: LogTag, message: string, error?: unknown) {
   }
 }
 
+function matches(entry: LogEntry, query: LogQuery): boolean {
+  if (query.tags && !query.tags.includes(entry.tag)) return false;
+  if (query.levels && !query.levels.includes(entry.level)) return false;
+  if (query.since !== undefined && entry.timestamp < query.since) return false;
+  return true;
+}
+
 export const logger = {
   debug: (tag: LogTag, message: string, error?: unknown) => log("debug", tag, message, error),
   info: (tag: LogTag, message: string) => log("info", tag, message),
@@ -69,6 +87,27 @@ export const logger = {
   /** Get recent warn/error entries for crash reports or debug UI */
   getRecentErrors: (): readonly LogEntry[] => recentErrors,
 
+  /** Filter recent entries by tag/level/since — useful for debug panels, test
+   * assertions, and targeted crash-report sections (e.g. only Network errors
+   * in the last 30 seconds). */
+  query: (q: LogQuery): readonly LogEntry[] =>
+    recentErrors.filter((e) => matches(e, q)),
+
   /** Clear recent error buffer */
   clearRecentErrors: () => { recentErrors.length = 0; },
+
+  /**
+   * Tune the ring buffer size at runtime. Useful so we can calibrate against
+   * real crash rates after shipping (#97) without a code change. Values are
+   * clamped to [10, 500] to stop accidental OOM or uselessly small buffers.
+   */
+  configureBufferSize: (size: number) => {
+    const clamped = Math.max(10, Math.min(500, Math.floor(size)));
+    bufferSize = clamped;
+    while (recentErrors.length > bufferSize) recentErrors.shift();
+    return clamped;
+  },
+
+  /** Current ring buffer capacity (for debug UI and tests). */
+  getBufferSize: (): number => bufferSize,
 };

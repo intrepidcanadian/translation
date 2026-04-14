@@ -62,6 +62,16 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
   const translationTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isStartingRef = useRef(false); // Guard against rapid double-taps
+  const isListeningRef = useRef(false);
+  useEffect(() => { isListeningRef.current = isListening; }, [isListening]);
+
+  // Snapshot ref of the mutable options. Callbacks below read from this ref
+  // instead of closing over the destructured values, so startListening and
+  // startListeningAs can be memoized with empty deps and remain stable
+  // identities across every render. That unlocks React.memo downstream in
+  // ControlsPanel and SplitConversation which receive these as props.
+  const optionsRef = useRef(options);
+  useEffect(() => { optionsRef.current = options; });
 
   // Pulse animation for mic button
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -211,9 +221,12 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     setIsListening(false);
   });
 
+  // Stable — reads all dynamic inputs from optionsRef and isListeningRef.
+  // No deps means this identity survives across renders, which is what the
+  // React.memo paths downstream rely on.
   const startListening = useCallback(async () => {
     // Prevent double-tap: ignore if already starting or listening
-    if (isStartingRef.current || isListening) return;
+    if (isStartingRef.current || isListeningRef.current) return;
     isStartingRef.current = true;
 
     impactMedium();
@@ -231,28 +244,29 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
         return;
       }
 
-      const speechLang = (conversationMode && activeSpeakerRef.current === "B")
-        ? targetSpeechCode
-        : (sourceLangCode === "autodetect" ? "en-US" : sourceSpeechCode);
+      const opts = optionsRef.current;
+      const speechLang = (opts.conversationMode && opts.activeSpeakerRef.current === "B")
+        ? opts.targetSpeechCode
+        : (opts.sourceLangCode === "autodetect" ? "en-US" : opts.sourceSpeechCode);
 
       ExpoSpeechRecognitionModule.start({
         lang: speechLang,
         interimResults: true,
         continuous: true,
         maxAlternatives: 1,
-        requiresOnDeviceRecognition: offlineSpeech,
-        ...(sourceLangCode === "autodetect" ? { addsPunctuation: true } : {}),
+        requiresOnDeviceRecognition: opts.offlineSpeech,
+        ...(opts.sourceLangCode === "autodetect" ? { addsPunctuation: true } : {}),
       });
     } finally {
       // Reset guard after a short delay to allow the "start" event to fire
       setTimeout(() => { isStartingRef.current = false; }, 500);
     }
-  }, [conversationMode, activeSpeakerRef, sourceLangCode, sourceSpeechCode, targetSpeechCode, offlineSpeech, isListening]);
+  }, []);
 
   const startListeningAs = useCallback((speaker: "A" | "B") => {
-    activeSpeakerRef.current = speaker;
+    optionsRef.current.activeSpeakerRef.current = speaker;
     startListening();
-  }, [activeSpeakerRef, startListening]);
+  }, [startListening]);
 
   const stopListening = useCallback(() => {
     impactLight();

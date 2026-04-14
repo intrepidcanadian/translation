@@ -1,18 +1,33 @@
 import React, { Component, type ErrorInfo, type ReactNode } from "react";
-import { View, Text, TouchableOpacity, StyleSheet, Appearance, Alert, Platform } from "react-native";
+import { View, Text, TouchableOpacity, StyleSheet, Appearance, Alert, Platform, AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import { getColors, type ThemeMode } from "../theme";
 import { logger } from "../services/logger";
+import { CRASH_REPORT_SCHEMA_VERSION, type CrashReport } from "../types/crashReport";
 
 // Read once at module load. expo-constants surfaces the app.json version + the
 // native build number (iOS CFBundleVersion / Android versionCode) which is what
 // we actually need when triaging a crash report.
-const APP_VERSION = Constants.expoConfig?.version ?? "unknown";
-const BUILD_NUMBER =
-  (Platform.OS === "ios"
-    ? Constants.expoConfig?.ios?.buildNumber
-    : Constants.expoConfig?.android?.versionCode?.toString()) ?? "unknown";
+//
+// The Constants module access is wrapped in try-catch because in certain build
+// contexts (E2E stubs, SSR, first-run before native initialization) the native
+// module may be missing or expoConfig may throw instead of returning undefined.
+// A crash report saying "unknown" is strictly better than the crash reporter
+// itself crashing during module load.
+const { APP_VERSION, BUILD_NUMBER } = (() => {
+  try {
+    const version = Constants.expoConfig?.version ?? "unknown";
+    const build =
+      (Platform.OS === "ios"
+        ? Constants.expoConfig?.ios?.buildNumber
+        : Constants.expoConfig?.android?.versionCode?.toString()) ?? "unknown";
+    return { APP_VERSION: version, BUILD_NUMBER: build };
+  } catch (err) {
+    logger.warn("Render", "Failed to read app version from expo-constants", err);
+    return { APP_VERSION: "unknown", BUILD_NUMBER: "unknown" };
+  }
+})();
 
 const LAST_CRASH_KEY = "@live_translator_last_crash";
 // Rolling timestamps of recent crashes — when the app repeatedly crashes in a short
@@ -21,6 +36,11 @@ const LAST_CRASH_KEY = "@live_translator_last_crash";
 const RECENT_CRASHES_KEY = "@live_translator_recent_crashes";
 const CRASH_LOOP_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const CRASH_LOOP_THRESHOLD = 3;
+// If the app stays in the foreground this long after mount without crashing,
+// we treat the session as "healthy" and clear the recent-crashes counter. This
+// prevents a stale day-old crash from counting toward today's loop detection
+// and tuning the 3-in-5-minutes heuristic toward real crash clusters only.
+const HEALTHY_SESSION_MS = 60 * 1000; // 1 minute
 // Crash report keys must always survive any reset so the user can still share the
 // diagnostic report after recovering.
 const CRASH_REPORT_KEYS = new Set<string>([LAST_CRASH_KEY, RECENT_CRASHES_KEY]);
@@ -53,19 +73,68 @@ interface State {
 export default class ErrorBoundary extends Component<Props, State> {
   state: State = { hasError: false, error: null, crashCount: 0, crashLoopDetected: false };
 
+  private healthyTimer: ReturnType<typeof setTimeout> | null = null;
+  private appStateSub: { remove: () => void } | null = null;
+
   static getDerivedStateFromError(error: Error): Partial<State> {
     return { hasError: true, error };
   }
 
+  componentDidMount() {
+    // Arm the healthy-session timer on mount. If the user reaches this point
+    // without an immediate crash, wait HEALTHY_SESSION_MS then flush the
+    // rolling crash counter so yesterday's incident doesn't trip today's
+    // loop detector.
+    this.armHealthyTimer();
+
+    // Pause/resume the timer on background transitions so real foreground
+    // time is what counts — a phone that sat locked overnight shouldn't
+    // auto-clear the counter.
+    this.appStateSub = AppState.addEventListener("change", this.handleAppStateChange);
+  }
+
+  componentWillUnmount() {
+    if (this.healthyTimer) clearTimeout(this.healthyTimer);
+    this.appStateSub?.remove();
+  }
+
+  private armHealthyTimer = () => {
+    if (this.healthyTimer) clearTimeout(this.healthyTimer);
+    this.healthyTimer = setTimeout(async () => {
+      try {
+        await AsyncStorage.removeItem(RECENT_CRASHES_KEY);
+      } catch (err) {
+        logger.warn("Storage", "Failed to clear crash loop counter", err);
+      }
+    }, HEALTHY_SESSION_MS);
+  };
+
+  private handleAppStateChange = (next: AppStateStatus) => {
+    if (next === "active") {
+      this.armHealthyTimer();
+    } else if (this.healthyTimer) {
+      clearTimeout(this.healthyTimer);
+      this.healthyTimer = null;
+    }
+  };
+
   async componentDidCatch(error: Error, info: ErrorInfo) {
     logger.error("Render", "App crashed", { message: error.message, componentStack: info.componentStack });
+
+    // Stop the healthy-session countdown — a crash disqualifies this session.
+    if (this.healthyTimer) {
+      clearTimeout(this.healthyTimer);
+      this.healthyTimer = null;
+    }
 
     const now = Date.now();
 
     // Persist crash info for debugging across sessions. Stamping app version +
     // build number here means shared reports always reveal which build crashed,
-    // without the user having to remember or look it up.
-    const crashReport = {
+    // without the user having to remember or look it up. schemaVersion lets
+    // future format changes migrate old reports instead of dropping them.
+    const crashReport: CrashReport = {
+      schemaVersion: CRASH_REPORT_SCHEMA_VERSION,
       message: error.message,
       stack: error.stack?.slice(0, 500),
       componentStack: info.componentStack?.slice(0, 500),
@@ -97,6 +166,9 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   handleRetry = () => {
     this.setState({ hasError: false, error: null });
+    // Give the recovered session the same healthy-runway window so if it
+    // survives HEALTHY_SESSION_MS the crash counter gets flushed.
+    this.armHealthyTimer();
   };
 
   // Tiered reset: start with a soft clear (transient/cache only) and escalate to a
