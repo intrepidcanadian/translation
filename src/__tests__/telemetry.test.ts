@@ -100,6 +100,18 @@ describe("telemetry counters", () => {
     expect(tm.getTypeAheadTotal()).toBe(10);
   });
 
+  it("getPendingDeltasCap exposes the cap so tests don't hardcode the number (#158)", () => {
+    const tm = loadTelemetry();
+    const cap = tm.getPendingDeltasCap();
+    // Pins the contract: cap is a positive integer sized above the current
+    // real `TelemetryKey` union (7ish). If someone shrinks it past the union
+    // size, legitimate keys would stop staging during hydration — catch that.
+    expect(Number.isInteger(cap)).toBe(true);
+    expect(cap).toBeGreaterThan(10);
+    // Pure getter — calling repeatedly returns the same value.
+    expect(tm.getPendingDeltasCap()).toBe(cap);
+  });
+
   it("getTypeAheadLocalRatio is 0 when no traffic, else glossary+offlineHit / total", () => {
     const tm = loadTelemetry();
     expect(tm.getTypeAheadLocalRatio()).toBe(0);
@@ -207,11 +219,13 @@ describe("telemetry hydration", () => {
 
     const hydrationPromise = tm.initTelemetry();
 
-    // Pump 70 distinct synthetic keys — more than the 64-key ceiling — so
-    // the last 6 must be dropped. Cast through `unknown` so TypeScript lets
-    // us invoke `increment` with strings the real union doesn't know about;
-    // this is exactly the pathological case the cap defends against.
-    const CAP = 64;
+    // Pump (cap + overshoot) distinct synthetic keys so the last N must be
+    // dropped. Cast through `unknown` so TypeScript lets us invoke
+    // `increment` with strings the real union doesn't know about; this is
+    // exactly the pathological case the cap defends against. #158: pull the
+    // cap from the exported accessor rather than hardcoding 64 — if the
+    // constant ever gets tuned, this test follows automatically.
+    const CAP = tm.getPendingDeltasCap();
     const OVERSHOOT = 6;
     type UnsafeKey = Parameters<typeof tm.increment>[0];
     for (let i = 0; i < CAP + OVERSHOOT; i++) {

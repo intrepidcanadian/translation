@@ -76,6 +76,23 @@ function computeSpeechStats(): SpeechStats {
   return { success, fail, noSpeech, total: success + fail };
 }
 
+/**
+ * #156: detect the "mic may be muted / quiet environment" pattern. A user stuck
+ * in a silent-mic loop produces repeated `no-speech` recognition errors but
+ * never lands a successful translation, so `noSpeech` grows while `total`
+ * stays 0. Surfaces as a soft hint in the Settings dashboard and crash report
+ * — concrete enough to be actionable, not alarmist enough to nag users in a
+ * genuinely quiet room after a single silent session.
+ *
+ * The threshold of 3 is a first guess — enough to filter single-tap silent
+ * sessions but low enough to catch the pattern before it frustrates the user.
+ * Tune once #90 (Sentry) exposes the real distribution of noSpeech per session.
+ */
+const MIC_MUTED_HINT_THRESHOLD = 3;
+function isLikelyMicMuted(stats: SpeechStats): boolean {
+  return stats.total === 0 && stats.noSpeech >= MIC_MUTED_HINT_THRESHOLD;
+}
+
 export type FontSizeOption = "small" | "medium" | "large" | "xlarge";
 
 export const FONT_SIZE_SCALES: Record<FontSizeOption, number> = {
@@ -326,6 +343,12 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
         // broken-mic user don't look the same in the crash report.
         if (speech.noSpeech > 0) {
           diagnosticsLines.push(`  Speech recognition: ${speech.noSpeech} no-speech event(s)`);
+        }
+        // #156: when the session has only no-speech events and no successful
+        // translations, strongly suggest a muted mic / quiet environment so
+        // the crash reader can escalate past "just a flaky session".
+        if (isLikelyMicMuted(speech)) {
+          diagnosticsLines.push(`  ⚠ Mic may be muted or environment too quiet (no successful recognitions)`);
         }
         // Rolling 60s speech fail count (#141) via logger.countByRolling —
         // gives the person reading the report a "right now" signal that the
@@ -791,6 +814,26 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                           accessibilityLabel={`${speechStats.noSpeech} no-speech events this session`}
                         >
                           No-speech events: {speechStats.noSpeech}
+                        </Text>
+                      )}
+                      {/* #156: mic-muted / quiet-environment hint. Only fires
+                          when `noSpeech` has accumulated past the threshold
+                          AND no successful recognitions have landed, so a
+                          genuinely silent room doesn't nag users who just
+                          haven't spoken yet. Rendered with errorText color +
+                          accessibilityLiveRegion so VoiceOver users hear the
+                          hint when refreshing diagnostics. */}
+                      {speechStats && isLikelyMicMuted(speechStats) && (
+                        <Text
+                          style={[
+                            styles.infoText,
+                            dynamicStyles.infoText,
+                            { color: colors.errorText },
+                          ]}
+                          accessibilityLiveRegion="polite"
+                          accessibilityLabel="Microphone may be muted or environment too quiet. No successful recognitions this session."
+                        >
+                          ⚠ Mic may be muted or environment too quiet
                         </Text>
                       )}
                       {/* Rolling 60s fail count (#141) — answers "is it on

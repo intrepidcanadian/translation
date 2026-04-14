@@ -309,3 +309,20 @@ export function prunedUnknownKeys(): readonly string[] {
 export function didPruneUnknownKeys(): boolean {
   return prunedKeyNames.length > 0;
 }
+
+/**
+ * #158: exposes the `PENDING_DELTAS_MAX_KEYS` constant so tests (and any
+ * future diagnostics consumer) can assert against the cap without hardcoding
+ * a magic number or reaching into module internals. Kept as a getter rather
+ * than a plain export so the constant stays module-private and the public
+ * API can continue to treat it as an implementation detail we reserve the
+ * right to tune.
+ *
+ * The cap itself is still a compile-time constant — callers that want to
+ * *change* it should edit `PENDING_DELTAS_MAX_KEYS` directly; there is no
+ * setter. The getter exists purely so #154's cap-breach test can say
+ * `getPendingDeltasCap() + overshoot` instead of hardcoding 64.
+ */
+export function getPendingDeltasCap(): number {
+  return PENDING_DELTAS_MAX_KEYS;
+}

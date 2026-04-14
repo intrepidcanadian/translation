@@ -127,6 +127,48 @@ describe("logger.countByRolling", () => {
   });
 });
 
+describe("logger.query defaults", () => {
+  // Regression fence for #150: `query()` without an explicit `levels` filter
+  // must return warn/error entries only (errors ring), NOT debug entries.
+  // The dashboards that depend on the debug ring opt in via `levels: ["debug"]`
+  // explicitly, so silently widening the default to include debug would both
+  // change semantics and, in production, silently start returning empty arrays
+  // because the debug ring is `__DEV__`-gated.
+  it("omitted levels filter returns errors ring only (excludes debug)", () => {
+    logger.warn("Translation", "warn entry");
+    logger.error("Network", "error entry");
+    logger.debug("Translation", "debug entry");
+
+    // No `levels` field — should scan the errors ring only.
+    const all = logger.query({});
+    const levels = all.map((e) => e.level).sort();
+    expect(levels).toEqual(["error", "warn"]);
+    expect(all.some((e) => e.level === "debug")).toBe(false);
+  });
+
+  it("explicit levels: ['debug'] opts into the debug ring", () => {
+    logger.warn("Translation", "warn entry");
+    logger.debug("Translation", "debug entry 1");
+    logger.debug("Translation", "debug entry 2");
+
+    // Explicit debug opt-in. In __DEV__ the debug ring holds entries; in a
+    // production build it would be empty. Jest runs with __DEV__=true by
+    // default under jest-expo, so this assertion is meaningful here.
+    const debugOnly = logger.query({ levels: ["debug"] });
+    expect(debugOnly.length).toBe(2);
+    expect(debugOnly.every((e) => e.level === "debug")).toBe(true);
+  });
+
+  it("mixed levels (debug + warn) scans both rings", () => {
+    logger.warn("Translation", "warn entry");
+    logger.debug("Translation", "debug entry");
+
+    const mixed = logger.query({ levels: ["debug", "warn"] });
+    const levels = mixed.map((e) => e.level).sort();
+    expect(levels).toEqual(["debug", "warn"]);
+  });
+});
+
 describe("logger buffer configuration", () => {
   it("drains excess entries when buffer size is lowered at runtime", () => {
     for (let i = 0; i < 30; i++) logger.warn("Translation", `e${i}`);
