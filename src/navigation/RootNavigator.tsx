@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { useSettings } from "../contexts/SettingsContext";
 import { getColors } from "../theme";
 import type { RootTabParamList } from "./types";
+import ScreenErrorBoundary from "../components/ScreenErrorBoundary";
 
 import TranslateScreen from "../screens/TranslateScreen";
 import ScanScreen from "../screens/ScanScreen";
@@ -11,6 +12,29 @@ import NotesScreen from "../screens/NotesScreen";
 import SettingsScreen from "../screens/SettingsScreen";
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
+
+/**
+ * Wrap a tab screen in a named ScreenErrorBoundary so a crash in one tab
+ * doesn't take down the whole navigator. The root <ErrorBoundary> is still
+ * the last line of defense — this just contains the blast radius per tab.
+ */
+function withBoundary<P extends object>(
+  label: string,
+  Component: React.ComponentType<P>
+): React.ComponentType<P> {
+  const Wrapped = (props: P) => (
+    <ScreenErrorBoundary label={label}>
+      <Component {...props} />
+    </ScreenErrorBoundary>
+  );
+  Wrapped.displayName = `${label}Screen(Boundary)`;
+  return Wrapped;
+}
+
+const TranslateScreenSafe = withBoundary("Translate", TranslateScreen);
+const ScanScreenSafe = withBoundary("Scan", ScanScreen);
+const NotesScreenSafe = withBoundary("Notes", NotesScreen);
+const SettingsScreenSafe = withBoundary("Settings", SettingsScreen);
 
 export default function RootNavigator() {
   const { settings } = useSettings();
@@ -38,7 +62,7 @@ export default function RootNavigator() {
     >
       <Tab.Screen
         name="Translate"
-        component={TranslateScreen}
+        component={TranslateScreenSafe}
         options={{
           tabBarLabel: "Translate",
           tabBarIcon: () => <Text style={{ fontSize: 22 }}>🎙️</Text>,
@@ -46,7 +70,7 @@ export default function RootNavigator() {
       />
       <Tab.Screen
         name="Scan"
-        component={ScanScreen}
+        component={ScanScreenSafe}
         options={{
           tabBarLabel: "Scan",
           tabBarIcon: () => <Text style={{ fontSize: 22 }}>📷</Text>,
@@ -54,7 +78,7 @@ export default function RootNavigator() {
       />
       <Tab.Screen
         name="Notes"
-        component={NotesScreen}
+        component={NotesScreenSafe}
         options={{
           tabBarLabel: "Notes",
           tabBarIcon: () => <Text style={{ fontSize: 22 }}>🗒️</Text>,
@@ -62,7 +86,7 @@ export default function RootNavigator() {
       />
       <Tab.Screen
         name="Settings"
-        component={SettingsScreen}
+        component={SettingsScreenSafe}
         options={{
           tabBarLabel: "Settings",
           tabBarIcon: () => <Text style={{ fontSize: 22 }}>⚙</Text>,
