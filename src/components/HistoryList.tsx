@@ -20,6 +20,14 @@ import ChatBubble from "./ChatBubble";
 import { Platform } from "react-native";
 import { useHistoryActionsContext } from "../contexts/HistoryActionsContext";
 
+type DynamicFontSizes = {
+  original: { fontSize: number };
+  translated: { fontSize: number };
+  liveOriginal: { fontSize: number };
+  liveTranslated: { fontSize: number };
+  chatText: { fontSize: number };
+};
+
 interface HistoryListProps {
   history: HistoryItem[];
   filteredHistory: HistoryItem[];
@@ -57,6 +65,138 @@ interface HistoryListProps {
     categoryInfo?: { key: PhraseCategory; label: string; icon: string };
   } | null;
 }
+
+// Memoized standard bubble row — subscribes to HistoryActionsContext so the row can
+// skip re-renders even when parent HistoryList re-computes closures. SwipeableRow's
+// onDelete is memoized per realIndex inside the row instead of being an inline
+// closure inside renderHistoryItem.
+const HistoryItemRow = React.memo(function HistoryItemRow({
+  item,
+  realIndex,
+  colors,
+  dynamicFontSizes,
+  showRomanization,
+  fontScale,
+  confidenceThreshold,
+  copiedText,
+  speakingText,
+  targetSpeechCode,
+  searchQuery,
+}: {
+  item: HistoryItem;
+  realIndex: number;
+  colors: ThemeColors;
+  dynamicFontSizes: DynamicFontSizes;
+  showRomanization: boolean;
+  fontScale: number;
+  confidenceThreshold: number;
+  copiedText: string | null;
+  speakingText: string | null;
+  targetSpeechCode: string;
+  searchQuery: string;
+}) {
+  const {
+    onDeleteHistoryItem,
+    onCopyToClipboard,
+    onSpeakText,
+    onToggleFavorite,
+    onRetryTranslation,
+    onCompareTranslation,
+    onCorrection,
+    onWordLongPress,
+    onShowPassenger,
+    onShareCard,
+  } = useHistoryActionsContext();
+  const handleDelete = useCallback(() => onDeleteHistoryItem(realIndex), [onDeleteHistoryItem, realIndex]);
+  return (
+    <SwipeableRow onDelete={handleDelete} colors={colors}>
+      <TranslationBubble
+        item={item}
+        realIndex={realIndex}
+        colors={colors}
+        dynamicFontSizes={dynamicFontSizes}
+        showRomanization={showRomanization}
+        fontSizeScale={fontScale}
+        confidenceThreshold={confidenceThreshold}
+        copiedText={copiedText}
+        speakingText={speakingText}
+        targetSpeechCode={targetSpeechCode}
+        onCopy={onCopyToClipboard}
+        onSpeak={onSpeakText}
+        onToggleFavorite={onToggleFavorite}
+        onRetry={onRetryTranslation}
+        onCompare={onCompareTranslation}
+        onCorrection={onCorrection}
+        onWordLongPress={onWordLongPress}
+        onShowPassenger={onShowPassenger}
+        onDismiss={onDeleteHistoryItem}
+        onShareCard={onShareCard}
+        searchQuery={searchQuery}
+      />
+    </SwipeableRow>
+  );
+});
+
+// Memoized chat mode row — mirrors HistoryItemRow but wraps ChatBubble.
+const ChatBubbleRow = React.memo(function ChatBubbleRow({
+  item,
+  realIndex,
+  colors,
+  dynamicFontSizes,
+  showRomanization,
+  fontScale,
+  confidenceThreshold,
+  copiedText,
+  speakingText,
+  speakLang,
+  sourceLangName,
+  targetLangName,
+  searchQuery,
+}: {
+  item: HistoryItem;
+  realIndex: number;
+  colors: ThemeColors;
+  dynamicFontSizes: DynamicFontSizes;
+  showRomanization: boolean;
+  fontScale: number;
+  confidenceThreshold: number;
+  copiedText: string | null;
+  speakingText: string | null;
+  speakLang: string;
+  sourceLangName: string;
+  targetLangName: string;
+  searchQuery: string;
+}) {
+  const {
+    onDeleteHistoryItem,
+    onCopyToClipboard,
+    onSpeakText,
+    onToggleFavorite,
+  } = useHistoryActionsContext();
+  const handleDelete = useCallback(() => onDeleteHistoryItem(realIndex), [onDeleteHistoryItem, realIndex]);
+  return (
+    <SwipeableRow onDelete={handleDelete} colors={colors}>
+      <ChatBubble
+        item={item}
+        realIndex={realIndex}
+        colors={colors}
+        dynamicFontSizes={dynamicFontSizes}
+        showRomanization={showRomanization}
+        fontSizeScale={fontScale}
+        confidenceThreshold={confidenceThreshold}
+        copiedText={copiedText}
+        speakingText={speakingText}
+        speakLang={speakLang}
+        sourceLangName={sourceLangName}
+        targetLangName={targetLangName}
+        onCopy={onCopyToClipboard}
+        onSpeak={onSpeakText}
+        onToggleFavorite={onToggleFavorite}
+        searchQuery={searchQuery}
+      />
+    </SwipeableRow>
+  );
+});
 
 // Memoized select mode row to avoid re-renders when selectMode is active
 const SelectRow = React.memo(function SelectRow({
@@ -150,16 +290,8 @@ function HistoryList({
   phraseOfTheDay,
 }: HistoryListProps) {
   const {
-    onDeleteHistoryItem,
     onCopyToClipboard,
     onSpeakText,
-    onToggleFavorite,
-    onRetryTranslation,
-    onCompareTranslation,
-    onCorrection,
-    onWordLongPress,
-    onShowPassenger,
-    onShareCard,
     onToggleSelectItem,
     onSearchChange,
     onToggleFavoritesOnly,
@@ -214,53 +346,40 @@ function HistoryList({
         );
       }
 
+      if (conversationMode && item.speaker) {
+        return (
+          <ChatBubbleRow
+            item={item}
+            realIndex={realIndex}
+            colors={colors}
+            dynamicFontSizes={dynamicFontSizes}
+            showRomanization={showRomanization}
+            fontScale={fontScale}
+            confidenceThreshold={confidenceThreshold}
+            copiedText={copiedText}
+            speakingText={speakingText}
+            speakLang={speakLang}
+            sourceLangName={sourceLang.name}
+            targetLangName={targetLang.name}
+            searchQuery={searchQuery}
+          />
+        );
+      }
+
       return (
-        <SwipeableRow onDelete={() => onDeleteHistoryItem(realIndex)} colors={colors}>
-          {conversationMode && item.speaker ? (
-            <ChatBubble
-              item={item}
-              realIndex={realIndex}
-              colors={colors}
-              dynamicFontSizes={dynamicFontSizes}
-              showRomanization={showRomanization}
-              fontSizeScale={fontScale}
-              confidenceThreshold={confidenceThreshold}
-              copiedText={copiedText}
-              speakingText={speakingText}
-              speakLang={speakLang}
-              sourceLangName={sourceLang.name}
-              targetLangName={targetLang.name}
-              onCopy={onCopyToClipboard}
-              onSpeak={onSpeakText}
-              onToggleFavorite={onToggleFavorite}
-              searchQuery={searchQuery}
-            />
-          ) : (
-            <TranslationBubble
-              item={item}
-              realIndex={realIndex}
-              colors={colors}
-              dynamicFontSizes={dynamicFontSizes}
-              showRomanization={showRomanization}
-              fontSizeScale={fontScale}
-              confidenceThreshold={confidenceThreshold}
-              copiedText={copiedText}
-              speakingText={speakingText}
-              targetSpeechCode={targetLang.speechCode}
-              onCopy={onCopyToClipboard}
-              onSpeak={onSpeakText}
-              onToggleFavorite={onToggleFavorite}
-              onRetry={onRetryTranslation}
-              onCompare={onCompareTranslation}
-              onCorrection={onCorrection}
-              onWordLongPress={onWordLongPress}
-              onShowPassenger={onShowPassenger}
-              onDismiss={onDeleteHistoryItem}
-              onShareCard={onShareCard}
-              searchQuery={searchQuery}
-            />
-          )}
-        </SwipeableRow>
+        <HistoryItemRow
+          item={item}
+          realIndex={realIndex}
+          colors={colors}
+          dynamicFontSizes={dynamicFontSizes}
+          showRomanization={showRomanization}
+          fontScale={fontScale}
+          confidenceThreshold={confidenceThreshold}
+          copiedText={copiedText}
+          speakingText={speakingText}
+          targetSpeechCode={targetLang.speechCode}
+          searchQuery={searchQuery}
+        />
       );
     },
     [
@@ -276,18 +395,9 @@ function HistoryList({
       speakingText,
       sourceLang,
       targetLang,
+      searchQuery,
       filteredToRealIndex,
       onToggleSelectItem,
-      onDeleteHistoryItem,
-      onCopyToClipboard,
-      onSpeakText,
-      onToggleFavorite,
-      onRetryTranslation,
-      onCompareTranslation,
-      onCorrection,
-      onWordLongPress,
-      onShowPassenger,
-      onShareCard,
     ]
   );
 

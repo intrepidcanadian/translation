@@ -169,7 +169,24 @@ function LanguagePicker({ label, selected, onSelect, showAutoDetect, recentCodes
   );
 }
 
-export default React.memo(LanguagePicker);
+// Custom equality — recentCodes is a new array ref each time it's tracked,
+// so default React.memo would always re-render. Shallow-compare content instead.
+function arePropsEqual(prev: Props, next: Props) {
+  if (prev.label !== next.label) return false;
+  if (prev.selected !== next.selected) return false;
+  if (prev.onSelect !== next.onSelect) return false;
+  if (prev.showAutoDetect !== next.showAutoDetect) return false;
+  if (prev.colors !== next.colors) return false;
+  const prevRecent = prev.recentCodes || [];
+  const nextRecent = next.recentCodes || [];
+  if (prevRecent.length !== nextRecent.length) return false;
+  for (let i = 0; i < prevRecent.length; i++) {
+    if (prevRecent[i] !== nextRecent[i]) return false;
+  }
+  return true;
+}
+
+export default React.memo(LanguagePicker, arePropsEqual);
 
 const styles = StyleSheet.create({
   container: {

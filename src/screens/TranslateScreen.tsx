@@ -335,16 +335,49 @@ export default function TranslateScreen() {
     };
   }, [typedText, sourceLang.code, targetLang.code, settings.translationProvider, glossaryLookup, isListening, showError]);
 
+  // Stable ref snapshot so submitTypedText can have an empty useCallback deps array.
+  // Previously submitTypedText depended on 12 values, breaking React.memo downstream
+  // because its identity changed on almost every render.
+  const submitTypedTextRef = useRef({
+    typedText,
+    sourceLangCode: sourceLang.code,
+    targetLangCode: targetLang.code,
+    isOffline,
+    addToOfflineQueue,
+    glossaryLookup,
+    translationProvider: settings.translationProvider,
+    maybeRequestReview,
+    updateStreak,
+    updateWidgetData,
+    setHistory,
+    showError,
+  });
+  submitTypedTextRef.current = {
+    typedText,
+    sourceLangCode: sourceLang.code,
+    targetLangCode: targetLang.code,
+    isOffline,
+    addToOfflineQueue,
+    glossaryLookup,
+    translationProvider: settings.translationProvider,
+    maybeRequestReview,
+    updateStreak,
+    updateWidgetData,
+    setHistory,
+    showError,
+  };
+
   const submitTypedText = useCallback(async () => {
-    const text = typedText.trim();
+    const snap = submitTypedTextRef.current;
+    const text = snap.typedText.trim();
     if (!text) return;
     Keyboard.dismiss();
     setTypedText("");
     setTypedPreview("");
 
-    if (isOffline) {
-      addToOfflineQueue({ text, sourceLang: sourceLang.code, targetLang: targetLang.code, timestamp: Date.now() });
-      setHistory((prev) => [...prev, { original: text, translated: "Queued — will translate when online", status: "pending" as const, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() }]);
+    if (snap.isOffline) {
+      snap.addToOfflineQueue({ text, sourceLang: snap.sourceLangCode, targetLang: snap.targetLangCode, timestamp: Date.now() });
+      snap.setHistory((prev) => [...prev, { original: text, translated: "Queued — will translate when online", status: "pending" as const, sourceLangCode: snap.sourceLangCode, targetLangCode: snap.targetLangCode, timestamp: Date.now() }]);
       notifyWarning();
       return;
     }
@@ -356,21 +389,21 @@ export default function TranslateScreen() {
     setIsTranslating(true);
     setLiveText(text);
     try {
-      const glossaryMatch = glossaryLookup(text, sourceLang.code, targetLang.code);
+      const glossaryMatch = snap.glossaryLookup(text, snap.sourceLangCode, snap.targetLangCode);
       const result = glossaryMatch
         ? { translatedText: glossaryMatch, confidence: 1.0 }
-        : await translateText(text, sourceLang.code, targetLang.code, { signal: controller.signal, provider: settings.translationProvider });
+        : await translateText(text, snap.sourceLangCode, snap.targetLangCode, { signal: controller.signal, provider: snap.translationProvider });
       if (!controller.signal.aborted) {
-        setHistory((prev) => [...prev, { original: text, translated: result.translatedText, status: "ok" as const, confidence: result.confidence, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, detectedLang: result.detectedLanguage, timestamp: Date.now() }]);
-        maybeRequestReview();
-        updateStreak();
-        updateWidgetData(text, result.translatedText, sourceLang.code, targetLang.code);
+        snap.setHistory((prev) => [...prev, { original: text, translated: result.translatedText, status: "ok" as const, confidence: result.confidence, sourceLangCode: snap.sourceLangCode, targetLangCode: snap.targetLangCode, detectedLang: result.detectedLanguage, timestamp: Date.now() }]);
+        snap.maybeRequestReview();
+        snap.updateStreak();
+        snap.updateWidgetData(text, result.translatedText, snap.sourceLangCode, snap.targetLangCode);
       }
     } catch (err) {
       if (!controller.signal.aborted) {
         const msg = err instanceof Error ? err.message : "Translation failed";
-        showError(msg);
-        setHistory((prev) => [...prev, { original: text, translated: msg, status: "error" as const, sourceLangCode: sourceLang.code, targetLangCode: targetLang.code, timestamp: Date.now() }]);
+        snap.showError(msg);
+        snap.setHistory((prev) => [...prev, { original: text, translated: msg, status: "error" as const, sourceLangCode: snap.sourceLangCode, targetLangCode: snap.targetLangCode, timestamp: Date.now() }]);
       }
     } finally {
       if (!controller.signal.aborted) {
@@ -378,7 +411,7 @@ export default function TranslateScreen() {
         setLiveText("");
       }
     }
-  }, [typedText, sourceLang.code, targetLang.code, showError, isOffline, addToOfflineQueue, glossaryLookup, settings.translationProvider, maybeRequestReview, updateStreak, updateWidgetData, setHistory]);
+  }, [abortControllerRef, setIsTranslating, setLiveText]);
 
   const filteredHistory = useMemo(() => {
     let filtered = history;

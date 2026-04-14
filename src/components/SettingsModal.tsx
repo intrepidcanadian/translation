@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ScrollView,
   Platform,
+  Share,
 } from "react-native";
 import Slider from "@react-native-community/slider";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -87,25 +88,43 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
       .catch((err) => logger.warn("Settings", "Failed to load crash report", err));
   }, [visible]);
 
-  const copyCrashReport = useCallback(async () => {
-    if (!lastCrash) return;
+  const buildCrashReport = useCallback(() => {
+    if (!lastCrash) return "";
     const recentErrors = logger.getRecentErrors();
-    const report = [
+    return [
+      `Live Translator crash report`,
+      `Platform: ${Platform.OS} ${Platform.Version}`,
       `Crash: ${lastCrash.message}`,
       `Time: ${new Date(lastCrash.timestamp).toLocaleString()}`,
       lastCrash.stack ? `Stack: ${lastCrash.stack}` : "",
       recentErrors.length > 0 ? `\nRecent errors (${recentErrors.length}):` : "",
       ...recentErrors.slice(-10).map((e) => `  [${e.tag}] ${e.message}`),
     ].filter(Boolean).join("\n");
+  }, [lastCrash]);
+
+  const copyCrashReport = useCallback(async () => {
+    if (!lastCrash) return;
     try {
-      await Clipboard.setStringAsync(report);
+      await Clipboard.setStringAsync(buildCrashReport());
       notifySuccess();
       setCrashCopied(true);
       setTimeout(() => setCrashCopied(false), 1500);
     } catch (err) {
       logger.warn("Settings", "Copy crash report failed", err instanceof Error ? err.message : String(err));
     }
-  }, [lastCrash]);
+  }, [lastCrash, buildCrashReport]);
+
+  const shareCrashReport = useCallback(async () => {
+    if (!lastCrash) return;
+    try {
+      await Share.share({
+        message: buildCrashReport(),
+        title: "Live Translator crash report",
+      });
+    } catch (err) {
+      logger.warn("Settings", "Share crash report failed", err instanceof Error ? err.message : String(err));
+    }
+  }, [lastCrash, buildCrashReport]);
 
   const clearCrashReport = useCallback(async () => {
     try {
@@ -384,15 +403,26 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                   <TouchableOpacity
                     style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
                     onPress={copyCrashReport}
+                    accessibilityRole="button"
                     accessibilityLabel="Copy crash report to clipboard"
                   >
                     <Text style={[styles.crashActionText, { color: colors.primary }]}>
-                      {crashCopied ? "Copied!" : "Copy Report"}
+                      {crashCopied ? "Copied!" : "Copy"}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
+                    onPress={shareCrashReport}
+                    accessibilityRole="button"
+                    accessibilityLabel="Share crash report via system share sheet"
+                    accessibilityHint="Opens the share sheet to send the crash report to another app"
+                  >
+                    <Text style={[styles.crashActionText, { color: colors.primary }]}>Share</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
                     onPress={clearCrashReport}
+                    accessibilityRole="button"
                     accessibilityLabel="Clear crash report"
                   >
                     <Text style={[styles.crashActionText, { color: colors.dimText }]}>Clear</Text>
