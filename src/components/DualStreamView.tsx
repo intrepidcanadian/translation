@@ -27,6 +27,7 @@ import { translateText } from "../services/translation";
 import { clearOCRCache } from "../services/ocrTranslation";
 import { useLiveOCR } from "../hooks/useLiveOCR";
 import { impactLight, impactMedium } from "../services/haptics";
+import { logger } from "../services/logger";
 import type { ThemeColors } from "../theme";
 
 interface DetectedBlock {
@@ -182,11 +183,13 @@ export default function DualStreamView({
       speechAbortRef.current?.abort();
       if (speechTranslationTimer.current) clearTimeout(speechTranslationTimer.current);
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
-      // Stop speech if running
+      // Stop speech if running. A throw here usually means the module was
+      // already stopped or the native bridge is gone mid-unmount — worth
+      // logging but not fatal.
       try {
         ExpoSpeechRecognitionModule.stop();
-      } catch {
-        // ignore
+      } catch (err) {
+        logger.debug("Speech", "Failed to stop speech on DualStreamView unmount", err);
       }
     };
   }, [ocrAbortRef]);
@@ -288,7 +291,9 @@ export default function DualStreamView({
           }
         } catch (err) {
           if (controller.signal.aborted) return;
-          // Silent fail for speech translation — OCR is primary
+          // Speech translation is secondary to OCR, so we don't surface an
+          // error banner — but still log so failing mic paths are debuggable.
+          logger.debug("Translation", "DualStream speech translate failed", err);
         } finally {
           if (!controller.signal.aborted && isMountedRef.current) {
             setIsSpeechTranslating(false);
@@ -431,8 +436,8 @@ export default function DualStreamView({
       impactLight();
       try {
         ExpoSpeechRecognitionModule.stop();
-      } catch {
-        // ignore
+      } catch (err) {
+        logger.debug("Speech", "Failed to stop speech in toggleMic", err);
       }
     } else {
       // Turn on

@@ -34,9 +34,31 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
       .then((val) => {
         if (val) {
           try {
-            setGlossary(JSON.parse(val));
-          } catch {
-            // corrupted data, ignore
+            const parsed = JSON.parse(val);
+            if (Array.isArray(parsed)) {
+              // Filter to only well-formed entries so a partial corruption
+              // doesn't poison the whole glossary.
+              const valid = parsed.filter(
+                (e): e is GlossaryEntry =>
+                  e &&
+                  typeof e === "object" &&
+                  typeof e.source === "string" &&
+                  typeof e.target === "string" &&
+                  typeof e.sourceLang === "string" &&
+                  typeof e.targetLang === "string"
+              );
+              if (valid.length < parsed.length) {
+                logger.warn(
+                  "Glossary",
+                  `Dropped ${parsed.length - valid.length} malformed glossary entries`
+                );
+              }
+              setGlossary(valid);
+            } else {
+              logger.warn("Glossary", "Stored glossary was not an array, discarding");
+            }
+          } catch (err) {
+            logger.warn("Glossary", "Corrupted glossary JSON, starting fresh", err);
           }
         }
         loaded.current = true;

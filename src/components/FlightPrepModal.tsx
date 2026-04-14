@@ -13,6 +13,7 @@ import {
 import { type ThemeColors, getColors } from "../theme";
 import { type LanguageStatus } from "../../modules/apple-translation";
 import { notifySuccess } from "../services/haptics";
+import { logger } from "../services/logger";
 
 // Route presets for common airline routes
 const ROUTE_PRESETS = [
@@ -231,7 +232,8 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
               : ((statuses[l.code] ?? "unsupported") as DownloadStatus),
           }))
         );
-      } catch {
+      } catch (err) {
+        logger.warn("Translation", "Apple language status batch check failed", err);
         setLanguagePacks(
           ALL_LANGUAGES.map((l) => ({ ...l, status: "error" as DownloadStatus }))
         );
@@ -262,7 +264,8 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
             notifySuccess();
           }
         }
-      } catch {
+      } catch (err) {
+        logger.warn("Translation", `Apple language pack download failed: ${code}`, err);
         setLanguagePacks((prev) =>
           prev.map((lp) => (lp.code === code ? { ...lp, status: "error" } : lp))
         );

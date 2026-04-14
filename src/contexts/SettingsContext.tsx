@@ -30,11 +30,27 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [showOnboarding, setShowOnboarding] = useState(false);
   const ratingPromptedRef = useRef(false);
   const translationCountRef = useRef(0);
+  // Tracked so we can clear a pending review-prompt timer on unmount.
+  const reviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
     const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
     return () => sub.remove();
+  }, []);
+
+  // Clean up the pending review-prompt timer when the provider unmounts so
+  // StoreReview.requestReview() isn't invoked after the root tree is gone.
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (reviewTimerRef.current) {
+        clearTimeout(reviewTimerRef.current);
+        reviewTimerRef.current = null;
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -64,24 +80,44 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   const updateSettings = useCallback((newSettings: Settings) => {
     setSettings(newSettings);
-    AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+    AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings)).catch((err) =>
+      logger.warn("Settings", "Failed to persist settings", err)
+    );
   }, []);
 
   const completeOnboarding = useCallback(() => {
     setShowOnboarding(false);
-    AsyncStorage.setItem(ONBOARDING_KEY, "true");
+    AsyncStorage.setItem(ONBOARDING_KEY, "true").catch((err) =>
+      logger.warn("Settings", "Failed to persist onboarding flag", err)
+    );
   }, []);
 
   const maybeRequestReview = useCallback(async () => {
     if (ratingPromptedRef.current) return;
     translationCountRef.current += 1;
-    AsyncStorage.setItem(TRANSLATION_COUNT_KEY, String(translationCountRef.current));
+    AsyncStorage.setItem(TRANSLATION_COUNT_KEY, String(translationCountRef.current)).catch((err) =>
+      logger.warn("Settings", "Failed to persist translation count", err)
+    );
     if (translationCountRef.current >= RATING_THRESHOLD) {
       ratingPromptedRef.current = true;
-      AsyncStorage.setItem(RATING_PROMPTED_KEY, "1");
-      const isAvailable = await StoreReview.isAvailableAsync();
-      if (isAvailable) {
-        setTimeout(() => StoreReview.requestReview(), 1500);
+      AsyncStorage.setItem(RATING_PROMPTED_KEY, "1").catch((err) =>
+        logger.warn("Settings", "Failed to persist rating flag", err)
+      );
+      try {
+        const isAvailable = await StoreReview.isAvailableAsync();
+        if (!isAvailable || !isMountedRef.current) return;
+        // Clear any prior pending timer (defensive — shouldn't happen because
+        // we gate on ratingPromptedRef, but cheap insurance).
+        if (reviewTimerRef.current) clearTimeout(reviewTimerRef.current);
+        reviewTimerRef.current = setTimeout(() => {
+          reviewTimerRef.current = null;
+          if (!isMountedRef.current) return;
+          StoreReview.requestReview().catch((err) =>
+            logger.warn("Settings", "StoreReview.requestReview failed", err)
+          );
+        }, 1500);
+      } catch (err) {
+        logger.warn("Settings", "StoreReview.isAvailableAsync failed", err);
       }
     }
   }, []);

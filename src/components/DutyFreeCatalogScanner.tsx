@@ -159,7 +159,10 @@ export default function DutyFreeCatalogScanner({
         try {
           const results = await translateAppleBatch(paragraphs, srcLang, targetLangCode);
           translated = results.join("\n");
-        } catch {
+        } catch (err) {
+          // Apple batch path failed — fall back to per-paragraph translate.
+          // Worth logging so we can measure how often the fast path breaks.
+          logger.warn("Translation", "Apple batch translate failed in DutyFree scanner, falling back per-paragraph", err);
           const results: string[] = [];
           for (const para of paragraphs) {
             const res = await translateText(para, srcLang, targetLangCode, { provider: translationProvider });

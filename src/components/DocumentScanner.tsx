@@ -178,7 +178,8 @@ function DocumentScanner({
       setNoteSaved(true);
       notifySuccess();
       onNoteSaved?.();
-    } catch {
+    } catch (err) {
+      logger.warn("Notes", "Failed to save scanned note", err);
       Alert.alert("Error", "Failed to save note");
     }
   }, [noteSaved, modeFields, mode, originalText, translatedText, selectedMode, sourceLangCode, targetLangCode, onNoteSaved]);
