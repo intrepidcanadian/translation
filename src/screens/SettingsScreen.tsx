@@ -24,6 +24,8 @@ import { useTranslationData } from "../contexts/TranslationDataContext";
 import { useStreak } from "../contexts/StreakContext";
 import { getColors } from "../theme";
 import * as Speech from "expo-speech";
+import { copyWithAutoClear } from "../services/clipboard";
+import { logger } from "../services/logger";
 
 export default function SettingsScreen() {
   const { settings, updateSettings, showOnboarding, setShowOnboarding, completeOnboarding } = useSettings();
@@ -48,10 +50,13 @@ export default function SettingsScreen() {
 
   const copyToClipboard = async (text: string) => {
     try {
-      const Clipboard = await import("expo-clipboard");
-      await Clipboard.setStringAsync(text);
-    } catch {
-      // clipboard unavailable — silently ignore on settings screen
+      // #164: go through copyWithAutoClear so phrasebook copies inherit the
+      // 60s privacy ladder that history/chat copies already use. Phrasebook
+      // translations are user content (possibly medical/legal phrases),
+      // so they should auto-clear for parity with the rest of the app.
+      await copyWithAutoClear(text);
+    } catch (err) {
+      logger.warn("Storage", "Phrasebook copy failed", err);
     }
   };
 

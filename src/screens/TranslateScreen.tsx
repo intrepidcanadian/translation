@@ -13,6 +13,8 @@ import {
   UIManager,
   useWindowDimensions,
   PanResponder,
+  Animated,
+  Easing,
 } from "react-native";
 
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -176,6 +178,33 @@ export default function TranslateScreen() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [showOnlineBanner, setShowOnlineBanner] = useState(false);
   const wasOfflineRef = useRef(false);
+
+  // #166: rotate the ⟳ glyph while the offline queue is actively draining so
+  // "processing" is visually distinct from the static "back online ✓" state.
+  // Respects system Reduce Motion — when disabled, the icon stays static and
+  // users still get the textual "Processing N queued translation…" line.
+  const processingRotation = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!isOfflineQueueProcessing || reduceMotion) {
+      processingRotation.stopAnimation();
+      processingRotation.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.timing(processingRotation, {
+        toValue: 1,
+        duration: 1200,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isOfflineQueueProcessing, reduceMotion, processingRotation]);
+  const processingSpin = processingRotation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["0deg", "360deg"],
+  });
 
   const errorDismissTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -743,7 +772,16 @@ export default function TranslateScreen() {
                 accessibilityLiveRegion="polite"
                 accessibilityLabel={isOfflineQueueProcessing ? `Processing ${queueLength} queued translations` : "Connection restored"}
               >
-                <Text style={styles.offlineIcon}>{isOfflineQueueProcessing ? "⟳" : "✓"}</Text>
+                {isOfflineQueueProcessing ? (
+                  <Animated.Text
+                    style={[styles.offlineIcon, { transform: [{ rotate: processingSpin }] }]}
+                    importantForAccessibility="no"
+                  >
+                    ⟳
+                  </Animated.Text>
+                ) : (
+                  <Text style={styles.offlineIcon} importantForAccessibility="no">✓</Text>
+                )}
                 <Text style={[styles.offlineText, { color: colors.successText }]}>
                   {isOfflineQueueProcessing
                     ? `Processing ${queueLength} queued translation${queueLength === 1 ? "" : "s"}…`

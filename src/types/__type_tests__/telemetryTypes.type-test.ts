@@ -1,5 +1,5 @@
 /**
- * Compile-time type tests for TelemetryKey (#144).
+ * Compile-time type tests for TelemetryKey (#144 / #157).
  *
  * Purely a type-level check: if `TelemetryKey` drifts away from the
  * `TypeAheadKey | SpeechKey` aggregate (e.g. someone adds a new `OcrKey`
@@ -7,9 +7,15 @@
  * and forgets to re-export one of the halves), this file fails to compile
  * and `tsc --noEmit` tripwires before the broken contract reaches runtime.
  *
- * Runs under `tsc` via the same compile step as every other .ts file; the
- * `.test-d.ts` suffix signals "type-level test" and is ignored by jest's
- * test discovery so it doesn't try to execute runtime assertions.
+ * #157 refactor: previously this lived under `src/__tests__/` next to
+ * every real jest suite, which forced a dummy runtime `describe` block
+ * just to keep jest's default test discovery happy. That shim carried no
+ * real assertions — the entire contract runs at compile time via tsc.
+ *
+ * The new home is `src/types/__type_tests__/`, excluded from jest's
+ * `testPathIgnorePatterns` in package.json. tsc still compiles the file
+ * (tsconfig doesn't exclude it), so the type assertions still fire; jest
+ * no longer tries to execute it, so the runtime fixture is gone.
  *
  * Why this exists: #124 split the flat TelemetryKey into per-feature
  * unions so adding a new namespace doesn't force every call site to
@@ -17,7 +23,7 @@
  * (increment/get/getAll) actually use needs to stay in sync with the
  * parts — a regression here silently orphans counters.
  */
-import type { TypeAheadKey, SpeechKey, TelemetryKey } from "../services/telemetry";
+import type { TypeAheadKey, SpeechKey, TelemetryKey } from "../../services/telemetry";
 
 // ---------- Helpers ---------------------------------------------------------
 
@@ -57,9 +63,11 @@ type _NotAssignable = Expect<
   Equals<"ocr.frameProcessed" extends TelemetryKey ? true : false, false>
 >;
 
-// Reference the types so `noUnusedLocals` doesn't strip them out entirely —
-// the assertion happens in the type parameter, not at runtime.
-type __TelemetryKeyTypeAssertions = [
+// Reference the aliases so `noUnusedLocals` doesn't strip them out entirely —
+// the assertion happens in the type parameter, not at runtime. Exporting the
+// tuple makes the file a module (required for `import type` above) and keeps
+// every Expect<...> in the type-check graph.
+export type __TelemetryKeyTypeAssertions = [
   _TypeAheadIsSubset,
   _SpeechIsSubset,
   _AggregateIdentity,
@@ -68,16 +76,3 @@ type __TelemetryKeyTypeAssertions = [
   _HasSpeechFail,
   _NotAssignable,
 ];
-
-// Jest's default testMatch picks up any .ts file under __tests__/ and will
-// fail the run if no runtime tests are defined. The real assertions above
-// happen at compile time via `tsc --noEmit`, so we add a single trivial
-// runtime check to keep jest happy without duplicating the type contract.
-describe("TelemetryKey aggregate type (#144)", () => {
-  it("compile-time assertions evaluated by tsc --noEmit", () => {
-    const fixture: __TelemetryKeyTypeAssertions = [true, true, true, true, true, true, true];
-    // Each entry is the literal `true` from a passing `Expect<...>` alias.
-    // A single runtime sanity check ensures the fixture ref is exercised.
-    expect(fixture.every((v) => v === true)).toBe(true);
-  });
-});

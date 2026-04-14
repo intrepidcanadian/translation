@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import { Alert, Linking, Animated } from "react-native";
+import { Alert, Linking, Animated, AppState, type AppStateStatus } from "react-native";
 import {
   ExpoSpeechRecognitionModule,
   useSpeechRecognitionEvent,
@@ -134,6 +134,25 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
       if (translationTimeout.current) clearTimeout(translationTimeout.current);
       abortControllerRef.current?.abort();
     };
+  }, []);
+
+  // #167: reset the mic-muted session detector when the app returns from
+  // background. The hook previously accumulated sessionNoSpeechCount /
+  // sessionSuccessCount for the full lifetime of the mount, so a user who
+  // hit a muted mic in the morning and then fixed it would have `success > 0`
+  // and never see the hint for a *second* muted session hours later. Scoping
+  // the counters to a foreground "session" means each time the user returns
+  // to the app the detector starts from scratch — fresh 3-strike window,
+  // accurate self-heal contract intact.
+  useEffect(() => {
+    const handleChange = (next: AppStateStatus) => {
+      if (next === "active") {
+        setSessionNoSpeechCount(0);
+        setSessionSuccessCount(0);
+      }
+    };
+    const sub = AppState.addEventListener("change", handleChange);
+    return () => sub.remove();
   }, []);
 
   // Debounced translation (used by speech results)

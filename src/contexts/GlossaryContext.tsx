@@ -3,40 +3,16 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { impactLight, impactMedium } from "../services/haptics";
 import { logger } from "../services/logger";
 import { normalizeForLookup, lookupKey } from "../utils/stringNormalize";
+import {
+  isValidGlossaryEntry,
+  validateGlossaryPayload,
+  type GlossaryEntry,
+} from "../utils/glossaryValidation";
 import { useLanguage } from "./LanguageContext";
 
 const GLOSSARY_KEY = "user_glossary";
 
-export interface GlossaryEntry {
-  source: string;
-  target: string;
-  sourceLang: string;
-  targetLang: string;
-}
-
-// Cheap validator for a single parsed entry. Tightened beyond the previous
-// "is it an object with 4 string fields" check so that entries with blank
-// source/target or obviously-bogus language codes get dropped at load time
-// instead of leaking into the live app as "ghost" rows (#130).
-const LANG_CODE_RE = /^[a-z]{2,3}(-[A-Za-z]{2,4})?$/;
-
-function isValidGlossaryEntry(e: unknown): e is GlossaryEntry {
-  if (!e || typeof e !== "object") return false;
-  const entry = e as Record<string, unknown>;
-  if (typeof entry.source !== "string" || entry.source.trim() === "") return false;
-  if (typeof entry.target !== "string" || entry.target.trim() === "") return false;
-  if (typeof entry.sourceLang !== "string" || !LANG_CODE_RE.test(entry.sourceLang)) return false;
-  if (typeof entry.targetLang !== "string" || !LANG_CODE_RE.test(entry.targetLang)) return false;
-  return true;
-}
-
-// If more than half of the entries in a stored glossary fail validation we
-// treat the file as corrupted and fall back to empty rather than leaking a
-// half-sanitized dictionary into the UI (#130 follow-up). The 50% threshold
-// is deliberately lenient — the common case is "one bad CSV import added a
-// handful of bogus rows"; a true file corruption usually wrecks almost
-// everything and trips this guard.
-const CORRUPTION_DROP_RATIO = 0.5;
+export type { GlossaryEntry };
 
 interface GlossaryContextValue {
   glossary: GlossaryEntry[];
@@ -60,14 +36,14 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
           try {
             const parsed = JSON.parse(val);
             if (Array.isArray(parsed)) {
-              // Strict per-entry validation + whole-file corruption check.
-              // A partial corruption still salvages the valid rows, but if
-              // the majority of the file fails validation we treat it as
-              // structural corruption and fall back to empty rather than
-              // leaking a half-sanitized glossary into the live app.
-              const valid = parsed.filter(isValidGlossaryEntry);
-              const dropped = parsed.length - valid.length;
-              if (parsed.length > 0 && dropped / parsed.length > CORRUPTION_DROP_RATIO) {
+              // #130: shared pure-validator module decides whether the
+              // payload is structurally corrupted. A partial corruption
+              // still salvages the valid rows; a majority-broken payload
+              // falls back to empty rather than leaking a half-sanitized
+              // glossary. See src/utils/glossaryValidation.ts + its
+              // dedicated test suite for the exact contract.
+              const { valid, dropped, corrupted } = validateGlossaryPayload(parsed);
+              if (corrupted) {
                 logger.warn(
                   "Glossary",
                   `Glossary looks corrupted (${dropped}/${parsed.length} invalid); falling back to empty`
