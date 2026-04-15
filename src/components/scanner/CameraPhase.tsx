@@ -10,6 +10,7 @@ import {
 import { Camera, type CameraDevice } from "react-native-vision-camera";
 import { SCANNER_MODES, type ScannerModeKey } from "../../services/scannerModes";
 import { selection } from "../../services/haptics";
+import { primaryAlpha } from "../../theme";
 
 interface CameraPhaseProps {
   cameraRef: React.RefObject<Camera | null>;
@@ -163,7 +164,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   docBadge: {
-    backgroundColor: "rgba(108,99,255,0.8)",
+    backgroundColor: primaryAlpha.strong,
     borderRadius: 16,
     paddingVertical: 6,
     paddingHorizontal: 16,
@@ -193,7 +194,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   modePillActive: {
-    backgroundColor: "rgba(108,99,255,0.85)",
+    backgroundColor: primaryAlpha.selected,
   },
   modePillIcon: {
     fontSize: 16,

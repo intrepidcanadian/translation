@@ -58,6 +58,7 @@ import { useTranslationData } from "../contexts/TranslationDataContext";
 import { useStreak } from "../contexts/StreakContext";
 import { useOfflineQueue } from "../contexts/OfflineQueueContext";
 import { useTheme } from "../contexts/ThemeContext";
+import { glassSurface } from "../theme";
 import { newHistoryId, type HistoryItem } from "../types";
 import type { RootTabParamList } from "../navigation/types";
 
@@ -666,8 +667,9 @@ export default function TranslateScreen() {
                 Chat toggle and Play button now align right in a compact row. */}
             <View style={[styles.headerRow, isLandscape && styles.headerRowLandscape]}>
               <TouchableOpacity
-                style={[styles.modeToggle, styles.glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }, conversationMode && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                style={[styles.modeToggle, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }, conversationMode && { backgroundColor: colors.primary, borderColor: colors.primary }]}
                 onPress={() => dispatchPanel({ type: "TOGGLE_CONVERSATION_MODE" })}
+                activeOpacity={0.85}
                 accessibilityRole="button"
                 accessibilityLabel={conversationMode ? "Switch to standard mode" : "Switch to conversation mode"}
                 accessibilityHint={conversationMode ? "Returns to single-speaker translation" : "Enables two-speaker face-to-face translation"}
@@ -677,8 +679,9 @@ export default function TranslateScreen() {
               </TouchableOpacity>
               {conversationMode && history.some((h) => h.speaker) && (
                 <TouchableOpacity
-                  style={[styles.modeToggle, styles.glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
+                  style={[styles.modeToggle, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
                   onPress={onOpenPlayback}
+                  activeOpacity={0.85}
                   accessibilityRole="button"
                   accessibilityLabel="View conversation playback"
                 >
@@ -704,8 +707,9 @@ export default function TranslateScreen() {
               />
               <View style={styles.langMiddleButtons}>
                 <TouchableOpacity
-                  style={[styles.swapButton, styles.glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
+                  style={[styles.swapButton, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
                   onPress={swapLanguages}
+                  activeOpacity={0.85}
                   accessibilityRole="button"
                   accessibilityLabel={`Swap languages. Currently translating from ${sourceLang.name} to ${targetLang.name}`}
                   accessibilityHint={`Swaps to translate from ${targetLang.name} to ${sourceLang.name}`}
@@ -714,8 +718,9 @@ export default function TranslateScreen() {
                 </TouchableOpacity>
                 {sourceLang.code !== "autodetect" && (
                   <TouchableOpacity
-                    style={[styles.savePairButton, styles.glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
+                    style={[styles.savePairButton, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
                     onPress={toggleSavePair}
+                    activeOpacity={0.85}
                     accessibilityRole="button"
                     accessibilityLabel={isCurrentPairSaved ? "Remove saved language pair" : "Save this language pair"}
                     accessibilityHint={isCurrentPairSaved ? "Removes this pair from saved shortcuts" : "Saves this language pair for quick switching"}
@@ -838,7 +843,7 @@ export default function TranslateScreen() {
 
             {/* Undo delete toast */}
             {deletedItem && (
-              <View style={[styles.undoToast, styles.glassSurface, { backgroundColor: colors.glassBgStrong, borderColor: colors.glassBorder }]} accessibilityLiveRegion="polite" accessibilityRole="alert">
+              <View style={[styles.undoToast, glassSurface, { backgroundColor: colors.glassBgStrong, borderColor: colors.glassBorder }]} accessibilityLiveRegion="polite" accessibilityRole="alert">
                 <Text style={[styles.undoToastText, { color: colors.secondaryText }]} numberOfLines={1}>Translation deleted</Text>
                 <TouchableOpacity style={styles.undoButton} onPress={undoDelete} accessibilityRole="button" accessibilityLabel="Undo delete">
                   <Text style={[styles.undoButtonText, { color: colors.primary }]}>Undo</Text>
@@ -935,25 +940,11 @@ const styles = StyleSheet.create({
   // used to take.
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 8, marginBottom: 8 },
   title: { fontSize: 28, fontWeight: "800", textAlign: "center" },
-  modeToggle: { borderRadius: 12, paddingVertical: 6, paddingHorizontal: 12 },
-  // Shared frosted-pane look: 1px hairline border (color comes from
-  // theme.glassBorder via inline style) + soft shadow that sells the
-  // floating-above-aurora effect. Combined with `glassBg`/`glassBgStrong`
-  // backgrounds and the GlassBackdrop layer behind the screen, this is
-  // the closest we can get to real backdrop-blur without pulling in
-  // expo-blur (which would force a native rebuild).
-  glassSurface: {
-    borderWidth: StyleSheet.hairlineWidth,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    elevation: 3,
-  },
+  modeToggle: { borderRadius: 14, paddingVertical: 6, paddingHorizontal: 12 },
   modeToggleText: { fontSize: 12, fontWeight: "700" },
   langRow: { flexDirection: "row", alignItems: "flex-end", gap: 10, marginBottom: 20 },
   langMiddleButtons: { alignItems: "center", gap: 4, marginBottom: 0 },
-  swapButton: { borderRadius: 12, width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  swapButton: { borderRadius: 14, width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   swapIcon: { fontSize: 20, fontWeight: "700" },
   savePairButton: { borderRadius: 10, width: 32, height: 28, alignItems: "center", justifyContent: "center" },
   savePairIcon: { fontSize: 16, color: "#8888aa" },

@@ -15,7 +15,7 @@ import {
   Platform,
 } from "react-native";
 import { impactLight } from "../services/haptics";
-import type { ThemeColors } from "../theme";
+import { primaryAlpha, type ThemeColors } from "../theme";
 
 // ---------- Culture Data ----------
 
@@ -701,7 +701,7 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
               return (
                 <TouchableOpacity
                   key={profile.id}
-                  style={[styles.profilePill, { backgroundColor: isActive ? "rgba(108,99,255,0.15)" : "transparent", borderColor: isActive ? colors.primary : colors.borderLight }]}
+                  style={[styles.profilePill, { backgroundColor: isActive ? primaryAlpha.faint : "transparent", borderColor: isActive ? colors.primary : colors.borderLight }]}
                   onPress={() => handleProfileSelect(profile.id)}
                 >
                   <Text style={styles.profilePillFlag}>{profile.flag}</Text>

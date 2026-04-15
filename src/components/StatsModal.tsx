@@ -8,7 +8,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { LANGUAGE_MAP } from "../services/translation";
-import type { ThemeColors } from "../theme";
+import { primaryAlpha, type ThemeColors } from "../theme";
 import type { HistoryItem } from "../types";
 
 interface StatsModalProps {
@@ -336,7 +336,7 @@ const styles = StyleSheet.create({
   confidenceBarOuter: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: "rgba(108,99,255,0.15)",
+    backgroundColor: primaryAlpha.faint,
     overflow: "hidden" as const,
     marginBottom: 6,
   },

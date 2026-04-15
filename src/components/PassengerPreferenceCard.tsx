@@ -15,7 +15,7 @@ import {
   SafeAreaView,
 } from "react-native";
 import { impactLight, impactMedium, notifySuccess } from "../services/haptics";
-import type { ThemeColors } from "../theme";
+import { primaryAlpha, type ThemeColors } from "../theme";
 
 // ---------- Localized Strings ----------
 
@@ -359,7 +359,7 @@ function PassengerPreferenceCard({ visible, onClose, colors, initialLang }: Prop
                   style={[
                     styles.optionButton,
                     {
-                      backgroundColor: isSelected ? "rgba(108,99,255,0.15)" : colors.cardBg,
+                      backgroundColor: isSelected ? primaryAlpha.faint : colors.cardBg,
                       borderColor: isSelected ? colors.primary : colors.border,
                       borderWidth: isSelected ? 2 : 1,
                     },

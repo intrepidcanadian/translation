@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Dimensions } from "react-native";
+import { useSettings } from "../contexts/SettingsContext";
+import { useTheme } from "../contexts/ThemeContext";
 
 /**
  * Aurora backdrop for glassmorphic surfaces.
@@ -28,8 +30,17 @@ import { View, StyleSheet, Dimensions } from "react-native";
  * first render, which left a visibly-stale blob position on landscape
  * rotation since the wrapping View redraws but the blob `top` value was
  * frozen at portrait height.
+ *
+ * Honors iOS "Reduce Transparency" via SettingsContext: when the user has
+ * that accessibility setting on, this component renders a single solid
+ * `safeBg` fill instead of the aurora blobs, so glass surfaces stacked on
+ * top get a high-contrast opaque background (the surfaces themselves still
+ * read theme tokens, but with the aurora gone the eye sees them as plain
+ * cards rather than translucent panes).
  */
 function GlassBackdrop() {
+  const { reduceTransparency } = useSettings();
+  const { colors } = useTheme();
   const [dims, setDims] = useState(() => Dimensions.get("window"));
 
   useEffect(() => {
@@ -48,8 +59,25 @@ function GlassBackdrop() {
   // ratios including iPad split view.
   const blobSize = Math.max(width, height) * 1.4;
 
+  if (reduceTransparency) {
+    return (
+      <View
+        style={[StyleSheet.absoluteFill, { backgroundColor: colors.safeBg }]}
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+      />
+    );
+  }
+
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+    <View
+      style={StyleSheet.absoluteFill}
+      pointerEvents="none"
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      accessibilityIgnoresInvertColors
+    >
       {/* Top-left indigo blob */}
       <View
         style={[

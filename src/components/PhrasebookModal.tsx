@@ -18,7 +18,8 @@ import {
 } from "../services/offlinePhrases";
 import { getLocationContext, getNearbyPhrases, type LocationContext } from "../services/locationPhrases";
 import { logger } from "../services/logger";
-import type { ThemeColors } from "../theme";
+import { glassSurface, type ThemeColors } from "../theme";
+import GlassBackdrop from "./GlassBackdrop";
 
 interface PhrasebookModalProps {
   visible: boolean;
@@ -84,7 +85,10 @@ function PhrasebookModal({
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View accessibilityViewIsModal={true} style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-        <View style={[styles.phrasebookContent, { backgroundColor: colors.modalBg }]}>
+        <View style={[styles.phrasebookContent, glassSurface, { backgroundColor: colors.glassBgStrong, borderColor: colors.glassBorder }]}>
+          {/* Aurora bleed-through inside the sheet so the glass surface has
+              something colored to refract. Honors Reduce Transparency. */}
+          <GlassBackdrop />
           <Text style={[styles.compareTitle, { color: colors.titleText }]}>Phrasebook</Text>
 
           {/* Location banner */}
@@ -111,8 +115,9 @@ function PhrasebookModal({
             style={styles.phraseCategoryRow}
             renderItem={({ item }) => (
               <TouchableOpacity
-                style={[styles.phraseCategoryPill, { backgroundColor: phraseCategory === item.key ? colors.primary : colors.cardBg, borderColor: phraseCategory === item.key ? colors.primary : colors.border }]}
+                style={[styles.phraseCategoryPill, { backgroundColor: phraseCategory === item.key ? colors.primary : colors.glassBg, borderColor: phraseCategory === item.key ? colors.primary : colors.glassBorder }]}
                 onPress={() => setPhraseCategory(item.key as PhraseCategory | "nearby")}
+                activeOpacity={0.85}
                 accessibilityRole="button"
                 accessibilityLabel={`${item.label} phrases`}
                 accessibilityState={{ selected: phraseCategory === item.key }}
@@ -133,7 +138,8 @@ function PhrasebookModal({
               const tgtText = (targetLangCode in phrase ? phrase[targetLangCode as PhraseLangCode] : "");
               return (
                 <TouchableOpacity
-                  style={[styles.phraseItem, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}
+                  style={[styles.phraseItem, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
+                  activeOpacity={0.85}
                   onPress={() => {
                     if (tgtText) {
                       onCopy(tgtText);
@@ -197,6 +203,8 @@ const styles = StyleSheet.create({
     maxHeight: "80%",
     paddingTop: 20,
     paddingHorizontal: 20,
+    // Clip aurora blobs to the rounded sheet outline.
+    overflow: "hidden",
   },
   locationBanner: {
     flexDirection: "row",

@@ -20,7 +20,7 @@ import type { TranslationProvider } from "../services/translation";
 import { clearOCRCache } from "../services/ocrTranslation";
 import { useLiveOCR } from "../hooks/useLiveOCR";
 import { usePhotoCapture } from "../hooks/usePhotoCapture";
-import type { ThemeColors } from "../theme";
+import { primaryAlpha, textOnGlass, type ThemeColors } from "../theme";
 
 interface DetectedBlock {
   id: string;
@@ -124,9 +124,9 @@ const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
 
   return (
     <View style={[{ position: "absolute", top: block.frame.top, left: block.frame.left, minWidth: block.frame.width, minHeight: block.frame.height, justifyContent: "flex-start", alignItems: "flex-start" }]}>
-      <View style={{ backgroundColor: "rgba(26, 26, 46, 0.88)", borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, borderWidth: 1, borderColor: "rgba(108,99,255,0.5)", maxWidth: 280 }}>
-        <Text style={{ color: "#a8a4ff", fontSize: 14, fontWeight: "700" }} numberOfLines={2}>{block.translatedText}</Text>
-        <Text style={{ color: "rgba(255,255,255,0.6)", fontSize: 10, marginTop: 1 }} numberOfLines={1}>{block.originalText}</Text>
+      <View style={{ backgroundColor: "rgba(26, 26, 46, 0.88)", borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, borderWidth: 1, borderColor: primaryAlpha.border, maxWidth: 280 }}>
+        <Text style={[{ color: "#a8a4ff", fontSize: 14, fontWeight: "700" }, textOnGlass]} numberOfLines={2}>{block.translatedText}</Text>
+        <Text style={[{ color: "rgba(255,255,255,0.7)", fontSize: 10, marginTop: 1 }, textOnGlass]} numberOfLines={1}>{block.originalText}</Text>
       </View>
     </View>
   );
@@ -547,7 +547,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   topButtonActive: {
-    backgroundColor: "rgba(108,99,255,0.6)",
+    backgroundColor: primaryAlpha.active,
   },
   topButtonText: {
     color: "#fff",
@@ -572,13 +572,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   overlayToggleSegmentActive: {
-    backgroundColor: "rgba(108,99,255,0.85)",
+    backgroundColor: primaryAlpha.selected,
   },
   overlayToggleText: {
-    color: "rgba(255,255,255,0.7)",
+    color: "rgba(255,255,255,0.85)",
     fontSize: 12,
     fontWeight: "700",
     letterSpacing: 0.3,
+    ...textOnGlass,
   },
   overlayToggleTextActive: {
     color: "#fff",
@@ -600,6 +601,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     letterSpacing: 0.3,
+    ...textOnGlass,
   },
   captureButton: {
     width: 52,
@@ -617,7 +619,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   langIndicator: {
-    backgroundColor: "rgba(108,99,255,0.7)",
+    backgroundColor: primaryAlpha.accent,
     borderRadius: 16,
     paddingVertical: 6,
     paddingHorizontal: 16,
@@ -626,6 +628,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 14,
     fontWeight: "700",
+    ...textOnGlass,
   },
   bottomBar: {
     position: "absolute",

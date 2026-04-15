@@ -35,7 +35,7 @@ import {
   CREW_CURRENCIES,
   type ConvertedPrice,
 } from "../services/currencyExchange";
-import type { ThemeColors } from "../theme";
+import { primaryAlpha, type ThemeColors } from "../theme";
 
 interface PriceTagConverterProps {
   visible: boolean;
@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.15)", justifyContent: "center", alignItems: "center",
   },
   topButtonText: { color: "#fff", fontSize: 20, fontWeight: "700" },
-  badge: { backgroundColor: "rgba(108,99,255,0.8)", borderRadius: 16, paddingVertical: 6, paddingHorizontal: 16 },
+  badge: { backgroundColor: primaryAlpha.strong, borderRadius: 16, paddingVertical: 6, paddingHorizontal: 16 },
   badgeText: { color: "#fff", fontSize: 13, fontWeight: "700" },
 
   frameGuide: { position: "absolute", top: "25%", left: "10%", right: "10%", bottom: "35%" },

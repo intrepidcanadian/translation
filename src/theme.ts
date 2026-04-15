@@ -1,3 +1,5 @@
+import { StyleSheet, type TextStyle, type ViewStyle } from "react-native";
+
 export type ThemeMode = "dark" | "light";
 
 export interface ThemeColors {
@@ -188,3 +190,84 @@ export const lightColors: ThemeColors = {
 export function getColors(theme: ThemeMode): ThemeColors {
   return theme === "light" ? lightColors : darkColors;
 }
+
+/**
+ * Shared style applied to any glass-frosted surface (cards, pills, modals,
+ * input rows). Compose with a theme-token background and border:
+ *
+ *   <View style={[glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]} />
+ *
+ * Previously duplicated as local StyleSheet entries in TranslateScreen and
+ * ControlsPanel; hoisted here so every glass surface in the app inherits
+ * the same hairline border, soft drop shadow, and elevation. Consumers
+ * still set their own `borderRadius` since the curve depends on the
+ * surface size (pills, modals, input rows all want different radii), but
+ * the recommended values are exported below as `glassRadius`.
+ */
+export const glassSurface: ViewStyle = {
+  borderWidth: StyleSheet.hairlineWidth,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.18,
+  shadowRadius: 12,
+  elevation: 3,
+};
+
+/**
+ * Standardized border-radius scale for glass surfaces. Pre-hoist values
+ * were inconsistent (8 / 10 / 12 / 14 / 16 / 24) across the codebase. New
+ * components should pick the closest semantic match here.
+ */
+export const glassRadius = {
+  /** Tight pills, segmented controls (e.g. mode toggles, language pills). */
+  pill: 14,
+  /** Standard cards, input rows, undo toasts. */
+  card: 14,
+  /** Modal containers (sheets and centered dialogs). */
+  modal: 18,
+} as const;
+
+/**
+ * Brand accent alphas — `colors.primary` (#6c63ff) at common opacities. Used
+ * for accent overlays on top of media surfaces (camera feed, video preview)
+ * where `glassBg` would be too desaturated to read as the brand color. These
+ * are mode-agnostic since the brand stays the same in dark and light themes.
+ *
+ * Replaces a sprawl of `rgba(108, 99, 255, X)` literals across CameraTranslator,
+ * DualStreamView, PriceTagConverter, DutyFreeCatalogScanner, and other media
+ * overlays. Pre-hoist the alphas were duplicated as 0.5/0.6/0.7/0.8/0.85 with
+ * no shared semantic meaning — these names give each variant a purpose.
+ */
+export const primaryAlpha = {
+  /** 15% — selected pill background in light contexts (StatsModal, CultureBriefingModal) */
+  faint: "rgba(108, 99, 255, 0.15)",
+  /** 20% — filled icon background on accent buttons (capture button inner) */
+  soft: "rgba(108, 99, 255, 0.2)",
+  /** 50% — hairline accent border on dark/translucent surfaces */
+  border: "rgba(108, 99, 255, 0.5)",
+  /** 60% — active state background for toolbar/icon buttons over media */
+  active: "rgba(108, 99, 255, 0.6)",
+  /** 70% — accent label / language pill background */
+  accent: "rgba(108, 99, 255, 0.7)",
+  /** 80% — strong accent badge over media */
+  strong: "rgba(108, 99, 255, 0.8)",
+  /** 85% — selected segment in a segmented overlay control */
+  selected: "rgba(108, 99, 255, 0.85)",
+} as const;
+
+/**
+ * Subtle text-shadow helper for text rendered on top of a glass surface.
+ * Improves WCAG-AA legibility for `dimText` / `mutedText` / `secondaryText`
+ * over translucent backgrounds without being visually obvious — the offset
+ * is 1px and the alpha is low. Compose with the text style:
+ *
+ *   <Text style={[styles.label, textOnGlass]}>…</Text>
+ *
+ * Skip on titles in dark mode (high-contrast white on dark glass already
+ * has plenty of contrast and the shadow can muddy crisp display fonts).
+ */
+export const textOnGlass: TextStyle = {
+  textShadowColor: "rgba(0, 0, 0, 0.35)",
+  textShadowOffset: { width: 0, height: 1 },
+  textShadowRadius: 2,
+};

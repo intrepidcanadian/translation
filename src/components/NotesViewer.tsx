@@ -17,7 +17,8 @@ import { logger } from "../services/logger";
 import { copyWithAutoClear } from "../services/clipboard";
 import { notifySuccess, notifyWarning } from "../services/haptics";
 import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
-import type { ThemeColors } from "../theme";
+import { glassSurface, type ThemeColors } from "../theme";
+import GlassBackdrop from "./GlassBackdrop";
 
 interface NotesViewerProps {
   visible: boolean;
@@ -146,8 +147,9 @@ export default function NotesViewer({
     return (
       <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelectedNote(null)}>
         <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
+          <GlassBackdrop />
           {/* Header */}
-          <View style={[styles.header, { backgroundColor: colors.cardBg, borderBottomColor: colors.border }]}>
+          <View style={[styles.header, { backgroundColor: colors.glassBg, borderBottomColor: colors.glassBorder }]}>
             <TouchableOpacity onPress={() => setSelectedNote(null)}>
               <Text style={[styles.headerAction, { color: colors.primary }]}>Back</Text>
             </TouchableOpacity>
@@ -164,7 +166,7 @@ export default function NotesViewer({
             renderItem={() => (
               <View style={styles.detailContent}>
                 {/* Title */}
-                <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                <View style={[styles.section, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
                   {editingTitle ? (
                     <View style={styles.titleEditRow}>
                       <TextInput
@@ -188,7 +190,7 @@ export default function NotesViewer({
                 </View>
 
                 {/* Meta */}
-                <View style={[styles.metaRow, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                <View style={[styles.metaRow, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
                   <Text style={[styles.metaText, { color: colors.dimText }]}>
                     {selectedNote.sourceLang.toUpperCase()} → {selectedNote.targetLang.toUpperCase()}
                   </Text>
@@ -199,7 +201,7 @@ export default function NotesViewer({
 
                 {/* Extracted fields */}
                 {selectedNote.fields.length > 0 && (
-                  <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                  <View style={[styles.section, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
                     <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Key Information</Text>
                     {selectedNote.fields.map((f, i) => (
                       <TouchableOpacity
@@ -217,7 +219,7 @@ export default function NotesViewer({
                 )}
 
                 {/* Translated text */}
-                <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                <View style={[styles.section, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
                   <View style={styles.sectionHeader}>
                     <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Translation</Text>
                     <TouchableOpacity onPress={() => handleCopy(selectedNote.translatedText, "translated")}>
@@ -232,7 +234,7 @@ export default function NotesViewer({
                 </View>
 
                 {/* Original text */}
-                <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+                <View style={[styles.section, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
                   <View style={styles.sectionHeader}>
                     <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Original</Text>
                     <TouchableOpacity onPress={() => handleCopy(selectedNote.originalText, "original")}>
@@ -267,8 +269,9 @@ export default function NotesViewer({
   return (
     <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={onClose}>
       <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
+        <GlassBackdrop />
         {/* Header */}
-        <View style={[styles.header, { backgroundColor: colors.cardBg, borderBottomColor: colors.border }]}>
+        <View style={[styles.header, { backgroundColor: colors.glassBg, borderBottomColor: colors.glassBorder }]}>
           <TouchableOpacity onPress={onClose}>
             <Text style={[styles.headerAction, { color: colors.primary }]}>Close</Text>
           </TouchableOpacity>
@@ -281,7 +284,7 @@ export default function NotesViewer({
         </View>
 
         {/* Search */}
-        <View style={[styles.searchContainer, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+        <View style={[styles.searchContainer, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
           <TextInput
             style={[styles.searchInput, { color: colors.primaryText }]}
             placeholder="Search notes..."
@@ -317,7 +320,8 @@ export default function NotesViewer({
             const mode = getScannerMode(item.scanMode);
             return (
               <TouchableOpacity
-                style={[styles.noteCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
+                style={[styles.noteCard, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
+                activeOpacity={0.85}
                 onPress={() => {
                   setSelectedNote(item);
                   setEditingTitle(false);
@@ -345,7 +349,7 @@ export default function NotesViewer({
                 {item.fields.length > 0 && (
                   <View style={styles.noteCardFields}>
                     {item.fields.slice(0, 3).map((f, i) => (
-                      <View key={i} style={[styles.fieldChip, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
+                      <View key={i} style={[styles.fieldChip, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
                         <Text style={[styles.fieldChipText, { color: colors.primaryText }]} numberOfLines={1}>
                           {f.label}: {f.value}
                         </Text>

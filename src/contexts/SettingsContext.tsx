@@ -16,6 +16,14 @@ interface SettingsContextValue {
   settings: Settings;
   updateSettings: (s: Settings) => void;
   reduceMotion: boolean;
+  /**
+   * Honors iOS "Reduce Transparency" accessibility setting (Settings →
+   * Accessibility → Display & Text Size → Reduce Transparency). When true,
+   * GlassBackdrop and other translucent surfaces should fall back to solid
+   * backgrounds for users with light-sensitivity or contrast needs.
+   * Android always reports false (RN doesn't expose an equivalent).
+   */
+  reduceTransparency: boolean;
   showOnboarding: boolean;
   setShowOnboarding: (v: boolean) => void;
   completeOnboarding: () => void;
@@ -27,6 +35,7 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [reduceMotion, setReduceMotion] = useState(false);
+  const [reduceTransparency, setReduceTransparency] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const ratingPromptedRef = useRef(false);
   const translationCountRef = useRef(0);
@@ -38,6 +47,21 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     AccessibilityInfo.isReduceMotionEnabled().then(setReduceMotion);
     const sub = AccessibilityInfo.addEventListener("reduceMotionChanged", setReduceMotion);
     return () => sub.remove();
+  }, []);
+
+  // iOS "Reduce Transparency" accessibility setting. When on, glass surfaces
+  // should render with their solid fallback so the aurora doesn't reduce
+  // contrast for users with light-sensitivity or low vision. The RN API is
+  // iOS-only (Android resolves the promise to false and the listener never
+  // fires), so this code path is a no-op on Android — which is fine since
+  // there's no equivalent system setting to honor there.
+  useEffect(() => {
+    AccessibilityInfo.isReduceTransparencyEnabled?.().then(setReduceTransparency).catch(() => {});
+    const sub = AccessibilityInfo.addEventListener?.(
+      "reduceTransparencyChanged",
+      setReduceTransparency,
+    );
+    return () => sub?.remove();
   }, []);
 
   // Clean up the pending review-prompt timer when the provider unmounts so
@@ -126,11 +150,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     settings,
     updateSettings,
     reduceMotion,
+    reduceTransparency,
     showOnboarding,
     setShowOnboarding,
     completeOnboarding,
     maybeRequestReview,
-  }), [settings, updateSettings, reduceMotion, showOnboarding, completeOnboarding, maybeRequestReview]);
+  }), [settings, updateSettings, reduceMotion, reduceTransparency, showOnboarding, completeOnboarding, maybeRequestReview]);
 
   return (
     <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>

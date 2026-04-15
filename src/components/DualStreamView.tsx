@@ -29,7 +29,7 @@ import { useLiveOCR } from "../hooks/useLiveOCR";
 import { impactLight, impactMedium } from "../services/haptics";
 import { logger } from "../services/logger";
 import * as telemetry from "../services/telemetry";
-import type { ThemeColors } from "../theme";
+import { primaryAlpha, type ThemeColors } from "../theme";
 
 interface DetectedBlock {
   id: string;
@@ -757,7 +757,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   topButtonActive: {
-    backgroundColor: "rgba(108,99,255,0.6)",
+    backgroundColor: primaryAlpha.active,
   },
   topButtonText: {
     color: "#fff",
@@ -767,7 +767,7 @@ const styles = StyleSheet.create({
   dualBadge: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(108,99,255,0.7)",
+    backgroundColor: primaryAlpha.accent,
     borderRadius: 16,
     paddingVertical: 6,
     paddingHorizontal: 14,
@@ -813,7 +813,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.1)",
   },
   pipelineChipActive: {
-    borderColor: "rgba(108,99,255,0.5)",
+    borderColor: primaryAlpha.border,
     backgroundColor: "rgba(26,26,46,0.7)",
   },
   pipelineChipIcon: {
