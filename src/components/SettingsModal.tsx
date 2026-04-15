@@ -27,6 +27,7 @@ import {
 import { logger } from "../services/logger";
 import {
   getAll as getTelemetrySnapshot,
+  increment as incrementTelemetry,
   reset as resetTelemetry,
   prunedUnknownKeys,
   getOfflineQueueStats,
@@ -296,11 +297,18 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   // "no cache at all". Refreshes on modal open + manual Refresh.
   const [ratesCacheState, setRatesCacheState] = useState<RatesCacheState | null>(null);
   const [ratesRefreshing, setRatesRefreshing] = useState(false);
-  // #207: transient outcome line that renders for ~5s after a Refresh Rates
-  // tap. Distinguishes (a) freshly fetched, (b) cached survived but no
-  // network, (c) hardcoded fallback only. Auto-clears via useAutoClearFlag so
-  // a modal dismiss mid-display can't setState on a torn-down tree.
-  const [refreshOutcome, setRefreshOutcome] = useAutoClearFlag<RefreshResult>(5000);
+  // #207: transient outcome line that renders after a Refresh Rates tap.
+  // Distinguishes (a) freshly fetched, (b) cached survived but no network,
+  // (c) hardcoded fallback only. Auto-clears via useAutoClearFlag so a modal
+  // dismiss mid-display can't setState on a torn-down tree.
+  // #214: extended from 5s to 10s. The line carries
+  // `accessibilityLiveRegion="polite"` so VoiceOver announces it on render,
+  // but VoiceOver users who miss the initial announcement (e.g. mid-gesture)
+  // had no way to re-trigger it — the line disappeared after 5s. 10s is a
+  // compromise: long enough for a second scan, short enough that it doesn't
+  // linger into the next action. The steady-state cache label makes the same
+  // info reachable long-term.
+  const [refreshOutcome, setRefreshOutcome] = useAutoClearFlag<RefreshResult>(10000);
   // Collapsible debug sub-sections. Each defaults to collapsed; we auto-expand
   // an urgent section (open breaker, last crash) the first time the modal
   // renders so the user notices what needs attention.
@@ -384,13 +392,29 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const handleRefreshRates = useCallback(async () => {
     if (ratesRefreshing) return;
     setRatesRefreshing(true);
+    // #213: record every manual refresh attempt — denominator for the
+    // manual-refresh-fail-rate metric surfaced in Translation Diagnostics.
+    // Incremented before the await so a mid-flight crash still shows up
+    // in the counter at next relaunch (telemetry persists across sessions).
+    incrementTelemetry("rates.manualRefresh");
     try {
       const outcome = await forceRefreshExchangeRates();
       // #207: stash the outcome so the UI can render a transient success/
       // failure line distinct from the steady-state "Fresh / Stale" label.
       setRefreshOutcome(outcome);
+      // #213: a RefreshResult with `ok: false` always represents a manual-
+      // refresh failure (validation failure, network error, or fallthrough
+      // to hardcoded rates). Tracked separately from the attempt counter so
+      // the dashboard can compute a fail-rate without having to query the
+      // logger ring.
+      if (!outcome.ok) {
+        incrementTelemetry("rates.manualRefreshFailed");
+      }
     } catch (err) {
       logger.warn("Settings", "Manual exchange rate refresh failed", err);
+      // An unexpected throw (not a graceful RefreshResult) is still a user-
+      // visible failure — bump the counter so it's reflected in the dashboard.
+      incrementTelemetry("rates.manualRefreshFailed");
       // Synthesize a failure outcome so the UI can still surface "something
       // went wrong" — getRatesCacheState() can't tell us *whether* the user
       // initiated this refresh, only what the cache looks like now.
@@ -620,6 +644,21 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
         const rates = getRatesCacheState();
         if (rates.hasCache || rates.lastAttemptAgeMs !== null) {
           diagnosticsLines.push(`  Exchange rates: ${ratesStateLabel(rates)}`);
+        }
+        // #213: manual refresh counters — how often the user hit the
+        // "Refresh Rates" override and how often it failed. A spike here
+        // usually correlates with an upstream outage and explains why the
+        // user is staring at stale rates in the crash report. Silent when
+        // there are no attempts so a quiet session doesn't pad the report.
+        const telemetrySnapshot = getTelemetrySnapshot();
+        const manualRefresh = telemetrySnapshot["rates.manualRefresh"];
+        const manualRefreshFailed = telemetrySnapshot["rates.manualRefreshFailed"];
+        if (manualRefresh > 0) {
+          const pct =
+            manualRefresh > 0 ? Math.round((manualRefreshFailed / manualRefresh) * 100) : 0;
+          diagnosticsLines.push(
+            `  Manual rate refresh: ${manualRefresh} attempt${manualRefresh === 1 ? "" : "s"}, ${manualRefreshFailed} failed (${pct}%)`
+          );
         }
         // Errors-by-tag breakdown via logger.countBy (#119). Gives the person
         // reading the report a quick "which subsystem is on fire?" view
@@ -1193,8 +1232,8 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                         {ratesStateLabel(ratesCacheState)}
                       </Text>
                       {/* #207: transient outcome line for the most recent
-                          Refresh Rates tap. Auto-clears after 5s via the
-                          useAutoClearFlag hook so the steady-state cache
+                          Refresh Rates tap. Auto-clears after 10s (#214) via
+                          the useAutoClearFlag hook so the steady-state cache
                           label stays the source of truth. accessibilityLiveRegion
                           announces the result to VoiceOver users immediately. */}
                       {refreshOutcome && (
@@ -1210,6 +1249,34 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                           {refreshOutcomeLabel(refreshOutcome)}
                         </Text>
                       )}
+                      {/* #213: manual refresh counter — cumulative across the
+                          session so a user who hit Refresh Rates multiple
+                          times can see how often each attempt is working.
+                          Red-tinted when the fail rate is >=25% (mirrors the
+                          speech/offline fail-rate conventions). */}
+                      {typeAheadStats /* reuse render gate — stats block is present */ && (() => {
+                        const manual = getTelemetrySnapshot()["rates.manualRefresh"];
+                        const manualFailed = getTelemetrySnapshot()["rates.manualRefreshFailed"];
+                        if (manual === 0) return null;
+                        const failPct = Math.round((manualFailed / manual) * 100);
+                        const overThreshold = manual > 0 && manualFailed / manual >= 0.25;
+                        return (
+                          <Text
+                            style={[
+                              styles.infoText,
+                              dynamicStyles.infoText,
+                              overThreshold ? { color: colors.errorText } : null,
+                            ]}
+                            accessibilityLabel={
+                              manualFailed === 0
+                                ? `Manual refresh: ${manual} attempt${manual === 1 ? "" : "s"}, all succeeded`
+                                : `Manual refresh: ${manual} attempt${manual === 1 ? "" : "s"}, ${manualFailed} failed (${failPct}%)`
+                            }
+                          >
+                            Manual refresh: {manual} · fail {manualFailed} ({failPct}%)
+                          </Text>
+                        );
+                      })()}
                     </View>
                   )}
                   {/* #174: offline-queue reliability block. Silent when no

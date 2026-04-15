@@ -27,6 +27,7 @@ import type {
   TypeAheadKey,
   SpeechKey,
   OfflineQueueKey,
+  RatesKey,
   TelemetryKey,
 } from "../../services/telemetry";
 
@@ -55,12 +56,18 @@ type _OfflineQueueIsSubset = Expect<
   Equals<OfflineQueueKey extends TelemetryKey ? true : false, true>
 >;
 
+// 2c. #213: RatesKey joined the union for manual-refresh telemetry. Same
+//     subset contract as the other per-feature keys above.
+type _RatesIsSubset = Expect<
+  Equals<RatesKey extends TelemetryKey ? true : false, true>
+>;
+
 // 3. The aggregate must be exactly the union of the parts — no extras, no
 //    missing members. If a new namespace is added (e.g. OcrKey), this line
 //    starts failing and forces the maintainer to update TelemetryKey and
 //    this test in the same commit.
 type _AggregateIdentity = Expect<
-  Equals<TelemetryKey, TypeAheadKey | SpeechKey | OfflineQueueKey>
+  Equals<TelemetryKey, TypeAheadKey | SpeechKey | OfflineQueueKey | RatesKey>
 >;
 
 // 4. Spot-check that specific known literals remain in the aggregate. If
@@ -74,6 +81,10 @@ type _HasSpeechFail = Expect<"speech.translateFail" extends TelemetryKey ? true 
 type _HasOfflineQueueSuccess = Expect<"offlineQueue.success" extends TelemetryKey ? true : false>;
 type _HasOfflineQueueFailed = Expect<"offlineQueue.failed" extends TelemetryKey ? true : false>;
 type _HasOfflineQueueDeadLetter = Expect<"offlineQueue.deadLetter" extends TelemetryKey ? true : false>;
+// 4c. #213: rates literals — manual-refresh counters surfaced in Settings
+//      diagnostics. A drop here means the dashboard can't render the block.
+type _HasRatesManualRefresh = Expect<"rates.manualRefresh" extends TelemetryKey ? true : false>;
+type _HasRatesManualRefreshFailed = Expect<"rates.manualRefreshFailed" extends TelemetryKey ? true : false>;
 
 // 5. Negative check: an unknown literal must NOT be assignable. TypeScript
 //    doesn't have a direct "not assignable" assert, so we invert Equals on a
@@ -90,6 +101,7 @@ export type __TelemetryKeyTypeAssertions = [
   _TypeAheadIsSubset,
   _SpeechIsSubset,
   _OfflineQueueIsSubset,
+  _RatesIsSubset,
   _AggregateIdentity,
   _HasTypeAheadGlossary,
   _HasSpeechNoSpeech,
@@ -97,5 +109,7 @@ export type __TelemetryKeyTypeAssertions = [
   _HasOfflineQueueSuccess,
   _HasOfflineQueueFailed,
   _HasOfflineQueueDeadLetter,
+  _HasRatesManualRefresh,
+  _HasRatesManualRefreshFailed,
   _NotAssignable,
 ];

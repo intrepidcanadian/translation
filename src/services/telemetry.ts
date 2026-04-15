@@ -91,7 +91,24 @@ export type OfflineQueueKey =
   | "offlineQueue.failed"
   | "offlineQueue.deadLetter";
 
-export type TelemetryKey = TypeAheadKey | SpeechKey | OfflineQueueKey;
+/**
+ * Exchange-rate cache counters (#213). `rates.manualRefresh*` tracks how
+ * often users hit the Settings → Translation Diagnostics "Refresh Rates"
+ * override — useful for calibrating the 60s throttle window (#204) once
+ * Sentry (#90) ships real prod distribution data. A spike in manual
+ * refreshes usually correlates with an API outage; a flat baseline means
+ * the throttle window is fine.
+ *
+ *   - `rates.manualRefresh`: every attempted manual refresh (success or
+ *     failure). Denominator for "manual refresh fail rate".
+ *   - `rates.manualRefreshFailed`: manual refresh returned
+ *     `RefreshResult.ok === false` (network error, validation failure, etc.).
+ */
+export type RatesKey =
+  | "rates.manualRefresh"
+  | "rates.manualRefreshFailed";
+
+export type TelemetryKey = TypeAheadKey | SpeechKey | OfflineQueueKey | RatesKey;
 
 const counters: Record<TelemetryKey, number> = {
   "typeAhead.glossary": 0,
@@ -107,6 +124,8 @@ const counters: Record<TelemetryKey, number> = {
   "offlineQueue.success": 0,
   "offlineQueue.failed": 0,
   "offlineQueue.deadLetter": 0,
+  "rates.manualRefresh": 0,
+  "rates.manualRefreshFailed": 0,
 };
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;

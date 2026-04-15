@@ -17,6 +17,7 @@ jest.mock("../services/logger", () => ({
 
 import {
   parsePrice,
+  parseLocaleAmount,
   detectPricesInText,
   convertPrice,
   batchConvertPrices,
@@ -293,15 +294,16 @@ describe("detectPricesInText", () => {
         ],
       },
       {
-        name: "comma-decimal European receipt (currently unsupported, pins behavior)",
+        name: "comma-decimal European receipt (#209)",
         input: "Cafe €4,50\nCroissant €3,20",
-        // parsePrice expects `.` as decimal separator; `,` parses as thousands.
-        // €4,50 → EUR 450 today. This fixture pins the current (admittedly
-        // wrong-for-EU) behavior so the day someone adds locale-aware decimal
-        // parsing, this test fails loudly and forces an explicit decision.
+        // #209: parseLocaleAmount now recognizes the `\d+,\d{1,2}$` single-
+        // comma-with-1-or-2-trailing-digits pattern as a European decimal,
+        // so `€4,50` → EUR 4.50 and `€3,20` → EUR 3.20. Previously this
+        // fixture pinned the broken `EUR 450 / EUR 320` behavior — the
+        // regression flip here is the whole point of the fix.
         expected: [
-          { currency: "EUR", amount: 450 },
-          { currency: "EUR", amount: 320 },
+          { currency: "EUR", amount: 4.5 },
+          { currency: "EUR", amount: 3.2 },
         ],
       },
       {
@@ -318,10 +320,16 @@ describe("detectPricesInText", () => {
         name: "line wrap inside a price (currently treated as two prices)",
         input: "TOTAL $1,2\n34.56",
         // OCR line wraps split a number across lines. The regex matches the
-        // first fragment `$1,2` (= USD 12 after comma strip) and skips the
-        // orphaned `34.56` (no sigil). Pinned so a future "join lines"
-        // preprocessing pass has a baseline to compare against.
-        expected: [{ currency: "USD", amount: 12 }],
+        // first fragment `$1,2` which parseLocaleAmount interprets as
+        // European-decimal (`1,2` has a single comma + 1 trailing digit),
+        // so it resolves to USD 1.2. The orphaned `34.56` has no sigil and
+        // is skipped. Still wrong (the real value is $1,234.56) but this
+        // is a line-wrap preprocessing problem, not a parser problem —
+        // pinned so a future "join lines" pass has a baseline to compare
+        // against. Regression fence: if #209's heuristic is later refined
+        // to require exactly 2 trailing digits, this fixture will flip
+        // back to USD 12 and should be re-pinned explicitly.
+        expected: [{ currency: "USD", amount: 1.2 }],
       },
       {
         name: "thai baht: sigil and 'baht' word both extract (#208)",
@@ -409,6 +417,7 @@ describe("convertPrice (with stubbed rates)", () => {
           HKD: 7.8,
           JPY: 150,
           EUR: 0.9,
+          GBP: 0.79,
           THB: 35,
           KRW: 1300,
           CNY: 7.2,
@@ -787,5 +796,222 @@ describe("getRatesCacheState diagnostics", () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+// #209: parseLocaleAmount unit tests — the 3-rule heuristic for
+// distinguishing "comma is a thousands separator" from "comma is a European
+// decimal separator". The OCR fuzz corpus above exercises this through the
+// full detectPricesInText pipeline, but these unit tests pin the helper
+// directly so a future behavior tweak can be reasoned about in isolation.
+describe("parseLocaleAmount (#209)", () => {
+  describe("Rule 1 — period present, comma is thousands", () => {
+    it("parses a plain decimal as-is", () => {
+      expect(parseLocaleAmount("12.34")).toBe(12.34);
+    });
+
+    it("strips a single thousands comma when a period is present", () => {
+      expect(parseLocaleAmount("1,234.56")).toBe(1234.56);
+    });
+
+    it("strips multiple thousands commas when a period is present", () => {
+      expect(parseLocaleAmount("1,234,567.89")).toBe(1234567.89);
+    });
+  });
+
+  describe("Rule 2 — single comma with 1–2 trailing digits is European decimal", () => {
+    it("parses `4,50` as 4.5", () => {
+      expect(parseLocaleAmount("4,50")).toBe(4.5);
+    });
+
+    it("parses `3,2` as 3.2 (single trailing digit)", () => {
+      expect(parseLocaleAmount("3,2")).toBe(3.2);
+    });
+
+    it("parses `1234,56` as 1234.56 (no thousands grouping)", () => {
+      // A European amount can be expressed without thousands grouping at all.
+      // The heuristic still recognizes it because the single comma is
+      // anchored to 1–2 trailing digits at end of string.
+      expect(parseLocaleAmount("1234,56")).toBe(1234.56);
+    });
+  });
+
+  describe("Rule 3 — fallthrough: commas are thousands separators", () => {
+    it("parses `1,234` (3 trailing digits) as 1234", () => {
+      // 3 trailing digits is the canonical thousands-grouping shape, so Rule 2
+      // deliberately doesn't match and this falls through to strip-commas.
+      expect(parseLocaleAmount("1,234")).toBe(1234);
+    });
+
+    it("parses `1,234,567` (multi-comma) as 1234567", () => {
+      // Multi-comma inputs always fall through to Rule 3. This is the
+      // important guard: Rule 2's single-comma constraint prevents a
+      // fixture like `1,23,45` from being mis-parsed as 1.2345 or similar.
+      expect(parseLocaleAmount("1,234,567")).toBe(1234567);
+    });
+  });
+
+  describe("guards", () => {
+    it("returns NaN for empty string", () => {
+      expect(parseLocaleAmount("")).toBeNaN();
+    });
+
+    it("returns NaN for whitespace-only input", () => {
+      expect(parseLocaleAmount("   ")).toBeNaN();
+    });
+
+    it("returns NaN for non-numeric garbage", () => {
+      expect(parseLocaleAmount("abc")).toBeNaN();
+    });
+
+    it("trims surrounding whitespace before parsing", () => {
+      expect(parseLocaleAmount("  4,50  ")).toBe(4.5);
+    });
+  });
+
+  describe("integration — parsePrice and detectPricesInText use the helper", () => {
+    it("parsePrice('€4,50') returns EUR 4.50", () => {
+      // Symbol-first path with comma-decimal input. Previously this would
+      // have been parsed as EUR 450 because the old `parseFloat(s.replace(/,/g, ""))`
+      // stripped the decimal comma.
+      expect(parsePrice("€4,50")).toEqual({ currency: "EUR", amount: 4.5 });
+    });
+
+    it("parsePrice('EUR 3,20') returns EUR 3.20 via codePattern", () => {
+      // Leading-code path with comma-decimal input.
+      expect(parsePrice("EUR 3,20")).toEqual({ currency: "EUR", amount: 3.2 });
+    });
+
+    it("parsePrice('$1,234') still returns USD 1234 (thousands fallthrough)", () => {
+      // Rule 3 regression fence — the fix for European decimal must not
+      // break the dominant US/UK thousands-separated case.
+      expect(parsePrice("$1,234")).toEqual({ currency: "USD", amount: 1234 });
+    });
+
+    it("detectPricesInText captures €4,50 end-to-end", () => {
+      // MONEY_RE must let the comma-decimal tail through so parseLocaleAmount
+      // sees the full number. If MONEY_RE dropped the `,50` tail, the
+      // helper would never get a chance to apply Rule 2.
+      const found = detectPricesInText("€4,50");
+      expect(found).toContainEqual(
+        expect.objectContaining({ currency: "EUR", amount: 4.5 })
+      );
+    });
+  });
+});
+
+// #212: isValidRatesPayload — REQUIRED_RATE_CODES enforcement. The old
+// validator only demanded "USD present" + "≥ 5 currencies", so a partial
+// upstream rollout that shipped USD + 4 minor currencies would pass and
+// poison the 4-hour cache with a rate set that was missing the majors the
+// app actually converts to in practice. These tests pin the stricter guard.
+describe("isValidRatesPayload REQUIRED_RATE_CODES enforcement", () => {
+  const realFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  function loadFreshModule(): typeof import("../services/currencyExchange") {
+    let mod: typeof import("../services/currencyExchange") | null = null;
+    jest.isolateModules(() => {
+      jest.doMock("../services/logger", () => ({
+        logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      }));
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      mod = require("../services/currencyExchange");
+    });
+    if (!mod) throw new Error("module load failed");
+    return mod;
+  }
+
+  it("rejects a payload missing EUR", async () => {
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        rates: { USD: 1, GBP: 0.79, JPY: 150, HKD: 7.8, CNY: 7.2 },
+      }),
+    }));
+    const mod = loadFreshModule();
+    const rates = await mod.getExchangeRates();
+    // timestamp=0 is the hardcoded-fallback sentinel. No EUR → validator
+    // rejects → fall through to fallback.
+    expect(rates.timestamp).toBe(0);
+  });
+
+  it("rejects a payload missing GBP", async () => {
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        rates: { USD: 1, EUR: 0.9, JPY: 150, HKD: 7.8, CNY: 7.2 },
+      }),
+    }));
+    const mod = loadFreshModule();
+    const rates = await mod.getExchangeRates();
+    expect(rates.timestamp).toBe(0);
+  });
+
+  it("rejects a payload missing JPY", async () => {
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        rates: { USD: 1, EUR: 0.9, GBP: 0.79, HKD: 7.8, CNY: 7.2 },
+      }),
+    }));
+    const mod = loadFreshModule();
+    const rates = await mod.getExchangeRates();
+    expect(rates.timestamp).toBe(0);
+  });
+
+  it("rejects a payload where USD self-rate is not ~1", async () => {
+    // Sanity guard: the upstream API sometimes ships a non-USD base under
+    // the USD key during provider migrations. A USD self-rate of 1.5 or 0.8
+    // means "something else is the actual base" and every downstream
+    // conversion will be off by that factor — reject hard.
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        rates: { USD: 1.5, EUR: 0.9, GBP: 0.79, JPY: 150, HKD: 7.8 },
+      }),
+    }));
+    const mod = loadFreshModule();
+    const rates = await mod.getExchangeRates();
+    expect(rates.timestamp).toBe(0);
+  });
+
+  it("rejects a payload with a negative rate in a non-required currency", async () => {
+    // The second pass validates every remaining value too, not just the
+    // required ones. A single bad field anywhere in the response is enough
+    // to poison downstream conversions silently, so reject the whole blob.
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        rates: { USD: 1, EUR: 0.9, GBP: 0.79, JPY: 150, HKD: -7.8, CNY: 7.2 },
+      }),
+    }));
+    const mod = loadFreshModule();
+    const rates = await mod.getExchangeRates();
+    expect(rates.timestamp).toBe(0);
+  });
+
+  it("accepts a payload with all four REQUIRED_RATE_CODES plus at least one extra", async () => {
+    // Positive control: the minimum shape that passes validation. 5 total
+    // currencies, USD=1, EUR/GBP/JPY present as positive finite numbers.
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        rates: { USD: 1, EUR: 0.9, GBP: 0.79, JPY: 150, HKD: 7.8 },
+      }),
+    }));
+    const mod = loadFreshModule();
+    const rates = await mod.getExchangeRates();
+    expect(rates.timestamp).toBeGreaterThan(0);
+    expect(rates.rates.EUR).toBe(0.9);
   });
 });

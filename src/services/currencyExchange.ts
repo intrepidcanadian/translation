@@ -84,25 +84,51 @@ const MIN_REFETCH_INTERVAL_MS = 60 * 1000;
 let lastFetchAttempt = 0;
 
 /**
+ * Currencies that MUST be present in a valid API response for it to be
+ * cached. This is stricter than the previous "any 5 currencies" floor:
+ * without requiring specific major currencies, an upstream API regression
+ * that returned `{ USD: 1, XYZ: 2, ABC: 3, DEF: 4, GHI: 5 }` would pass
+ * validation and poison the cache with a shape that can't actually convert
+ * any price the app cares about. EUR/GBP/JPY are the three most commonly-
+ * seen non-USD currencies in real crew usage (duty-free receipts, Asian
+ * travel, European stopovers), so their absence is a strong "this response
+ * is malformed, reject and fall through to the stale cache or hardcoded
+ * fallback" signal.
+ */
+const REQUIRED_RATE_CODES = ["USD", "EUR", "GBP", "JPY"] as const;
+
+/**
  * Runtime validator for the API response shape. The previous code accepted
  * anything truthy in `data.rates`, so a malformed response (e.g. an array,
  * a string, or a Record with non-numeric values) would poison the in-memory
  * cache for 4 hours and break every downstream conversion until the cache
  * expired. Reject anything that isn't a plain object whose values are all
- * finite numbers and includes USD as the self-rate.
+ * finite numbers and includes the `REQUIRED_RATE_CODES` set.
  */
 function isValidRatesPayload(value: unknown): value is Record<string, number> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const rec = value as Record<string, unknown>;
-  // Need USD self-rate (~1) since we treat USD as the base
-  if (typeof rec.USD !== "number" || !Number.isFinite(rec.USD)) return false;
-  let validCount = 0;
+  // Every required currency must be present as a positive finite number.
+  // Using a strict list instead of the previous "USD only + count ≥ 5"
+  // check so a partial response that happens to ship 5 minor currencies
+  // but no EUR/GBP/JPY is rejected — those are the three we actually care
+  // about in practice and their absence is usually a rollout bug upstream.
+  for (const code of REQUIRED_RATE_CODES) {
+    const v = rec[code];
+    if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) return false;
+  }
+  // USD is the self-rate; sanity check that it's ~1 (within ±1% to tolerate
+  // floating point but reject obviously-bad bases). A 2 or 0.5 here usually
+  // means the upstream shipped a different base currency under the USD key.
+  if (Math.abs((rec.USD as number) - 1) > 0.01) return false;
+  // Remaining values must be finite positives too — one bad field in an
+  // otherwise valid response could poison downstream conversions silently.
   for (const v of Object.values(rec)) {
     if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) return false;
-    validCount += 1;
   }
-  // Sanity floor — a valid response has many currencies, not just USD
-  return validCount >= 5;
+  // Sanity floor — a valid response has many currencies, not just the
+  // required ones. 5 is the minimum; real responses usually have 150+.
+  return Object.keys(rec).length >= 5;
 }
 
 /**
@@ -297,6 +323,55 @@ export async function forceRefreshExchangeRates(): Promise<RefreshResult> {
 }
 
 /**
+ * #209: Locale-aware numeric parser for price amounts. The OCR fuzz corpus
+ * pinned `€4,50` → EUR 450 as current behavior because `parseFloat` after a
+ * naive `,`-strip treats comma as a thousands separator. That's wrong for
+ * every European locale that uses `,` as the decimal separator.
+ *
+ * Heuristic — deliberately conservative to avoid mis-parsing legitimate
+ * thousands-separated inputs:
+ *
+ *   1. If the input contains a `.`, treat `.` as decimal and commas as
+ *      thousands separators (current behavior). This matches US/UK/Asian
+ *      formats where thousands separation is the dominant pattern.
+ *   2. If the input has NO `.` and exactly one `,` followed by exactly 1 or
+ *      2 digits at the end of the string, treat `,` as the decimal separator.
+ *      This is the canonical European format (`4,50`, `3,2`).
+ *   3. Otherwise, treat commas as thousands separators and strip them.
+ *
+ * Rule 2's "1 or 2 digits" constraint is the important guard. A thousands
+ * separator always produces groups of exactly 3 digits (`1,234` / `12,345`),
+ * so any trailing run of 1 or 2 digits after a single comma cannot be a
+ * thousands separator by construction. Multi-comma inputs (`1,234,567`) fall
+ * through to rule 3 and keep the current thousands-strip behavior.
+ *
+ * Returns NaN for empty/unparseable input; callers guard with !isNaN.
+ */
+export function parseLocaleAmount(raw: string): number {
+  if (!raw) return NaN;
+  const s = raw.trim();
+  if (!s) return NaN;
+  // Rule 1: period present → comma is thousands.
+  if (s.includes(".")) {
+    return parseFloat(s.replace(/,/g, ""));
+  }
+  // Rule 2: single comma + 1–2 trailing digits (no other digits after) →
+  // comma is decimal. `\b,(\d{1,2})$` is anchored to end so `1,234` (3 trailing
+  // digits) fails to match and falls through to rule 3 as thousands. The
+  // single-comma guard prevents mis-parsing inputs like `1,23,45` which
+  // aren't legitimate in any locale we care about.
+  const commaCount = (s.match(/,/g) || []).length;
+  if (commaCount === 1) {
+    const euroDecimal = s.match(/^(\d+),(\d{1,2})$/);
+    if (euroDecimal) {
+      return parseFloat(`${euroDecimal[1]}.${euroDecimal[2]}`);
+    }
+  }
+  // Rule 3: commas are thousands separators; strip and parse as integer-ish.
+  return parseFloat(s.replace(/,/g, ""));
+}
+
+/**
  * Detect source currency from a price string
  * Returns currency code and numeric amount
  */
@@ -310,31 +385,35 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   // regex and then handed the raw match to parsePrice() which silently
   // returned null — so MYR prices vanished from price-detection results
   // even though `symbolToCurrency("RM")` had a branch waiting for them.
-  const rmFirst = cleaned.match(/^RM\s*([\d,]+(?:\.\d{1,2})?)/);
+  const rmFirst = cleaned.match(/^RM\s*([\d,]+(?:[.,]\d{1,2})?)/);
   if (rmFirst) {
-    const num = parseFloat(rmFirst[1].replace(/,/g, ""));
+    const num = parseLocaleAmount(rmFirst[1]);
     if (!isNaN(num)) return { currency: "MYR", amount: num };
   }
-  const rmLast = cleaned.match(/([\d,]+(?:\.\d{1,2})?)\s*RM\b/);
+  const rmLast = cleaned.match(/([\d,]+(?:[.,]\d{1,2})?)\s*RM\b/);
   if (rmLast) {
-    const num = parseFloat(rmLast[1].replace(/,/g, ""));
+    const num = parseLocaleAmount(rmLast[1]);
     if (!isNaN(num)) return { currency: "MYR", amount: num };
   }
 
   // Symbol-first patterns: $100, €50, £30, ¥1000, ₹500, ₩1000, ฿100
-  const symbolFirst = cleaned.match(/^([HKNTSAد.إ]*[$€£¥₹₩฿₫₱¢])\s*([\d,]+(?:\.\d{1,2})?)/);
+  // #209: the decimal character class accepts both `.` and `,` so the
+  // locale-aware helper can see the full number (`4,50` → EUR 4.50). A
+  // naive `.`-only class would have dropped the last two digits before
+  // parseLocaleAmount got a chance to interpret them.
+  const symbolFirst = cleaned.match(/^([HKNTSAد.إ]*[$€£¥₹₩฿₫₱¢])\s*([\d,]+(?:[.,]\d{1,2})?)/);
   if (symbolFirst) {
     const sym = symbolFirst[1];
-    const num = parseFloat(symbolFirst[2].replace(/,/g, ""));
+    const num = parseLocaleAmount(symbolFirst[2]);
     if (!isNaN(num)) {
       return { currency: symbolToCurrency(sym), amount: num };
     }
   }
 
   // Symbol-last patterns: 100$, 100€
-  const symbolLast = cleaned.match(/([\d,]+(?:\.\d{1,2})?)\s*([HKNTSAد.إ]*[$€£¥₹₩฿₫₱¢])/);
+  const symbolLast = cleaned.match(/([\d,]+(?:[.,]\d{1,2})?)\s*([HKNTSAد.إ]*[$€£¥₹₩฿₫₱¢])/);
   if (symbolLast) {
-    const num = parseFloat(symbolLast[1].replace(/,/g, ""));
+    const num = parseLocaleAmount(symbolLast[1]);
     const sym = symbolLast[2];
     if (!isNaN(num)) {
       return { currency: symbolToCurrency(sym), amount: num };
@@ -348,9 +427,9 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   // Without this, `parsePrice("BAHT 120")` would have to fall through to the
   // codeAfter branch which only matches digit-then-word, so leading-word
   // forms silently returned null.
-  const codePattern = cleaned.match(/(?:^|\s)(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won|baht)\s*([\d,]+(?:\.\d{1,2})?)/i);
+  const codePattern = cleaned.match(/(?:^|\s)(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won|baht)\s*([\d,]+(?:[.,]\d{1,2})?)/i);
   if (codePattern) {
-    const num = parseFloat(codePattern[2].replace(/,/g, ""));
+    const num = parseLocaleAmount(codePattern[2]);
     if (!isNaN(num)) {
       return { currency: nameToCurrency(codePattern[1].toUpperCase()), amount: num };
     }
@@ -361,9 +440,9 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   // already had a THB branch. The OCR fuzz corpus pinned the bug as a
   // current-behavior fixture — flipping the corpus expectation to include
   // THB 120 is part of this fix.
-  const codeAfter = cleaned.match(/([\d,]+(?:\.\d{1,2})?)\s*(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won|baht)/i);
+  const codeAfter = cleaned.match(/([\d,]+(?:[.,]\d{1,2})?)\s*(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won|baht)/i);
   if (codeAfter) {
-    const num = parseFloat(codeAfter[1].replace(/,/g, ""));
+    const num = parseLocaleAmount(codeAfter[1]);
     const code = codeAfter[2].toUpperCase();
     if (!isNaN(num)) {
       return { currency: nameToCurrency(code), amount: num };
@@ -492,7 +571,12 @@ export function detectPricesInText(text: string): Array<{ raw: string; currency:
   // false-positive reasons as the trailing branch — a stray `EURO` inside
   // `EUROPEAN` shouldn't drag a sibling number along. The full word forms
   // (BAHT, YEN, etc.) are also accepted to match the parsePrice surface.
-  const MONEY_RE = /(?:\bHK\$|\bNT\$|\bS\$|\bA\$|\bUS\$|\bRM|[$€£¥₹₩฿₫₱]|د\.إ)\s*\d[\d,]*(?:\.\d{1,2})?|\b(?:USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won|baht)\b\s*\d[\d,]*(?:\.\d{1,2})?|\d[\d,]*(?:\.\d{1,2})?\s*(?:\bHK\$|\bNT\$|\bS\$|[$€£¥₹₩฿₫₱]|\b(?:RM|dollars?|euros?|pounds?|yen|yuan|won|baht|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR)\b)/gi;
+  // #209: the trailing decimal sub-pattern accepts both `.\d{1,2}` and
+  // `,\d{1,2}` so `€4,50` is captured end-to-end. parseLocaleAmount then
+  // decides per-match whether the separator is a decimal (European) or a
+  // thousands group (US/UK) based on digit grouping — see its docstring.
+  // Without this change the regex only captured `€4`, truncating the price.
+  const MONEY_RE = /(?:\bHK\$|\bNT\$|\bS\$|\bA\$|\bUS\$|\bRM|[$€£¥₹₩฿₫₱]|د\.إ)\s*\d[\d,]*(?:[.,]\d{1,2})?|\b(?:USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won|baht)\b\s*\d[\d,]*(?:[.,]\d{1,2})?|\d[\d,]*(?:[.,]\d{1,2})?\s*(?:\bHK\$|\bNT\$|\bS\$|[$€£¥₹₩฿₫₱]|\b(?:RM|dollars?|euros?|pounds?|yen|yuan|won|baht|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR)\b)/gi;
 
   const matches = text.match(MONEY_RE) || [];
   const results: Array<{ raw: string; currency: string; amount: number }> = [];
