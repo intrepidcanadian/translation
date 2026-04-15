@@ -14,6 +14,16 @@ export interface ThemeColors {
   sectionBg: string;
   cardBg: string;
 
+  // Glassmorphic surfaces. These are translucent rgba values designed to
+  // sit on top of GlassBackdrop's aurora layers — `glassBg` is the standard
+  // soft-frosted card, `glassBgStrong` is for surfaces that need more
+  // legibility (mic button row, modals), and `glassBorder`/`glassHighlight`
+  // give the 1px hairline + inner highlight that sells the depth illusion.
+  glassBg: string;
+  glassBgStrong: string;
+  glassBorder: string;
+  glassHighlight: string;
+
   // Text
   titleText: string;
   primaryText: string;
@@ -72,6 +82,14 @@ export const darkColors: ThemeColors = {
   sectionBg: "#151530",
   cardBg: "#252547",
 
+  // Dark-mode glass: cool indigo frosted look. Alpha intentionally low so
+  // GlassBackdrop's aurora bleeds through; the 1px highlight + border sell
+  // the "frosted pane" effect without needing real backdrop blur.
+  glassBg: "rgba(38, 38, 80, 0.45)",
+  glassBgStrong: "rgba(48, 48, 96, 0.72)",
+  glassBorder: "rgba(168, 164, 255, 0.22)",
+  glassHighlight: "rgba(255, 255, 255, 0.08)",
+
   titleText: "#ffffff",
   primaryText: "#ffffff",
   secondaryText: "#ccccdd",
@@ -121,6 +139,14 @@ export const lightColors: ThemeColors = {
   overlayBg: "rgba(0,0,0,0.3)",
   sectionBg: "#e8e8f2",
   cardBg: "#e4e2f0",
+
+  // Light-mode glass: bright translucent white with a faint lavender tint
+  // so the aurora colors still come through. Alpha is higher than dark
+  // because light backgrounds need more opacity to keep text legible.
+  glassBg: "rgba(255, 255, 255, 0.55)",
+  glassBgStrong: "rgba(255, 255, 255, 0.78)",
+  glassBorder: "rgba(108, 99, 255, 0.18)",
+  glassHighlight: "rgba(255, 255, 255, 0.6)",
 
   titleText: "#1a1a2e",
   primaryText: "#1a1a2e",

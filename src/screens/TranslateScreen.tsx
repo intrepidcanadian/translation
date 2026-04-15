@@ -36,6 +36,7 @@ import PassengerView from "../components/PassengerView";
 import VisualCardsModal from "../components/VisualCardsModal";
 import TranslationShareCard from "../components/TranslationShareCard";
 import PhrasebookModal from "../components/PhrasebookModal";
+import GlassBackdrop from "../components/GlassBackdrop";
 import { HistoryActionsProvider, type HistoryActions } from "../contexts/HistoryActionsContext";
 import { HistoryDisplayProvider, type HistoryDisplayState } from "../contexts/HistoryDisplayContext";
 import { SelectStateProvider, type SelectState } from "../contexts/SelectStateContext";
@@ -652,16 +653,20 @@ export default function TranslateScreen() {
     <>
       <SafeAreaView style={[styles.safe, { backgroundColor: colors.safeBg }]}>
         <StatusBar barStyle={colors.statusBar} />
+        {/* Glass aurora backdrop sits behind everything in the safe area
+            so all the translucent `glassBg` surfaces below have something
+            colorful to soak up. Pure-JS, no native deps. */}
+        <GlassBackdrop />
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
           <View style={[styles.container, isLandscape && styles.containerLandscape]} {...gestureResponder.panHandlers}>
-            {/* Header */}
+            {/* Header — title removed (took too much vertical real estate);
+                Chat toggle and Play button now align right in a compact row. */}
             <View style={[styles.headerRow, isLandscape && styles.headerRowLandscape]}>
-              <Text style={[styles.title, isLandscape && styles.titleLandscape, { color: colors.titleText }]}>Live Translator</Text>
               <TouchableOpacity
-                style={[styles.modeToggle, { backgroundColor: colors.cardBg }, conversationMode && { backgroundColor: colors.primary }]}
+                style={[styles.modeToggle, styles.glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }, conversationMode && { backgroundColor: colors.primary, borderColor: colors.primary }]}
                 onPress={() => dispatchPanel({ type: "TOGGLE_CONVERSATION_MODE" })}
                 accessibilityRole="button"
                 accessibilityLabel={conversationMode ? "Switch to standard mode" : "Switch to conversation mode"}
@@ -672,7 +677,7 @@ export default function TranslateScreen() {
               </TouchableOpacity>
               {conversationMode && history.some((h) => h.speaker) && (
                 <TouchableOpacity
-                  style={[styles.modeToggle, { backgroundColor: colors.cardBg, right: 60 }]}
+                  style={[styles.modeToggle, styles.glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
                   onPress={onOpenPlayback}
                   accessibilityRole="button"
                   accessibilityLabel="View conversation playback"
@@ -699,7 +704,7 @@ export default function TranslateScreen() {
               />
               <View style={styles.langMiddleButtons}>
                 <TouchableOpacity
-                  style={[styles.swapButton, { backgroundColor: colors.cardBg }]}
+                  style={[styles.swapButton, styles.glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
                   onPress={swapLanguages}
                   accessibilityRole="button"
                   accessibilityLabel={`Swap languages. Currently translating from ${sourceLang.name} to ${targetLang.name}`}
@@ -709,7 +714,7 @@ export default function TranslateScreen() {
                 </TouchableOpacity>
                 {sourceLang.code !== "autodetect" && (
                   <TouchableOpacity
-                    style={[styles.savePairButton, { backgroundColor: colors.cardBg }]}
+                    style={[styles.savePairButton, styles.glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
                     onPress={toggleSavePair}
                     accessibilityRole="button"
                     accessibilityLabel={isCurrentPairSaved ? "Remove saved language pair" : "Save this language pair"}
@@ -833,7 +838,7 @@ export default function TranslateScreen() {
 
             {/* Undo delete toast */}
             {deletedItem && (
-              <View style={[styles.undoToast, { backgroundColor: colors.cardBg, borderColor: colors.border }]} accessibilityLiveRegion="polite" accessibilityRole="alert">
+              <View style={[styles.undoToast, styles.glassSurface, { backgroundColor: colors.glassBgStrong, borderColor: colors.glassBorder }]} accessibilityLiveRegion="polite" accessibilityRole="alert">
                 <Text style={[styles.undoToastText, { color: colors.secondaryText }]} numberOfLines={1}>Translation deleted</Text>
                 <TouchableOpacity style={styles.undoButton} onPress={undoDelete} accessibilityRole="button" accessibilityLabel="Undo delete">
                   <Text style={[styles.undoButtonText, { color: colors.primary }]}>Undo</Text>
@@ -924,9 +929,27 @@ export default function TranslateScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   container: { flex: 1, paddingHorizontal: 20, paddingTop: Platform.OS === "android" ? 40 : 10 },
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 20 },
+  // Title removed: row now just hosts the mode toggle (and optional Play
+  // button), right-aligned, so we drop absolute positioning and shrink the
+  // marginBottom from 20 to 8 to claim back the vertical space the title
+  // used to take.
+  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 8, marginBottom: 8 },
   title: { fontSize: 28, fontWeight: "800", textAlign: "center" },
-  modeToggle: { position: "absolute", right: 0, borderRadius: 12, paddingVertical: 6, paddingHorizontal: 12 },
+  modeToggle: { borderRadius: 12, paddingVertical: 6, paddingHorizontal: 12 },
+  // Shared frosted-pane look: 1px hairline border (color comes from
+  // theme.glassBorder via inline style) + soft shadow that sells the
+  // floating-above-aurora effect. Combined with `glassBg`/`glassBgStrong`
+  // backgrounds and the GlassBackdrop layer behind the screen, this is
+  // the closest we can get to real backdrop-blur without pulling in
+  // expo-blur (which would force a native rebuild).
+  glassSurface: {
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 3,
+  },
   modeToggleText: { fontSize: 12, fontWeight: "700" },
   langRow: { flexDirection: "row", alignItems: "flex-end", gap: 10, marginBottom: 20 },
   langMiddleButtons: { alignItems: "center", gap: 4, marginBottom: 0 },
