@@ -36,6 +36,7 @@ import {
   getRatesCacheState,
   forceRefreshExchangeRates,
   type RatesCacheState,
+  type RefreshResult,
 } from "../services/currencyExchange";
 import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
@@ -123,6 +124,18 @@ function formatRelativeMs(ms: number | null): string {
   return `${hr}h ago`;
 }
 
+/**
+ * #211: format the throttle countdown ("42s") so the rates line can show how
+ * long until the next opportunistic refresh fires. Rounds up so the user
+ * never sees "0s" while the throttle is still active. Returns an empty
+ * string for null/0 to keep call sites terse.
+ */
+function formatCountdownMs(ms: number | null): string {
+  if (ms === null || ms <= 0) return "";
+  const sec = Math.max(1, Math.ceil(ms / 1000));
+  return `${sec}s`;
+}
+
 function ratesStateLabel(s: RatesCacheState): string {
   if (!s.hasCache) {
     return s.lastAttemptAgeMs !== null
@@ -133,9 +146,49 @@ function ratesStateLabel(s: RatesCacheState): string {
     return `Fresh · ${formatRelativeMs(s.ageMs)}`;
   }
   if (s.willThrottleNextFetch) {
-    return `Stale · ${formatRelativeMs(s.ageMs)} · refresh throttled`;
+    // #211: include the human-readable countdown so a user staring at a
+    // disabled-feeling refresh button knows when the next opportunistic
+    // refetch will fire instead of guessing.
+    const countdown = formatCountdownMs(s.nextRefetchInMs);
+    return countdown
+      ? `Stale · ${formatRelativeMs(s.ageMs)} · refresh in ${countdown}`
+      : `Stale · ${formatRelativeMs(s.ageMs)} · refresh throttled`;
   }
   return `Stale · ${formatRelativeMs(s.ageMs)} · will refetch`;
+}
+
+/**
+ * #207: turns a `RefreshResult` into a short user-visible status line for the
+ * transient "just tapped Refresh Rates" feedback. Pure formatter — no React
+ * dependency — so it can be unit-tested independently. The success branch
+ * has two flavors depending on whether the prior cache was already stale,
+ * because "found something fresher" deserves a clearer signal than
+ * "confirmed what you had".
+ */
+function refreshOutcomeLabel(r: RefreshResult): string {
+  if (r.ok) {
+    return r.hadStaleCache
+      ? `✓ Refreshed (was stale) · ${formatRelativeMs(r.ageMs)}`
+      : `✓ Refreshed · ${formatRelativeMs(r.ageMs)}`;
+  }
+  if (r.usedFallback) return `⚠ Refresh failed · using built-in rates`;
+  return r.ageMs !== null
+    ? `⚠ Refresh failed · using cache ${formatRelativeMs(r.ageMs)}`
+    : `⚠ Refresh failed`;
+}
+
+function refreshOutcomeAccessibilityLabel(r: RefreshResult): string {
+  if (r.ok) {
+    return r.hadStaleCache
+      ? `Exchange rates refreshed successfully. Cache was stale before; now ${formatRelativeMs(r.ageMs)}.`
+      : `Exchange rates refreshed successfully ${formatRelativeMs(r.ageMs)}.`;
+  }
+  if (r.usedFallback) {
+    return `Exchange rate refresh failed. Conversions will use built-in fallback rates.`;
+  }
+  return r.ageMs !== null
+    ? `Exchange rate refresh failed. Falling back to cache from ${formatRelativeMs(r.ageMs)}.`
+    : `Exchange rate refresh failed.`;
 }
 
 function ratesStateAccessibilityLabel(s: RatesCacheState): string {
@@ -243,6 +296,11 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   // "no cache at all". Refreshes on modal open + manual Refresh.
   const [ratesCacheState, setRatesCacheState] = useState<RatesCacheState | null>(null);
   const [ratesRefreshing, setRatesRefreshing] = useState(false);
+  // #207: transient outcome line that renders for ~5s after a Refresh Rates
+  // tap. Distinguishes (a) freshly fetched, (b) cached survived but no
+  // network, (c) hardcoded fallback only. Auto-clears via useAutoClearFlag so
+  // a modal dismiss mid-display can't setState on a torn-down tree.
+  const [refreshOutcome, setRefreshOutcome] = useAutoClearFlag<RefreshResult>(5000);
   // Collapsible debug sub-sections. Each defaults to collapsed; we auto-expand
   // an urgent section (open breaker, last crash) the first time the modal
   // renders so the user notices what needs attention.
@@ -327,15 +385,28 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     if (ratesRefreshing) return;
     setRatesRefreshing(true);
     try {
-      await forceRefreshExchangeRates();
+      const outcome = await forceRefreshExchangeRates();
+      // #207: stash the outcome so the UI can render a transient success/
+      // failure line distinct from the steady-state "Fresh / Stale" label.
+      setRefreshOutcome(outcome);
     } catch (err) {
       logger.warn("Settings", "Manual exchange rate refresh failed", err);
+      // Synthesize a failure outcome so the UI can still surface "something
+      // went wrong" — getRatesCacheState() can't tell us *whether* the user
+      // initiated this refresh, only what the cache looks like now.
+      const fallbackState = getRatesCacheState();
+      setRefreshOutcome({
+        ok: false,
+        reason: "network",
+        ageMs: fallbackState.ageMs,
+        usedFallback: !fallbackState.hasCache,
+      });
     } finally {
       setRatesCacheState(getRatesCacheState());
       setRatesRefreshing(false);
       notifySuccess();
     }
-  }, [ratesRefreshing]);
+  }, [ratesRefreshing, setRefreshOutcome]);
 
   const handleResetCircuits = useCallback(() => {
     resetCircuits();
@@ -1121,6 +1192,24 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                       >
                         {ratesStateLabel(ratesCacheState)}
                       </Text>
+                      {/* #207: transient outcome line for the most recent
+                          Refresh Rates tap. Auto-clears after 5s via the
+                          useAutoClearFlag hook so the steady-state cache
+                          label stays the source of truth. accessibilityLiveRegion
+                          announces the result to VoiceOver users immediately. */}
+                      {refreshOutcome && (
+                        <Text
+                          style={[
+                            styles.infoText,
+                            dynamicStyles.infoText,
+                            { color: refreshOutcome.ok ? colors.primary : colors.errorText },
+                          ]}
+                          accessibilityLiveRegion="polite"
+                          accessibilityLabel={refreshOutcomeAccessibilityLabel(refreshOutcome)}
+                        >
+                          {refreshOutcomeLabel(refreshOutcome)}
+                        </Text>
+                      )}
                     </View>
                   )}
                   {/* #174: offline-queue reliability block. Silent when no

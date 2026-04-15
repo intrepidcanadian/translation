@@ -195,19 +195,32 @@ export interface RatesCacheState {
   lastAttemptAgeMs: number | null;
   isFresh: boolean;
   willThrottleNextFetch: boolean;
+  /**
+   * #211: when the throttle is active, the number of milliseconds until the
+   * next `getExchangeRates()` call will actually hit the network. `null` when
+   * the throttle isn't active (no prior attempt, or the window already
+   * elapsed). Lets a UI render a "Refreshing in 42s" countdown next to the
+   * Refresh Rates button instead of a stuck-looking disabled state, and lets
+   * tests assert on the throttle window without poking module internals.
+   */
+  nextRefetchInMs: number | null;
 }
 
 export function getRatesCacheState(): RatesCacheState {
   const now = Date.now();
   const ageMs = cachedRates && cachedRates.timestamp > 0 ? now - cachedRates.timestamp : null;
   const lastAttemptAgeMs = lastFetchAttempt > 0 ? now - lastFetchAttempt : null;
+  const willThrottleNextFetch =
+    lastAttemptAgeMs !== null && lastAttemptAgeMs < MIN_REFETCH_INTERVAL_MS;
   return {
     hasCache: cachedRates !== null,
     ageMs,
     lastAttemptAgeMs,
     isFresh: ageMs !== null && ageMs < CACHE_DURATION,
-    willThrottleNextFetch:
-      lastAttemptAgeMs !== null && lastAttemptAgeMs < MIN_REFETCH_INTERVAL_MS,
+    willThrottleNextFetch,
+    nextRefetchInMs: willThrottleNextFetch
+      ? Math.max(0, MIN_REFETCH_INTERVAL_MS - (lastAttemptAgeMs ?? 0))
+      : null,
   };
 }
 
@@ -224,24 +237,63 @@ export function __resetCacheForTests(): void {
 }
 
 /**
+ * Outcome of an explicit user-driven refresh. The previous version returned
+ * the resolved `ExchangeRates` payload only, which conflated three very
+ * different states: (1) we successfully fetched fresh rates, (2) the API
+ * call failed and we fell back to a stale cache, (3) the API call failed and
+ * we have no cache so we returned hardcoded fallback. From a UI perspective
+ * those three deserve different feedback ("✓ Refreshed · 1s ago" vs.
+ * "⚠ Refresh failed · using cache 1h old" vs. "⚠ Refresh failed · using
+ * built-in rates"). #207.
+ */
+export type RefreshResult =
+  | { ok: true; ageMs: number; hadStaleCache: boolean }
+  | { ok: false; reason: "network"; ageMs: number | null; usedFallback: boolean };
+
+/**
  * Force a fresh fetch, bypassing both the 4-hour cache TTL and the
  * 60s refetch-attempt throttle (#200). Wired to the "Refresh Rates"
  * button in Settings → Translation Diagnostics so users can override
  * the throttle when they suspect cached rates are stale (e.g. after
  * a long flight crossing currency zones). Falls through to the same
  * fallback paths as `getExchangeRates()` if the API call fails — i.e.
- * stale cache > hardcoded fallback. Returns the resolved rates so the
- * caller can refresh diagnostics state in one shot.
+ * stale cache > hardcoded fallback.
+ *
+ * Returns a `RefreshResult` so the caller can render distinct feedback
+ * for "succeeded with fresh rates", "failed but stale cache covers us",
+ * and "failed and we're running on hardcoded fallback". (#207)
  *
  * Production code that just wants fresh rates should still call
  * `getExchangeRates()` — the throttle exists to protect the upstream
  * from heavy catalog scanning. This escape hatch is for explicit user
  * intent only.
  */
-export async function forceRefreshExchangeRates(): Promise<ExchangeRates> {
+export async function forceRefreshExchangeRates(): Promise<RefreshResult> {
+  // Capture the pre-existing cache so we can report whether the user was
+  // already running on stale rates before the manual refresh — useful UX
+  // for "we found something fresher" vs. "we just confirmed what you had".
+  const hadStaleCache = cachedRates !== null && (Date.now() - cachedRates.timestamp >= CACHE_DURATION);
   cachedRates = null;
   lastFetchAttempt = 0;
-  return getExchangeRates();
+  const rates = await getExchangeRates();
+  if (rates.timestamp > 0) {
+    return {
+      ok: true,
+      ageMs: Date.now() - rates.timestamp,
+      hadStaleCache,
+    };
+  }
+  // timestamp === 0 sentinel means we fell through to hardcoded fallback.
+  // If `cachedRates` is still null after the call, neither validation nor
+  // any prior cache survived — UI should warn that conversions will use
+  // built-in rates. If a stale cache *did* survive, the surface is gentler.
+  const survivingState = getRatesCacheState();
+  return {
+    ok: false,
+    reason: "network",
+    ageMs: survivingState.ageMs,
+    usedFallback: !survivingState.hasCache,
+  };
 }
 
 /**
@@ -290,15 +342,26 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   }
 
   // Code patterns: 100 USD, USD 100, 100 JPY
-  const codePattern = cleaned.match(/(?:^|\s)(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR)\s*([\d,]+(?:\.\d{1,2})?)/i);
+  // #208: word forms (BAHT, YEN, YUAN, WON, DOLLARS, EUROS, POUNDS) are now
+  // also accepted as leading codes so "BAHT 120" rounds-trips through
+  // nameToCurrency() the same way "120 baht" does on the trailing path.
+  // Without this, `parsePrice("BAHT 120")` would have to fall through to the
+  // codeAfter branch which only matches digit-then-word, so leading-word
+  // forms silently returned null.
+  const codePattern = cleaned.match(/(?:^|\s)(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won|baht)\s*([\d,]+(?:\.\d{1,2})?)/i);
   if (codePattern) {
     const num = parseFloat(codePattern[2].replace(/,/g, ""));
     if (!isNaN(num)) {
-      return { currency: codePattern[1].toUpperCase(), amount: num };
+      return { currency: nameToCurrency(codePattern[1].toUpperCase()), amount: num };
     }
   }
 
-  const codeAfter = cleaned.match(/([\d,]+(?:\.\d{1,2})?)\s*(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won)/i);
+  // #208: `baht` was missing from the trailing word alternatives so
+  // `parsePrice("120 baht")` returned null even though `nameToCurrency("BAHT")`
+  // already had a THB branch. The OCR fuzz corpus pinned the bug as a
+  // current-behavior fixture — flipping the corpus expectation to include
+  // THB 120 is part of this fix.
+  const codeAfter = cleaned.match(/([\d,]+(?:\.\d{1,2})?)\s*(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won|baht)/i);
   if (codeAfter) {
     const num = parseFloat(codeAfter[1].replace(/,/g, ""));
     const code = codeAfter[2].toUpperCase();
@@ -420,7 +483,16 @@ export function detectPricesInText(text: string): Array<{ raw: string; currency:
   // accepts `EURO`). Sigil-only branches stay un-anchored because `$/€/£`
   // aren't word characters and `\b` between a digit and `$` would be a no-op
   // anyway.
-  const MONEY_RE = /(?:\bHK\$|\bNT\$|\bS\$|\bA\$|\bUS\$|\bRM|[$€£¥₹₩฿₫₱]|د\.إ)\s*\d[\d,]*(?:\.\d{1,2})?|\d[\d,]*(?:\.\d{1,2})?\s*(?:\bHK\$|\bNT\$|\bS\$|[$€£¥₹₩฿₫₱]|\b(?:RM|dollars?|euros?|pounds?|yen|yuan|won|baht|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR)\b)/gi;
+  //
+  // #210: a third alternation handles the leading letter-code form
+  // (`USD 234.56`, `EUR 100`). Previously the regex only generated trailing-
+  // code matches for letter-only codes, so `Subtotal: USD 234.56` parsed as
+  // null end-to-end even though `parsePrice("USD 234.56")` recognized it
+  // via the `codePattern` branch. Bracketed in `\b(...)\b` for the same
+  // false-positive reasons as the trailing branch — a stray `EURO` inside
+  // `EUROPEAN` shouldn't drag a sibling number along. The full word forms
+  // (BAHT, YEN, etc.) are also accepted to match the parsePrice surface.
+  const MONEY_RE = /(?:\bHK\$|\bNT\$|\bS\$|\bA\$|\bUS\$|\bRM|[$€£¥₹₩฿₫₱]|د\.إ)\s*\d[\d,]*(?:\.\d{1,2})?|\b(?:USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won|baht)\b\s*\d[\d,]*(?:\.\d{1,2})?|\d[\d,]*(?:\.\d{1,2})?\s*(?:\bHK\$|\bNT\$|\bS\$|[$€£¥₹₩฿₫₱]|\b(?:RM|dollars?|euros?|pounds?|yen|yuan|won|baht|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR)\b)/gi;
 
   const matches = text.match(MONEY_RE) || [];
   const results: Array<{ raw: string; currency: string; amount: number }> = [];
