@@ -69,6 +69,28 @@ let cachedRates: ExchangeRates | null = null;
 const CACHE_DURATION = 4 * 60 * 60 * 1000; // 4 hours
 
 /**
+ * Runtime validator for the API response shape. The previous code accepted
+ * anything truthy in `data.rates`, so a malformed response (e.g. an array,
+ * a string, or a Record with non-numeric values) would poison the in-memory
+ * cache for 4 hours and break every downstream conversion until the cache
+ * expired. Reject anything that isn't a plain object whose values are all
+ * finite numbers and includes USD as the self-rate.
+ */
+function isValidRatesPayload(value: unknown): value is Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const rec = value as Record<string, unknown>;
+  // Need USD self-rate (~1) since we treat USD as the base
+  if (typeof rec.USD !== "number" || !Number.isFinite(rec.USD)) return false;
+  let validCount = 0;
+  for (const v of Object.values(rec)) {
+    if (typeof v !== "number" || !Number.isFinite(v) || v <= 0) return false;
+    validCount += 1;
+  }
+  // Sanity floor — a valid response has many currencies, not just USD
+  return validCount >= 5;
+}
+
+/**
  * Fetch exchange rates (with caching and offline fallback)
  */
 export async function getExchangeRates(): Promise<ExchangeRates> {
@@ -89,15 +111,26 @@ export async function getExchangeRates(): Promise<ExchangeRates> {
     clearTimeout(timeout);
 
     if (response.ok) {
-      const data = await response.json();
-      if (data.rates) {
+      // Wrap response.json() — a malformed/non-JSON body would otherwise
+      // surface as an unhandled SyntaxError. Mirrors the safeParseJSON
+      // pattern in translation.ts.
+      let data: unknown = null;
+      try {
+        data = await response.json();
+      } catch (parseErr) {
+        logger.warn("Product", "Exchange rates response was not valid JSON", parseErr);
+      }
+      if (data && typeof data === "object" && "rates" in data && isValidRatesPayload((data as { rates: unknown }).rates)) {
         cachedRates = {
           base: "USD",
           timestamp: Date.now(),
-          rates: data.rates,
+          rates: (data as { rates: Record<string, number> }).rates,
         };
         logger.info("Product", "Exchange rates refreshed from API");
         return cachedRates;
+      }
+      if (data) {
+        logger.warn("Product", "Exchange rates response failed validation, using fallback");
       }
     }
   } catch (err) {
@@ -120,6 +153,24 @@ export async function getExchangeRates(): Promise<ExchangeRates> {
  */
 export function parsePrice(priceStr: string): { currency: string; amount: number } | null {
   const cleaned = priceStr.trim();
+
+  // Multi-char prefix currencies that don't end in a sigil character
+  // (RM = Malaysian Ringgit). Previously this returned null because the
+  // symbol-first regex required a trailing $/€/£/¥/etc. and `RM` doesn't
+  // match. detectPricesInText() *did* recognize "RM 100" via its own
+  // regex and then handed the raw match to parsePrice() which silently
+  // returned null — so MYR prices vanished from price-detection results
+  // even though `symbolToCurrency("RM")` had a branch waiting for them.
+  const rmFirst = cleaned.match(/^RM\s*([\d,]+(?:\.\d{1,2})?)/);
+  if (rmFirst) {
+    const num = parseFloat(rmFirst[1].replace(/,/g, ""));
+    if (!isNaN(num)) return { currency: "MYR", amount: num };
+  }
+  const rmLast = cleaned.match(/([\d,]+(?:\.\d{1,2})?)\s*RM\b/);
+  if (rmLast) {
+    const num = parseFloat(rmLast[1].replace(/,/g, ""));
+    if (!isNaN(num)) return { currency: "MYR", amount: num };
+  }
 
   // Symbol-first patterns: $100, €50, £30, ¥1000, ₹500, ₩1000, ฿100
   const symbolFirst = cleaned.match(/^([HKNTSAد.إ]*[$€£¥₹₩฿₫₱¢])\s*([\d,]+(?:\.\d{1,2})?)/);
@@ -250,8 +301,12 @@ export async function batchConvertPrices(
  * Detect all prices in a text block and return parsed results
  */
 export function detectPricesInText(text: string): Array<{ raw: string; currency: string; amount: number }> {
-  // Comprehensive money pattern
-  const MONEY_RE = /(?:HK\$|NT\$|S\$|A\$|US\$|[$€£¥₹₩฿₫₱RM]|د\.إ)\s*[\d,]+(?:\.\d{1,2})?|[\d,]+(?:\.\d{1,2})?\s*(?:HK\$|NT\$|S\$|[$€£¥₹₩฿₫₱]|dollars?|euros?|pounds?|yen|yuan|won|baht|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND)/gi;
+  // Comprehensive money pattern. Multi-char prefixes (RM, HK$, NT$, S$, A$,
+  // US$) are alternations *outside* the character class because a class only
+  // matches single chars — putting `RM` inside `[…RM]` would only match `R`
+  // or `M` individually, which silently broke MYR detection until #191 fixed
+  // both this regex and `parsePrice`.
+  const MONEY_RE = /(?:HK\$|NT\$|S\$|A\$|US\$|RM|[$€£¥₹₩฿₫₱]|د\.إ)\s*[\d,]+(?:\.\d{1,2})?|[\d,]+(?:\.\d{1,2})?\s*(?:HK\$|NT\$|S\$|RM|[$€£¥₹₩฿₫₱]|dollars?|euros?|pounds?|yen|yuan|won|baht|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR)/gi;
 
   const matches = text.match(MONEY_RE) || [];
   const results: Array<{ raw: string; currency: string; amount: number }> = [];

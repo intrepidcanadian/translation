@@ -3,19 +3,19 @@
  */
 
 // Mock expo-speech first — Speech.stop() is the defensive teardown call.
-const speechStopMock = jest.fn();
+const mockSpeechStop = jest.fn();
 jest.mock("expo-speech", () => ({
-  stop: () => speechStopMock(),
+  stop: () => mockSpeechStop(),
 }));
 
 // Mock expo-speech-recognition. We export the same enum constants as the
 // real module so the helper can reference AVAudioSessionCategory.playAndRecord
 // without crashing on undefined lookups, but the values are opaque strings
 // that we just pattern-match in the test assertions.
-const startMock = jest.fn();
+const mockStart = jest.fn();
 jest.mock("expo-speech-recognition", () => ({
   ExpoSpeechRecognitionModule: {
-    start: (opts: unknown) => startMock(opts),
+    start: (opts: unknown) => mockStart(opts),
   },
   AVAudioSessionCategory: {
     playAndRecord: "playAndRecord",
@@ -33,10 +33,10 @@ jest.mock("expo-speech-recognition", () => ({
   },
 }));
 
-const loggerWarn = jest.fn();
+const mockLoggerWarn = jest.fn();
 jest.mock("../services/logger", () => ({
   logger: {
-    warn: (...args: unknown[]) => loggerWarn(...args),
+    warn: (...args: unknown[]) => mockLoggerWarn(...args),
     error: jest.fn(),
     info: jest.fn(),
     debug: jest.fn(),
@@ -46,20 +46,20 @@ jest.mock("../services/logger", () => ({
 import { startSpeechSession } from "../utils/speechSession";
 
 beforeEach(() => {
-  speechStopMock.mockReset();
-  startMock.mockReset();
-  loggerWarn.mockReset();
+  mockSpeechStop.mockReset();
+  mockStart.mockReset();
+  mockLoggerWarn.mockReset();
 });
 
 describe("startSpeechSession", () => {
   it("calls Speech.stop() before ExpoSpeechRecognitionModule.start()", () => {
-    speechStopMock.mockReturnValue(undefined);
+    mockSpeechStop.mockReturnValue(undefined);
     const order: string[] = [];
-    speechStopMock.mockImplementationOnce(() => {
+    mockSpeechStop.mockImplementationOnce(() => {
       order.push("stop");
       return undefined;
     });
-    startMock.mockImplementationOnce(() => {
+    mockStart.mockImplementationOnce(() => {
       order.push("start");
     });
 
@@ -69,7 +69,7 @@ describe("startSpeechSession", () => {
   });
 
   it("forwards user options to ExpoSpeechRecognitionModule.start()", () => {
-    speechStopMock.mockReturnValue(undefined);
+    mockSpeechStop.mockReturnValue(undefined);
     startSpeechSession({
       lang: "es-ES",
       interimResults: false,
@@ -77,8 +77,8 @@ describe("startSpeechSession", () => {
       requiresOnDeviceRecognition: true,
     });
 
-    expect(startMock).toHaveBeenCalledTimes(1);
-    const opts = startMock.mock.calls[0][0];
+    expect(mockStart).toHaveBeenCalledTimes(1);
+    const opts = mockStart.mock.calls[0][0];
     expect(opts.lang).toBe("es-ES");
     expect(opts.interimResults).toBe(false);
     expect(opts.continuous).toBe(false);
@@ -86,10 +86,10 @@ describe("startSpeechSession", () => {
   });
 
   it("pins iOS audio category to playAndRecord/measurement when caller doesn't override", () => {
-    speechStopMock.mockReturnValue(undefined);
+    mockSpeechStop.mockReturnValue(undefined);
     startSpeechSession({ lang: "en-US", interimResults: true, continuous: true });
 
-    const opts = startMock.mock.calls[0][0];
+    const opts = mockStart.mock.calls[0][0];
     expect(opts.iosCategory).toBeDefined();
     expect(opts.iosCategory.category).toBe("playAndRecord");
     expect(opts.iosCategory.mode).toBe("measurement");
@@ -99,7 +99,7 @@ describe("startSpeechSession", () => {
   });
 
   it("respects a caller-supplied iosCategory instead of clobbering it", () => {
-    speechStopMock.mockReturnValue(undefined);
+    mockSpeechStop.mockReturnValue(undefined);
     const customCategory = {
       category: "record",
       categoryOptions: ["allowBluetooth"],
@@ -115,12 +115,12 @@ describe("startSpeechSession", () => {
       iosCategory: customCategory as any,
     });
 
-    const opts = startMock.mock.calls[0][0];
+    const opts = mockStart.mock.calls[0][0];
     expect(opts.iosCategory).toBe(customCategory);
   });
 
   it("swallows a synchronous Speech.stop() throw and still calls start()", () => {
-    speechStopMock.mockImplementationOnce(() => {
+    mockSpeechStop.mockImplementationOnce(() => {
       throw new Error("native module not linked");
     });
 
@@ -128,8 +128,8 @@ describe("startSpeechSession", () => {
       startSpeechSession({ lang: "en-US", interimResults: true, continuous: true })
     ).not.toThrow();
 
-    expect(startMock).toHaveBeenCalledTimes(1);
-    expect(loggerWarn).toHaveBeenCalledWith(
+    expect(mockStart).toHaveBeenCalledTimes(1);
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
       "Speech",
       "Speech.stop() threw before mic acquire",
       expect.any(Error)
@@ -140,20 +140,20 @@ describe("startSpeechSession", () => {
     // The bug fix: Speech.stop() returns Promise<void>; a sync try/catch
     // would NOT catch a rejected promise. The helper must chain .catch().
     const rejection = new Error("native rejection");
-    speechStopMock.mockImplementationOnce(() => Promise.reject(rejection));
+    mockSpeechStop.mockImplementationOnce(() => Promise.reject(rejection));
 
     expect(() =>
       startSpeechSession({ lang: "en-US", interimResults: true, continuous: true })
     ).not.toThrow();
 
     // start() still ran (we don't gate on TTS teardown completion)
-    expect(startMock).toHaveBeenCalledTimes(1);
+    expect(mockStart).toHaveBeenCalledTimes(1);
 
     // Drain microtasks so the .catch() runs and calls logger.warn
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(loggerWarn).toHaveBeenCalledWith(
+    expect(mockLoggerWarn).toHaveBeenCalledWith(
       "Speech",
       "Speech.stop() rejected before mic acquire",
       rejection
@@ -162,14 +162,14 @@ describe("startSpeechSession", () => {
 
   it("handles Speech.stop() returning a non-thenable without crashing", () => {
     // Some platforms / older expo-speech versions return undefined sync.
-    speechStopMock.mockReturnValue(undefined);
+    mockSpeechStop.mockReturnValue(undefined);
 
     expect(() =>
       startSpeechSession({ lang: "en-US", interimResults: true, continuous: true })
     ).not.toThrow();
 
-    expect(startMock).toHaveBeenCalledTimes(1);
+    expect(mockStart).toHaveBeenCalledTimes(1);
     // No logger.warn for the success path
-    expect(loggerWarn).not.toHaveBeenCalled();
+    expect(mockLoggerWarn).not.toHaveBeenCalled();
   });
 });

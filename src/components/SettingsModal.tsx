@@ -447,8 +447,13 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
           60_000
         ).offline ?? 0;
         if (offlineWarnRolling > 0) {
+          // Append session-OK denominator (#191) so the absolute count has a
+          // calibration anchor — "3 warns / session OK 47" reads very
+          // differently from "3 warns / session OK 0".
+          const sessionContext =
+            queue.success > 0 ? ` (session OK ${queue.success})` : "";
           diagnosticsLines.push(
-            `  Offline queue (last 60s): ${offlineWarnRolling} warn${offlineWarnRolling === 1 ? "" : "s"}`
+            `  Offline queue (last 60s): ${offlineWarnRolling} warn${offlineWarnRolling === 1 ? "" : "s"}${sessionContext}`
           );
         }
         // Errors-by-tag breakdown via logger.countBy (#119). Gives the person
@@ -1047,9 +1052,16 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                             dynamicStyles.infoText,
                             { color: colors.errorText },
                           ]}
-                          accessibilityLabel={`${offlineFailLast60s} offline queue warnings in the last 60 seconds`}
+                          accessibilityLabel={
+                            offlineQueueStats.success > 0
+                              ? `${offlineFailLast60s} offline queue warnings in the last 60 seconds, against ${offlineQueueStats.success} successful items this session`
+                              : `${offlineFailLast60s} offline queue warnings in the last 60 seconds`
+                          }
                         >
                           Last 60s: {offlineFailLast60s} warn{offlineFailLast60s === 1 ? "" : "s"}
+                          {offlineQueueStats.success > 0
+                            ? ` · session OK ${offlineQueueStats.success}`
+                            : ""}
                         </Text>
                       )}
                     </View>
