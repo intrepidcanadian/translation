@@ -152,4 +152,119 @@ describe("preprocessOCRPriceWraps (#215)", () => {
       expect(found.length).toBe(1);
     });
   });
+
+  // #198: context-aware no-comma wrap pass. Gated by a TOTAL-style keyword
+  // so we only merge shapes where the surrounding context makes it
+  // unambiguous — legitimate distinct-price sequences without the keyword
+  // must still pass through untouched.
+  describe("keyword-gated no-comma wrap (#198)", () => {
+    describe("positive — merges when gated by a total-style keyword", () => {
+      it("merges GRAND TOTAL $1\\n234.56 into GRAND TOTAL $1234.56", () => {
+        expect(preprocessOCRPriceWraps("GRAND TOTAL $1\n234.56")).toBe("GRAND TOTAL $1234.56");
+      });
+
+      it("merges TOTAL €1\\n234.50 into TOTAL €1234.50", () => {
+        expect(preprocessOCRPriceWraps("TOTAL €1\n234.50")).toBe("TOTAL €1234.50");
+      });
+
+      it("merges SUBTOTAL $12\\n345.67 (2-digit head) into SUBTOTAL $12345.67", () => {
+        expect(preprocessOCRPriceWraps("SUBTOTAL $12\n345.67")).toBe("SUBTOTAL $12345.67");
+      });
+
+      it("merges AMOUNT DUE £1\\n234.56 (keyword with trailing word) into AMOUNT DUE £1234.56", () => {
+        expect(preprocessOCRPriceWraps("AMOUNT DUE £1\n234.56")).toBe("AMOUNT DUE £1234.56");
+      });
+
+      it("merges BALANCE DUE: $1\\n234.56 (colon + space)", () => {
+        expect(preprocessOCRPriceWraps("BALANCE DUE: $1\n234.56")).toBe("BALANCE DUE: $1234.56");
+      });
+
+      it("merges TO PAY ¥1\\n234.00 (TO PAY variant)", () => {
+        expect(preprocessOCRPriceWraps("TO PAY ¥1\n234.00")).toBe("TO PAY ¥1234.00");
+      });
+
+      it("merges NET TOTAL ₹1\\n234.56 (NET TOTAL variant)", () => {
+        expect(preprocessOCRPriceWraps("NET TOTAL ₹1\n234.56")).toBe("NET TOTAL ₹1234.56");
+      });
+
+      it("merges Total $123\\n456.78 (3-digit head → 6-digit integer)", () => {
+        expect(preprocessOCRPriceWraps("Total $123\n456.78")).toBe("Total $123456.78");
+      });
+
+      it("keyword match is case-insensitive", () => {
+        expect(preprocessOCRPriceWraps("grand total $1\n234.56")).toBe("grand total $1234.56");
+        expect(preprocessOCRPriceWraps("Total $1\n234.56")).toBe("Total $1234.56");
+      });
+    });
+
+    describe("negative — false-positive guards for no-comma pass", () => {
+      it("does NOT merge when there is no total-style keyword", () => {
+        // Without the keyword, `$1\n234.56` is ambiguous with a distinct-price
+        // sequence and must pass through. This is the #215 baseline behavior.
+        expect(preprocessOCRPriceWraps("Item $1\n234.56")).toBe("Item $1\n234.56");
+        expect(preprocessOCRPriceWraps("$1\n234.56")).toBe("$1\n234.56");
+      });
+
+      it("does NOT merge when the wrapped segment is not exactly 3 digits", () => {
+        // 3 digits is the thousands-grouping constraint. A 4-digit wrapped
+        // segment `$1\n2345.67` doesn't fit the shape and may be ambiguous.
+        expect(preprocessOCRPriceWraps("TOTAL $1\n2345.67")).toBe("TOTAL $1\n2345.67");
+        // And a 2-digit wrapped segment would collapse to a 3-digit number
+        // which doesn't need thousands grouping — not the target shape.
+        expect(preprocessOCRPriceWraps("TOTAL $1\n23.45")).toBe("TOTAL $1\n23.45");
+      });
+
+      it("does NOT merge when the decimal tail is followed by another digit", () => {
+        // `(?!\d)` negative lookahead — prevents eating into garbage digit runs.
+        expect(preprocessOCRPriceWraps("TOTAL $1\n234.56789")).toBe("TOTAL $1\n234.56789");
+      });
+
+      it("does NOT merge when the keyword is on a distant earlier line", () => {
+        // The `.{0,20}?` lazy fill between keyword and sigil caps how much
+        // text can bridge them, so a keyword 3 lines above can't anchor.
+        const distant = "TOTAL COUNT\n\n\nItem $1\n234.56";
+        expect(preprocessOCRPriceWraps(distant)).toBe(distant);
+      });
+
+      it("does NOT merge when the keyword has more than 20 chars before the sigil", () => {
+        // Keyword + long filler + sigil exceeds the 20-char window — the
+        // lazy fill won't match, so the wrap stays as-is. Protects against
+        // a keyword 5 words away anchoring to an unrelated number.
+        const longFiller = "TOTAL purchases made during the trip $1\n234.56";
+        expect(preprocessOCRPriceWraps(longFiller)).toBe(longFiller);
+      });
+
+      it("does NOT double-merge a comma wrap that the #215 pass already handled", () => {
+        // #215 merges `$1,2\n34.56` first; the no-comma pass then sees
+        // `TOTAL $1234.56` on a single line with no `\n` between head and
+        // tail, so it finds nothing to change. Idempotence across passes.
+        const merged = preprocessOCRPriceWraps("TOTAL $1,2\n34.56");
+        expect(merged).toBe("TOTAL $1234.56");
+        expect(preprocessOCRPriceWraps(merged)).toBe(merged);
+      });
+    });
+
+    describe("pipeline integration with detectPricesInText", () => {
+      it("extracts a keyword-gated merge as a single USD price", () => {
+        const found = detectPricesInText("GRAND TOTAL $1\n234.56");
+        expect(found).toContainEqual(
+          expect.objectContaining({ currency: "USD", amount: 1234.56 })
+        );
+        // Should not see a stray fragment for either half of the wrap.
+        expect(found.length).toBe(1);
+      });
+
+      it("leaves ungated shapes alone so distinct prices still extract", () => {
+        // No keyword → both halves parse as distinct prices. This is the
+        // control case that proves the keyword gate is actually gating.
+        const found = detectPricesInText("Total $5\n10 items cost $234.56");
+        // The conservative reading finds $5 and $234.56 as two distinct
+        // prices, not a merged $510 or $5234.56. The "Total $5" is a
+        // distinct line from the "10 items" count.
+        expect(found.map((p) => p.amount)).toEqual(
+          expect.arrayContaining([5, 234.56])
+        );
+      });
+    });
+  });
 });
