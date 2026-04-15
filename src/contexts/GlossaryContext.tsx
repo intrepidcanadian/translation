@@ -109,10 +109,33 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
       });
   }, []);
 
-  // Persist glossary changes (skip initial load). Writes the primary and the
-  // backup together so the backup is always at most one "good save" behind
-  // — a corruption that flips the primary after the next write leaves the
-  // backup holding the pre-corruption state.
+  // Debounced backup-write timer. The primary glossary write happens on
+  // every change so the user's edits are durable immediately; the backup
+  // write is debounced so a burst of edits (e.g. importing a CSV row by row
+  // or rapidly adding entries via the modal) coalesces into a single backup
+  // rewrite. The backup is the "last-known-good" snapshot — it only matters
+  // for catastrophic corruption recovery (#137), which is much rarer than
+  // routine writes, so trading some recency for less I/O is the right call.
+  const backupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Cancel any pending debounced backup write on unmount so the timer
+  // doesn't fire after the provider tears down (and so a fast app-close
+  // can't write a stale snapshot).
+  useEffect(() => {
+    return () => {
+      if (backupTimerRef.current !== null) {
+        clearTimeout(backupTimerRef.current);
+        backupTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Persist glossary changes (skip initial load). The primary write is
+  // immediate so the live glossary on disk always matches state — losing an
+  // edit during a crash window would surprise users. The backup write is
+  // debounced (#186) so an edit burst doesn't double the AsyncStorage I/O on
+  // every keystroke; the LKG snapshot only needs to be roughly current to
+  // serve its corruption-recovery role.
   useEffect(() => {
     if (!loaded.current) return;
     const serialized = JSON.stringify(glossary);
@@ -128,9 +151,20 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
     // it. Tradeoff: a cleared-but-never-re-added glossary keeps its stale
     // backup until the next add, which is harmless.
     if (glossary.length > 0) {
-      AsyncStorage.setItem(GLOSSARY_BACKUP_KEY, serialized).catch((err) =>
-        logger.warn("Glossary", "Failed to save glossary backup", err)
-      );
+      // Debounce 5s — long enough that a typical "add 10 entries in a row"
+      // session collapses to a single backup write, short enough that a
+      // crash within seconds of the last edit still has a fresh backup.
+      // Matches the telemetry persist debounce (PERSIST_DEBOUNCE_MS) for
+      // consistency with the rest of the app's "expensive write" knobs.
+      if (backupTimerRef.current !== null) {
+        clearTimeout(backupTimerRef.current);
+      }
+      backupTimerRef.current = setTimeout(() => {
+        backupTimerRef.current = null;
+        AsyncStorage.setItem(GLOSSARY_BACKUP_KEY, serialized).catch((err) =>
+          logger.warn("Glossary", "Failed to save glossary backup", err)
+        );
+      }, 5_000);
     }
   }, [glossary]);
 

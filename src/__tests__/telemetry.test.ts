@@ -122,6 +122,49 @@ describe("telemetry counters", () => {
     expect(tm.getTypeAheadLocalRatio()).toBeCloseTo(0.4, 5);
   });
 
+  // #181: speech.permissionDenied gets its own counter so OS-level mic-
+  // permission denials (the user revoked the mic in Settings mid-session) are
+  // distinguishable from translate failures and no-speech bursts on the
+  // diagnostics dashboard. The recovery flow is "Open Settings", not "retry
+  // / switch provider", so the dashboard line MUST be a separate signal.
+  describe("speech.permissionDenied counter (#181)", () => {
+    it("starts at zero and increments independently of translateFail", () => {
+      const tm = loadTelemetry();
+      expect(tm.get("speech.permissionDenied")).toBe(0);
+      tm.increment("speech.permissionDenied");
+      tm.increment("speech.translateFail", 4);
+      // Bumping translateFail must not leak into permissionDenied (and vice
+      // versa). Pin the isolation — a bug that aliases the two would make
+      // the dashboard recommend the wrong recovery action.
+      expect(tm.get("speech.permissionDenied")).toBe(1);
+      expect(tm.get("speech.translateFail")).toBe(4);
+    });
+
+    it("contributes to neither getTypeAheadTotal nor getOfflineQueueStats", () => {
+      // Regression fence: a future helper that naively iterates `counters`
+      // could accidentally fold permissionDenied into the type-ahead or
+      // offline-queue aggregates and corrupt the dashboards.
+      const tm = loadTelemetry();
+      tm.increment("speech.permissionDenied", 5);
+      expect(tm.getTypeAheadTotal()).toBe(0);
+      const queue = tm.getOfflineQueueStats();
+      expect(queue.success).toBe(0);
+      expect(queue.failed).toBe(0);
+      expect(queue.total).toBe(0);
+    });
+
+    it("reset() zeroes permissionDenied alongside the other speech counters", () => {
+      const tm = loadTelemetry();
+      tm.increment("speech.permissionDenied", 2);
+      tm.increment("speech.noSpeech", 3);
+      tm.increment("speech.translateSuccess", 1);
+      tm.reset();
+      expect(tm.get("speech.permissionDenied")).toBe(0);
+      expect(tm.get("speech.noSpeech")).toBe(0);
+      expect(tm.get("speech.translateSuccess")).toBe(0);
+    });
+  });
+
   // #174: offline-queue counters. Keys are typed so a typo rejects at
   // compile time; these tests pin the runtime behavior + the
   // `getOfflineQueueStats` aggregate so the Settings diagnostics dashboard

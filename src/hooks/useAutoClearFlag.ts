@@ -22,41 +22,38 @@
  * and cancels any pending auto-clear.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  createAutoClearController,
+  type AutoClearController,
+} from "../utils/autoClearController";
 
 type Setter<T> = (value: T | null) => void;
 
 export function useAutoClearFlag<T = string>(durationMs: number = 1500): [T | null, Setter<T>] {
   const [value, setValue] = useState<T | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const clearTimer = useCallback(() => {
-    if (timerRef.current !== null) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
+  // Build a single pure controller per (durationMs) and route its
+  // notifications into React state. The controller owns all timer lifecycle
+  // — the hook is now just a React adapter on top of `autoClearController`,
+  // which is unit-tested in isolation (#185). useMemo keeps the controller
+  // identity stable across renders so the consumer's setFlag stays stable
+  // too.
+  const controller: AutoClearController<T> = useMemo(
+    () => createAutoClearController<T>(durationMs, setValue),
+    [durationMs]
+  );
 
   // Clear any pending timer on unmount so a late setter never lands on a
   // torn-down tree. This is the whole reason the hook exists — the inline
   // setTimeout pattern it replaces couldn't do this.
   useEffect(() => {
-    return () => clearTimer();
-  }, [clearTimer]);
+    return () => controller.dispose();
+  }, [controller]);
 
-  const setFlag = useCallback<Setter<T>>(
-    (next) => {
-      clearTimer();
-      setValue(next);
-      if (next !== null) {
-        timerRef.current = setTimeout(() => {
-          timerRef.current = null;
-          setValue(null);
-        }, durationMs);
-      }
-    },
-    [clearTimer, durationMs]
-  );
+  // Consumer setter delegates to the controller; the controller notifies
+  // React via the onChange callback above.
+  const setFlag: Setter<T> = controller.set;
 
   return [value, setFlag];
 }

@@ -60,6 +60,12 @@ interface SpeechStats {
    * dashboard can distinguish "silent user" sessions from broken-mic failures
    * without polluting the translate-fail rate. */
   noSpeech: number;
+  /** #181: OS-level mic-permission denials. Counter already populated by the
+   * `useSpeechRecognition` `not-allowed` error branch (#180); surfaced here as
+   * a dedicated line so permission churn is visually distinct from translate
+   * failures and no-speech bursts. The recovery flow is "Open Settings", not
+   * "retry / switch provider", so it deserves its own bucket. */
+  permissionDenied: number;
   total: number;
 }
 
@@ -77,7 +83,8 @@ function computeSpeechStats(): SpeechStats {
   const success = t["speech.translateSuccess"];
   const fail = t["speech.translateFail"];
   const noSpeech = t["speech.noSpeech"];
-  return { success, fail, noSpeech, total: success + fail };
+  const permissionDenied = t["speech.permissionDenied"];
+  return { success, fail, noSpeech, permissionDenied, total: success + fail };
 }
 
 /**
@@ -166,6 +173,14 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   // get real telemetry from prod.
   const SPEECH_FAIL_WINDOW_MS = 60_000;
   const [speechFailLast60s, setSpeechFailLast60s] = useState(0);
+  // #187: rolling 60s offline-queue warn count. Same window as the speech
+  // rolling fail line — answers "is the offline queue actively burning right
+  // now?" without having to interpret the session totals. The denominator
+  // math for a fail-rate would be slippery (Offline warns are per-item, not
+  // per-session), so we surface this as an absolute count and let the reader
+  // calibrate against the session OK/Fail line right above it.
+  const OFFLINE_FAIL_WINDOW_MS = 60_000;
+  const [offlineFailLast60s, setOfflineFailLast60s] = useState(0);
   // Collapsible debug sub-sections. Each defaults to collapsed; we auto-expand
   // an urgent section (open breaker, last crash) the first time the modal
   // renders so the user notices what needs attention.
@@ -202,6 +217,19 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     return byTag.speech ?? 0;
   }, []);
 
+  // #187: same shape as computeSpeechFailWindow, but for the new "Offline"
+  // log tag (#184) so the offline-queue rolling fail surface stays in lock-
+  // step with the speech rolling fail surface — both reset on the same
+  // 60s window and update on the same Refresh action.
+  const computeOfflineFailWindow = useCallback((): number => {
+    const byTag = logger.countByRolling(
+      { tags: ["Offline"], levels: ["warn", "error"] },
+      () => "offline",
+      OFFLINE_FAIL_WINDOW_MS
+    );
+    return byTag.offline ?? 0;
+  }, []);
+
   useEffect(() => {
     if (!visible) return;
     const snapshots = getCircuitSnapshots();
@@ -211,8 +239,9 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     setSpeechStats(computeSpeechStats());
     setOfflineQueueStats(getOfflineQueueStats());
     setSpeechFailLast60s(computeSpeechFailWindow());
+    setOfflineFailLast60s(computeOfflineFailWindow());
     if (snapshots.some((s) => s.open)) setDiagnosticsExpanded(true);
-  }, [visible, computeSpeechFailWindow]);
+  }, [visible, computeSpeechFailWindow, computeOfflineFailWindow]);
 
   const refreshDiagnostics = useCallback(() => {
     setCircuitSnapshots(getCircuitSnapshots());
@@ -221,7 +250,8 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     setSpeechStats(computeSpeechStats());
     setOfflineQueueStats(getOfflineQueueStats());
     setSpeechFailLast60s(computeSpeechFailWindow());
-  }, [computeSpeechFailWindow]);
+    setOfflineFailLast60s(computeOfflineFailWindow());
+  }, [computeSpeechFailWindow, computeOfflineFailWindow]);
 
   const handleResetCircuits = useCallback(() => {
     resetCircuits();
@@ -362,6 +392,16 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
         if (speech.noSpeech > 0) {
           diagnosticsLines.push(`  Speech recognition: ${speech.noSpeech} no-speech event(s)`);
         }
+        // #181: dedicated permission-denied line so a crash reader can tell
+        // a "user revoked the mic mid-session" incident from a translate
+        // failure burst. The recovery flow is completely different (deep-
+        // link to Settings vs. provider switch / retry) and the diagnostic
+        // reader needs to know which one to recommend.
+        if (speech.permissionDenied > 0) {
+          diagnosticsLines.push(
+            `  Speech permission denied: ${speech.permissionDenied} event(s)`
+          );
+        }
         // #156: when the session has only no-speech events and no successful
         // translations, strongly suggest a muted mic / quiet environment so
         // the crash reader can escalate past "just a flaky session".
@@ -396,6 +436,20 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
           if (queue.deadLetter > 0) {
             diagnosticsLines.push(`  Offline queue dead-lettered: ${queue.deadLetter}`);
           }
+        }
+        // #187: rolling 60s Offline-tag warn count, paired with the speech
+        // rolling fail line above. Crash readers see "session: 200 fail" and
+        // can't tell if the burn happened five minutes ago or right now —
+        // the rolling window resolves that without forcing a tag drilldown.
+        const offlineWarnRolling = logger.countByRolling(
+          { tags: ["Offline"], levels: ["warn", "error"] },
+          () => "offline",
+          60_000
+        ).offline ?? 0;
+        if (offlineWarnRolling > 0) {
+          diagnosticsLines.push(
+            `  Offline queue (last 60s): ${offlineWarnRolling} warn${offlineWarnRolling === 1 ? "" : "s"}`
+          );
         }
         // Errors-by-tag breakdown via logger.countBy (#119). Gives the person
         // reading the report a quick "which subsystem is on fire?" view
@@ -848,7 +902,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                       translate successes/failures so systematically-failing mic
                       paths are visible in diagnostics + crash reports even
                       though speech errors are silent to the user (#132). */}
-                  {speechStats && (speechStats.total > 0 || speechStats.noSpeech > 0) && (
+                  {speechStats && (speechStats.total > 0 || speechStats.noSpeech > 0 || speechStats.permissionDenied > 0) && (
                     <View style={styles.telemetryBlock}>
                       <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
                         Speech translate (session):
@@ -877,6 +931,29 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                           accessibilityLabel={`${speechStats.noSpeech} no-speech events this session`}
                         >
                           No-speech events: {speechStats.noSpeech}
+                        </Text>
+                      )}
+                      {/* #181: OS-level mic-permission denials. Counter is
+                          incremented by `useSpeechRecognition`'s `not-allowed`
+                          branch (#180). Surfaced as its own line — and tinted
+                          errorText — because the recovery flow is "Open
+                          Settings", not "retry / switch provider", so it
+                          deserves to stand out from translate failures and
+                          no-speech bursts. The errorsByTag block already
+                          captures the same event at the tag level via the
+                          `Speech` warn, but a dedicated counter line gives
+                          the dashboard a numeric signal without forcing the
+                          user to mentally reverse-engineer the tag total. */}
+                      {speechStats.permissionDenied > 0 && (
+                        <Text
+                          style={[
+                            styles.infoText,
+                            dynamicStyles.infoText,
+                            { color: colors.errorText },
+                          ]}
+                          accessibilityLabel={`${speechStats.permissionDenied} microphone permission denial event${speechStats.permissionDenied === 1 ? "" : "s"} this session`}
+                        >
+                          Permission denied: {speechStats.permissionDenied}
                         </Text>
                       )}
                       {/* #156: mic-muted / quiet-environment hint. Only fires
@@ -925,7 +1002,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                       dropped. Lets a user who wonders "did my typed-while-
                       offline translations actually land" get a straight
                       answer without reading logs. */}
-                  {offlineQueueStats && (offlineQueueStats.total > 0 || offlineQueueStats.deadLetter > 0) && (
+                  {offlineQueueStats && (offlineQueueStats.total > 0 || offlineQueueStats.deadLetter > 0 || offlineFailLast60s > 0) && (
                     <View style={styles.telemetryBlock}>
                       <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
                         Offline queue (session):
@@ -954,6 +1031,25 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                           accessibilityLabel={`${offlineQueueStats.deadLetter} queue items permanently dropped after exhausting retries`}
                         >
                           ⚠ Dead-lettered: {offlineQueueStats.deadLetter}
+                        </Text>
+                      )}
+                      {/* #187: rolling 60s offline-tag warn count. Counterpart
+                          to the speech "Last 60s" line — the session totals
+                          above keep growing after an outage clears, so the
+                          rolling count is the honest "is it on fire right
+                          now" signal. Absolute count rather than a fail rate
+                          because Offline warns are per-item and the
+                          denominator over a 60s window is meaningless. */}
+                      {offlineFailLast60s > 0 && (
+                        <Text
+                          style={[
+                            styles.infoText,
+                            dynamicStyles.infoText,
+                            { color: colors.errorText },
+                          ]}
+                          accessibilityLabel={`${offlineFailLast60s} offline queue warnings in the last 60 seconds`}
+                        >
+                          Last 60s: {offlineFailLast60s} warn{offlineFailLast60s === 1 ? "" : "s"}
                         </Text>
                       )}
                     </View>
