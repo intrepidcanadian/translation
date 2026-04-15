@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { View, StyleSheet, Dimensions } from "react-native";
 
 /**
@@ -21,9 +21,28 @@ import { View, StyleSheet, Dimensions } from "react-native";
  * Drop `<GlassBackdrop />` inside any screen container, BEFORE the actual
  * content but AFTER the SafeAreaView, so it fills the safe area and the
  * content renders on top.
+ *
+ * Subscribes to Dimensions changes so the third (mid-left) blob — which
+ * is positioned relative to `height` rather than purely off-screen —
+ * tracks rotation. The previous version cached the initial dimensions at
+ * first render, which left a visibly-stale blob position on landscape
+ * rotation since the wrapping View redraws but the blob `top` value was
+ * frozen at portrait height.
  */
 function GlassBackdrop() {
-  const { width, height } = Dimensions.get("window");
+  const [dims, setDims] = useState(() => Dimensions.get("window"));
+
+  useEffect(() => {
+    // RN ≥ 0.65 returns a subscription handle from addEventListener; older
+    // versions returned void and required removeEventListener. We use the
+    // modern API since this app pins a recent Expo SDK.
+    const sub = Dimensions.addEventListener("change", ({ window }) => {
+      setDims(window);
+    });
+    return () => sub.remove();
+  }, []);
+
+  const { width, height } = dims;
   // Blob size scales with the larger screen dimension so rotations and
   // landscape don't reveal hard edges. 1.4× covers all reasonable aspect
   // ratios including iPad split view.

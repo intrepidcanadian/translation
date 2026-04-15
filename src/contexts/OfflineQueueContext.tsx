@@ -5,22 +5,10 @@ import { notifySuccess } from "../services/haptics";
 import { translateText } from "../services/translation";
 import { logger } from "../services/logger";
 import { increment as telemetryIncrement } from "../services/telemetry";
+import { computeBackoff, MAX_ATTEMPTS } from "../utils/offlineQueueBackoff";
 import { useSettings } from "./SettingsContext";
 
 const OFFLINE_QUEUE_KEY = "offline_translation_queue";
-
-// Exponential backoff tuning for per-item retries. After MAX_ATTEMPTS failures
-// an item is dead-lettered (dropped + logged) so one permanently-failing phrase
-// can't wedge the queue forever.
-const MAX_ATTEMPTS = 5;
-const BASE_BACKOFF_MS = 2_000;    // 2s before the first retry
-const MAX_BACKOFF_MS = 300_000;   // cap at 5 minutes
-
-/** Exponential backoff with a ceiling. attempts starts at 1 (first failure). */
-function computeBackoff(attempts: number): number {
-  const expo = BASE_BACKOFF_MS * 2 ** Math.max(0, attempts - 1);
-  return Math.min(expo, MAX_BACKOFF_MS);
-}
 
 interface OfflineQueueItem {
   text: string;

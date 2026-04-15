@@ -6,6 +6,7 @@ import {
   AVAudioSessionMode,
   type ExpoSpeechRecognitionOptions,
 } from "expo-speech-recognition";
+import { logger } from "../services/logger";
 
 /**
  * Shared speech-recognition start path that hardens against the iOS
@@ -33,14 +34,22 @@ import {
  * repo MUST go through this helper. Direct calls re-introduce the bug.
  */
 export function startSpeechSession(options: ExpoSpeechRecognitionOptions): void {
-  // Defensive TTS teardown. Speech.stop() can throw on platforms where no
-  // utterance is queued, hence the try/catch. We don't await it because
-  // expo-speech's stop is synchronous on the JS side and the native
-  // AVSpeechSynthesizer release happens before start() reaches native.
+  // Defensive TTS teardown. Speech.stop() returns a Promise<void> on RN, so a
+  // synchronous try/catch only catches the rare synchronous throw paths
+  // (e.g. native module not linked); a *rejected* promise would otherwise
+  // surface as an unhandled rejection. Chain a .catch() to swallow both
+  // shapes, and run a sync try/catch around the call site so the .catch()
+  // chain itself can't throw on platforms where Speech.stop() returns
+  // undefined instead of a thenable.
   try {
-    Speech.stop();
-  } catch {
-    /* no-op */
+    const maybe = Speech.stop() as unknown;
+    if (maybe && typeof (maybe as Promise<unknown>).then === "function") {
+      (maybe as Promise<unknown>).catch((err) =>
+        logger.warn("Speech", "Speech.stop() rejected before mic acquire", err)
+      );
+    }
+  } catch (err) {
+    logger.warn("Speech", "Speech.stop() threw before mic acquire", err);
   }
 
   ExpoSpeechRecognitionModule.start({

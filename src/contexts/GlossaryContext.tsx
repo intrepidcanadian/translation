@@ -117,15 +117,33 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
   // for catastrophic corruption recovery (#137), which is much rarer than
   // routine writes, so trading some recency for less I/O is the right call.
   const backupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // #189: holds the most recently scheduled (but not yet written) serialized
+  // backup so the unmount cleanup can flush it synchronously instead of
+  // dropping it. Cleared whenever the timer fires successfully.
+  const pendingBackupRef = useRef<string | null>(null);
 
-  // Cancel any pending debounced backup write on unmount so the timer
-  // doesn't fire after the provider tears down (and so a fast app-close
-  // can't write a stale snapshot).
+  // On unmount, flush any pending debounced backup write instead of just
+  // cancelling it. The previous behavior (cancel-only) meant a fast
+  // app-close within 5s of the last edit lost up to one debounce window of
+  // LKG-backup recency — primary writes are immediate so the data wasn't
+  // lost, but the corruption-recovery snapshot lagged by one cycle. Now
+  // the cleanup writes the staged blob directly and clears the timer.
+  // AsyncStorage.setItem is fire-and-forget here for the same reason it is
+  // in the timer body: we can't await inside a synchronous useEffect
+  // cleanup, and a single failed write only means the next launch
+  // rehydrates from the previous backup (which the resolver handles).
   useEffect(() => {
     return () => {
       if (backupTimerRef.current !== null) {
         clearTimeout(backupTimerRef.current);
         backupTimerRef.current = null;
+      }
+      if (pendingBackupRef.current !== null) {
+        const flushPayload = pendingBackupRef.current;
+        pendingBackupRef.current = null;
+        AsyncStorage.setItem(GLOSSARY_BACKUP_KEY, flushPayload).catch((err) =>
+          logger.warn("Glossary", "Failed to flush glossary backup on unmount", err)
+        );
       }
     };
   }, []);
@@ -159,11 +177,21 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
       if (backupTimerRef.current !== null) {
         clearTimeout(backupTimerRef.current);
       }
+      // #189: stage the latest serialized payload so the unmount cleanup
+      // can flush it synchronously if the timer hasn't fired yet. The ref
+      // always reflects the *latest* state — bursts overwrite earlier
+      // staged values, which is correct because the timer body would have
+      // done the same thing.
+      pendingBackupRef.current = serialized;
       backupTimerRef.current = setTimeout(() => {
         backupTimerRef.current = null;
-        AsyncStorage.setItem(GLOSSARY_BACKUP_KEY, serialized).catch((err) =>
-          logger.warn("Glossary", "Failed to save glossary backup", err)
-        );
+        const payload = pendingBackupRef.current;
+        pendingBackupRef.current = null;
+        if (payload !== null) {
+          AsyncStorage.setItem(GLOSSARY_BACKUP_KEY, payload).catch((err) =>
+            logger.warn("Glossary", "Failed to save glossary backup", err)
+          );
+        }
       }, 5_000);
     }
   }, [glossary]);
