@@ -24,6 +24,9 @@
         "NSPhotoLibraryUsageDescription": "Allow Live Translator to save or select images for text recognition and translation.",
         "NSLocationWhenInUseUsageDescription": "Live Translator may use your location to improve translation suggestions for nearby languages.",
         "ITSAppUsesNonExemptEncryption": false
+      },
+      "entitlements": {
+        "com.apple.security.application-groups": ["group.com.tonylau.livetranslator"]
       }
     },
     "android": {

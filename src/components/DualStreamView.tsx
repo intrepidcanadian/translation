@@ -12,7 +12,6 @@ import {
   Linking,
 } from "react-native";
 import {
-  Camera,
   useCameraDevice,
   useCameraPermission,
 } from "react-native-vision-camera";
@@ -22,6 +21,7 @@ import {
   useSpeechRecognitionEvent,
 } from "expo-speech-recognition";
 import * as Speech from "expo-speech";
+import { startSpeechSession } from "../utils/speechSession";
 import type { TranslationProvider } from "../services/translation";
 import { translateText } from "../services/translation";
 import { clearOCRCache } from "../services/ocrTranslation";
@@ -423,7 +423,8 @@ export default function DualStreamView({
       const speechLang =
         sourceLangCode === "autodetect" ? "en-US" : sourceSpeechCode;
 
-      ExpoSpeechRecognitionModule.start({
+      // See src/utils/speechSession.ts — guards against -11803 / -16409.
+      startSpeechSession({
         lang: speechLang,
         interimResults: true,
         continuous: true,
@@ -499,22 +500,22 @@ export default function DualStreamView({
 
   return (
     <View style={styles.container}>
-      {/* Camera for photo capture (behind OCR camera — needed for device ref) */}
-      <Camera
-        style={StyleSheet.absoluteFill}
-        device={device}
-        isActive={visible}
-        photo={false}
-      />
-
-      {/* Live OCR camera */}
+      {/* Single AVCaptureSession only. The previous version mounted a bare
+          <Camera> alongside <OCRCamera> on the same back-camera device — iOS
+          can't share a device between two sessions, which silently broke
+          live OCR and could leave the audio/video stack in a bad state that
+          cascaded into mic-record failures (-11803 / -16409) when the user
+          tapped the mic. OCRCamera's wrapper spreads props onto the
+          underlying VisionCamera, so this single instance handles preview
+          + live OCR. Pause is implemented by no-op'ing the callback so we
+          don't repeatedly tear down/rebuild the capture session. */}
       <OCRCamera
         style={StyleSheet.absoluteFill}
         device={device}
-        isActive={visible && !isPaused}
+        isActive={visible}
         mode="recognize"
         options={{ language: getOCRLanguage(sourceLangCode) }}
-        callback={handleOCRResult}
+        callback={isPaused ? () => {} : handleOCRResult}
       />
 
       {/* OCR text overlays */}

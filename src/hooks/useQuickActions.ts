@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import * as QuickActions from "expo-quick-actions";
 import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
+import { startSpeechSession } from "../utils/speechSession";
 import { NavigationContainerRefWithCurrent } from "@react-navigation/native";
 import { useSettings } from "../contexts/SettingsContext";
 import { logger } from "../services/logger";
@@ -64,7 +65,8 @@ export function useQuickActions(navigationRef: NavigationContainerRefWithCurrent
           try {
             const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
             if (result.granted) {
-              ExpoSpeechRecognitionModule.start({ lang: "en-US", interimResults: true, continuous: true, requiresOnDeviceRecognition: settings.offlineSpeech });
+              // See src/utils/speechSession.ts — guards against -11803 / -16409.
+              startSpeechSession({ lang: "en-US", interimResults: true, continuous: true, requiresOnDeviceRecognition: settings.offlineSpeech });
             }
           } catch (err) {
             logger.warn("Speech", "Quick action voice translate failed", err);

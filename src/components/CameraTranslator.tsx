@@ -10,8 +10,8 @@ import {
   ActivityIndicator,
   Animated,
 } from "react-native";
+import type { Camera } from "react-native-vision-camera";
 import {
-  Camera,
   useCameraDevice,
   useCameraPermission,
 } from "react-native-vision-camera";
@@ -260,26 +260,24 @@ export default function CameraTranslator({
 
   return (
     <View style={styles.container}>
-      {/* Standard Camera for photo capture (behind OCR camera) */}
+      {/* Single camera session handles both live OCR frame processing and
+          photo capture. iOS AVCaptureSession can only bind one session per
+          device, so we must NOT render a second <Camera> on the same device —
+          doing so silently breaks live recognition and leaves the capture
+          session in a state that can cascade into mic-record failures when
+          the user later taps the record button. OCRCamera is a wrapper that
+          forwards ref + spreads props onto the underlying VisionCamera, so
+          passing `photo` and `captureRef` here gives us capture for free. */}
       {!isCaptured && (
-        <Camera
+        <OCRCamera
           ref={captureRef}
           style={StyleSheet.absoluteFill}
           device={device}
           isActive={visible && !isCaptured}
-          photo={true}
-        />
-      )}
-
-      {/* Live OCR camera (on top, handles real-time frame processing) */}
-      {!isCaptured && (
-        <OCRCamera
-          style={StyleSheet.absoluteFill}
-          device={device}
-          isActive={visible && !isPaused && !isCaptured}
           mode="recognize"
+          photo={true}
           options={{ language: getOCRLanguage(sourceLangCode) }}
-          callback={handleOCRResult}
+          callback={isPaused ? () => {} : handleOCRResult}
         />
       )}
 

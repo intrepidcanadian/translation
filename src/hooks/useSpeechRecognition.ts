@@ -5,6 +5,7 @@ import {
   useSpeechRecognitionEvent,
 } from "expo-speech-recognition";
 import * as Speech from "expo-speech";
+import { startSpeechSession } from "../utils/speechSession";
 import { impactLight, impactMedium } from "../services/haptics";
 import { translateText } from "../services/translation";
 import type { TranslationProvider } from "../services/translation";
@@ -336,7 +337,10 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
         ? opts.targetSpeechCode
         : (opts.sourceLangCode === "autodetect" ? "en-US" : opts.sourceSpeechCode);
 
-      ExpoSpeechRecognitionModule.start({
+      // Routed through startSpeechSession (src/utils/speechSession.ts) which
+      // stops in-flight TTS and pins the iOS audio category — the only
+      // reliable way to avoid AVFoundation -11803 / OSStatus -16409 here.
+      startSpeechSession({
         lang: speechLang,
         interimResults: true,
         continuous: true,

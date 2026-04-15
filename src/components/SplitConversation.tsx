@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 import * as Speech from "expo-speech";
+import { startSpeechSession } from "../utils/speechSession";
 import { impactLight, impactMedium } from "../services/haptics";
 import { translateText, type TranslateOptions } from "../services/translation";
 import { useLanguage } from "../contexts/LanguageContext";
@@ -214,7 +215,8 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
 
     const speechLang = speaker === "B" ? targetLang.speechCode : sourceLang.speechCode;
 
-    ExpoSpeechRecognitionModule.start({
+    // See src/utils/speechSession.ts — guards against -11803 / -16409.
+    startSpeechSession({
       lang: speechLang,
       interimResults: true,
       continuous: true,
