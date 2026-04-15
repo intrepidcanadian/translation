@@ -215,6 +215,33 @@ describe("extractBusinessCardFields (run 16)", () => {
     const emails = fields.filter((f) => f.label === "Email");
     expect(emails.length).toBe(1);
   });
+
+  it("does NOT accept a phone-number line as the Name when a prior line matched PHONE_PATTERN (stateful regex bug regression fence)", () => {
+    // Real bug, run 18: the name-picker loop used to call
+    // `PHONE_PATTERN.test(line)` directly on the global regex. After the
+    // first line matched (advancing `lastIndex` past the second line's
+    // length), the second test would short-circuit to false, the line
+    // would skip the EMAIL/PHONE/URL guard, and a phone number would be
+    // unshifted as the Name. Fix: use non-global EMAIL_TEST_RE /
+    // PHONE_TEST_RE / URL_TEST_RE for the stateless `.test()` call.
+    //
+    // The fixture must reproduce the exact failure shape: line 1 has a
+    // phone match LONGER than line 2 so the carried-over `lastIndex`
+    // exceeds line 2's length. Line 1 is correctly skipped (matches
+    // PHONE_TEST_RE). Line 2 must also be skipped because it's still a
+    // phone number — and previously wasn't, due to the bug.
+    const fields = extractBusinessCardFields(
+      "+1-555-123-4567-ext-999\n555-987-6543\nJane Doe",
+      ""
+    );
+    const name = fields.find((f) => f.label === "Name");
+    // Critical assertion: the Name (if any) must be "Jane Doe", NOT a
+    // phone number masquerading as a name.
+    expect(name?.value).toBe("Jane Doe");
+    // And both phone numbers must still surface in the Phone fields.
+    const phones = fields.filter((f) => f.label === "Phone");
+    expect(phones.length).toBe(2);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────

@@ -30,6 +30,52 @@ function matchAll(text: string, pattern: RegExp): string[] {
   return (text.match(pattern) || []).map((m) => m.trim());
 }
 
+/**
+ * Run `pattern` against `text`, dedupe, and push one {@link ExtractedField}
+ * per unique match. Collapses the "matchAll → unique → for-of → push" shape
+ * that was duplicated 11× across the six mode extractors (#204). Returns the
+ * deduped match array so callers can still gate follow-up logic on what was
+ * captured (e.g. the receipt extractor's `capturedValues` dedup set).
+ */
+function addMatchFields(
+  text: string,
+  pattern: RegExp,
+  fields: ExtractedField[],
+  label: string,
+  icon: string,
+  color: string,
+  action: ExtractedField["action"] = "copy"
+): string[] {
+  const matches = unique(matchAll(text, pattern));
+  for (const value of matches) {
+    fields.push({ label, value, icon, color, action });
+  }
+  return matches;
+}
+
+/**
+ * Same as {@link addMatchFields} but collapses all matches into a single
+ * comma-joined field when one or more are found. Used for aggregate buckets
+ * like "Warnings Found" (medicine), "Allergens/Dietary" (menu), "Title"
+ * (business card), and "Sections" (menu) — where the UI renders a single
+ * badge rather than one chip per match.
+ */
+function addJoinedMatchField(
+  text: string,
+  pattern: RegExp,
+  fields: ExtractedField[],
+  label: string,
+  icon: string,
+  color: string,
+  action: ExtractedField["action"] = "copy"
+): string[] {
+  const matches = unique(matchAll(text, pattern));
+  if (matches.length > 0) {
+    fields.push({ label, value: matches.join(", "), icon, color, action });
+  }
+  return matches;
+}
+
 // ---- Receipt / Invoice ----
 
 const CURRENCY_SYMBOLS = /[$€£¥₹₩฿₫₱₸₺₽₴]/;
@@ -46,22 +92,12 @@ export function extractReceiptFields(text: string, translated: string): Extracte
   const combined = `${text}\n${translated}`;
   const fields: ExtractedField[] = [];
 
-  const totals = unique(matchAll(combined, TOTAL_PATTERN));
-  for (const t of totals) {
-    fields.push({ label: "Total", value: t, icon: "$", color: "#4ade80", action: "copy" });
-  }
+  const totals = addMatchFields(combined, TOTAL_PATTERN, fields, "Total", "$", "#4ade80");
+  const taxes = addMatchFields(combined, TAX_PATTERN, fields, "Tax/VAT", "%", "#f59e0b");
+  const tips = addMatchFields(combined, TIP_PATTERN, fields, "Tip/Service", "+", "#60a5fa");
 
-  const taxes = unique(matchAll(combined, TAX_PATTERN));
-  for (const t of taxes) {
-    fields.push({ label: "Tax/VAT", value: t, icon: "%", color: "#f59e0b", action: "copy" });
-  }
-
-  const tips = unique(matchAll(combined, TIP_PATTERN));
-  for (const t of tips) {
-    fields.push({ label: "Tip/Service", value: t, icon: "+", color: "#60a5fa", action: "copy" });
-  }
-
-  // All money amounts not already captured
+  // All money amounts not already captured — can't use addMatchFields here
+  // because we need to filter against the capturedValues dedup set.
   const allMoney = unique(matchAll(combined, MONEY_PATTERN));
   const capturedValues = new Set([...totals, ...taxes, ...tips].map((v) => v.toLowerCase()));
   for (const m of allMoney) {
@@ -70,10 +106,7 @@ export function extractReceiptFields(text: string, translated: string): Extracte
     }
   }
 
-  const dates = unique(matchAll(combined, DATE_PATTERN));
-  for (const d of dates) {
-    fields.push({ label: "Date", value: d, icon: "D", color: "#f59e0b", action: "copy" });
-  }
+  addMatchFields(combined, DATE_PATTERN, fields, "Date", "D", "#f59e0b");
 
   return fields;
 }
@@ -85,39 +118,37 @@ const PHONE_PATTERN = /(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\
 const URL_PATTERN = /(?:https?:\/\/|www\.)[^\s,]+/gi;
 const JOB_TITLE_KEYWORDS = /(?:CEO|CTO|CFO|COO|VP|Director|Manager|Engineer|Developer|Designer|Founder|President|Head of|Lead|Senior|Junior|Associate|Consultant|Advisor|Professor|Dr\.?|MD|PhD)/gi;
 
+// Non-global copies for stateless `.test()` in the name-picker loop. Using
+// the `/g` regexes above directly with `.test()` would mutate their
+// `lastIndex` between iterations, causing a phone-shaped second line to
+// slip past the guard when the first line already matched PHONE_PATTERN
+// (`lastIndex` carries over to a shorter string, `.test()` returns false,
+// and a phone number gets accepted as the Name). Regression fence is in
+// scannerModes.test.ts.
+const EMAIL_TEST_RE = /[\w.+-]+@[\w.-]+\.\w{2,}/i;
+const PHONE_TEST_RE = /(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}/;
+const URL_TEST_RE = /(?:https?:\/\/|www\.)[^\s,]+/i;
+
 // Exported for unit tests (run 16). Same rationale as extractReceiptFields.
 export function extractBusinessCardFields(text: string, translated: string): ExtractedField[] {
   const combined = `${text}\n${translated}`;
   const fields: ExtractedField[] = [];
 
-  // Emails
-  const emails = unique(matchAll(combined, EMAIL_PATTERN));
-  for (const e of emails) {
-    fields.push({ label: "Email", value: e, icon: "@", color: "#60a5fa", action: "email" });
-  }
+  addMatchFields(combined, EMAIL_PATTERN, fields, "Email", "@", "#60a5fa", "email");
 
-  // Phones
+  // Phones — can't use addMatchFields because we filter on digit-count first.
   const phones = unique(matchAll(combined, PHONE_PATTERN).filter((p) => p.replace(/\D/g, "").length >= 7));
   for (const p of phones) {
     fields.push({ label: "Phone", value: p, icon: "#", color: "#4ade80", action: "call" });
   }
 
-  // URLs
-  const urls = unique(matchAll(combined, URL_PATTERN));
-  for (const u of urls) {
-    fields.push({ label: "Website", value: u, icon: "~", color: "#22d3ee", action: "url" });
-  }
-
-  // Job titles
-  const titles = unique(matchAll(combined, JOB_TITLE_KEYWORDS));
-  if (titles.length > 0) {
-    fields.push({ label: "Title", value: titles.join(", "), icon: "T", color: "#f472b6", action: "copy" });
-  }
+  addMatchFields(combined, URL_PATTERN, fields, "Website", "~", "#22d3ee", "url");
+  addJoinedMatchField(combined, JOB_TITLE_KEYWORDS, fields, "Title", "T", "#f472b6");
 
   // Try to identify the name (first line that's not a company/email/phone/url)
   const lines = combined.split("\n").map((l) => l.trim()).filter(Boolean);
   for (const line of lines.slice(0, 3)) {
-    if (EMAIL_PATTERN.test(line) || PHONE_PATTERN.test(line) || URL_PATTERN.test(line)) continue;
+    if (EMAIL_TEST_RE.test(line) || PHONE_TEST_RE.test(line) || URL_TEST_RE.test(line)) continue;
     if (line.length > 40) continue; // Probably not a name
     if (/^\d/.test(line)) continue; // Starts with number
     fields.unshift({ label: "Name", value: line, icon: "P", color: "#c084fc", action: "contact" });
@@ -143,35 +174,11 @@ export function extractMedicineFields(text: string, translated: string): Extract
   const combined = `${text}\n${translated}`;
   const fields: ExtractedField[] = [];
 
-  // Drug names
-  const drugs = unique(matchAll(combined, DRUG_NAME_PATTERN));
-  for (const d of drugs) {
-    fields.push({ label: "Drug Name", value: d, icon: "Rx", color: "#60a5fa", action: "copy" });
-  }
-
-  // Dosages
-  const dosages = unique(matchAll(combined, DOSAGE_PATTERN));
-  for (const d of dosages) {
-    fields.push({ label: "Dosage", value: d, icon: "D", color: "#4ade80", action: "copy" });
-  }
-
-  // Frequency
-  const freqs = unique(matchAll(combined, FREQUENCY_PATTERN));
-  for (const f of freqs) {
-    fields.push({ label: "Frequency", value: f, icon: "F", color: "#a78bfa", action: "copy" });
-  }
-
-  // Warnings
-  const warnings = unique(matchAll(combined, WARNING_KEYWORDS));
-  if (warnings.length > 0) {
-    fields.push({ label: "Warnings Found", value: warnings.join(", "), icon: "!", color: "#ef4444", action: "copy" });
-  }
-
-  // Dates (expiry etc)
-  const dates = unique(matchAll(combined, DATE_PATTERN));
-  for (const d of dates) {
-    fields.push({ label: "Date", value: d, icon: "D", color: "#f59e0b", action: "copy" });
-  }
+  addMatchFields(combined, DRUG_NAME_PATTERN, fields, "Drug Name", "Rx", "#60a5fa");
+  addMatchFields(combined, DOSAGE_PATTERN, fields, "Dosage", "D", "#4ade80");
+  addMatchFields(combined, FREQUENCY_PATTERN, fields, "Frequency", "F", "#a78bfa");
+  addJoinedMatchField(combined, WARNING_KEYWORDS, fields, "Warnings Found", "!", "#ef4444");
+  addMatchFields(combined, DATE_PATTERN, fields, "Date", "D", "#f59e0b");
 
   return fields;
 }
@@ -213,29 +220,8 @@ export function extractMenuFields(text: string, translated: string): ExtractedFi
     });
   }
 
-  // Allergens
-  const allergens = unique(matchAll(combined, ALLERGEN_KEYWORDS));
-  if (allergens.length > 0) {
-    fields.push({
-      label: "Allergens/Dietary",
-      value: allergens.join(", "),
-      icon: "!",
-      color: "#ef4444",
-      action: "copy",
-    });
-  }
-
-  // Categories
-  const categories = unique(matchAll(combined, CATEGORY_KEYWORDS));
-  if (categories.length > 0) {
-    fields.push({
-      label: "Sections",
-      value: categories.join(", "),
-      icon: "C",
-      color: "#f59e0b",
-      action: "copy",
-    });
-  }
+  addJoinedMatchField(combined, ALLERGEN_KEYWORDS, fields, "Allergens/Dietary", "!", "#ef4444");
+  addJoinedMatchField(combined, CATEGORY_KEYWORDS, fields, "Sections", "C", "#f59e0b");
 
   return fields;
 }
@@ -258,10 +244,7 @@ export function extractTextbookFields(text: string, translated: string): Extract
   }
 
   // Dates mentioned
-  const dates = unique(matchAll(`${text}\n${translated}`, DATE_PATTERN));
-  if (dates.length > 0) {
-    fields.push({ label: "Dates Referenced", value: dates.join(", "), icon: "D", color: "#f59e0b", action: "copy" });
-  }
+  addJoinedMatchField(`${text}\n${translated}`, DATE_PATTERN, fields, "Dates Referenced", "D", "#f59e0b");
 
   // Numbers / figures
   const figures = unique(matchAll(translated, /\b\d[\d,.]+%?\b/g)).filter((n) => n.length > 1).slice(0, 10);
@@ -278,21 +261,11 @@ function extractDocumentFields(text: string, translated: string): ExtractedField
   const combined = `${text}\n${translated}`;
   const fields: ExtractedField[] = [];
 
-  const money = unique(matchAll(combined, MONEY_PATTERN));
-  for (const m of money) {
-    fields.push({ label: "Amount", value: m, icon: "$", color: "#4ade80", action: "copy" });
-  }
+  addMatchFields(combined, MONEY_PATTERN, fields, "Amount", "$", "#4ade80");
+  addMatchFields(combined, DATE_PATTERN, fields, "Date", "D", "#f59e0b");
+  addMatchFields(combined, EMAIL_PATTERN, fields, "Email", "@", "#60a5fa", "email");
 
-  const dates = unique(matchAll(combined, DATE_PATTERN));
-  for (const d of dates) {
-    fields.push({ label: "Date", value: d, icon: "D", color: "#f59e0b", action: "copy" });
-  }
-
-  const emails = unique(matchAll(combined, EMAIL_PATTERN));
-  for (const e of emails) {
-    fields.push({ label: "Email", value: e, icon: "@", color: "#60a5fa", action: "email" });
-  }
-
+  // Phone has the >=7-digit floor; can't go through addMatchFields.
   const phones = unique(matchAll(combined, PHONE_PATTERN).filter((p) => p.replace(/\D/g, "").length >= 7));
   for (const p of phones) {
     fields.push({ label: "Phone", value: p, icon: "#", color: "#4ade80", action: "call" });

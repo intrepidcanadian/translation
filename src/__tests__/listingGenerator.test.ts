@@ -1,0 +1,296 @@
+/**
+ * Unit tests for the synchronous listing generation paths in
+ * `services/listingGenerator.ts` — `generateListing` and
+ * `formatListingForShare`.
+ *
+ * Why pin these:
+ *  - `generateListing` is the offline / fallback path used whenever the
+ *    Apple Neural Engine smart-listing analyzer is unavailable (Android, old
+ *    iOS, or when the smart path throws). It exercises the two private
+ *    helpers `detectCategory` and `extractBrandModel`, which are otherwise
+ *    untested. Both contain hand-tuned keyword/brand lists that are easy to
+ *    break by accident — a typo in the regex word boundary, a missing brand
+ *    in the list, or a mis-ordered category check (electronics before sports
+ *    matters because "iphone" is in electronics and "yoga" is in sports — a
+ *    fixture that contains both should get whichever category the array
+ *    visits first).
+ *  - `formatListingForShare` is the user-visible "copy to clipboard"
+ *    serializer for a listing draft. It produces the literal string the user
+ *    pastes into Facebook Marketplace, OfferUp, etc. — a layout regression
+ *    here goes straight to the user's clipboard. Locking the contract
+ *    protects against accidental separator/header changes.
+ *
+ * The smart (async) path is intentionally NOT covered: it depends on the
+ * Apple Neural Engine bridge, which jest-expo cannot exercise. The fallback
+ * inside `generateSmartListing` calls `generateListing`, so the safety net
+ * for that path is the same coverage as below.
+ */
+import { generateListing, formatListingForShare } from "../services/listingGenerator";
+
+describe("listingGenerator", () => {
+  describe("generateListing — category detection", () => {
+    it("detects electronics from product OCR text", () => {
+      const draft = generateListing("Apple iPhone 13 Pro 256GB Space Gray", "good");
+      expect(draft.category).toBe("electronics");
+    });
+
+    it("detects clothing from product OCR text", () => {
+      const draft = generateListing("Nike Air Max sneakers size 10", "like_new");
+      expect(draft.category).toBe("clothing");
+    });
+
+    it("detects furniture from product OCR text", () => {
+      const draft = generateListing("IKEA POÄNG armchair birch veneer", "good");
+      expect(draft.category).toBe("furniture");
+    });
+
+    it("detects books from product OCR text", () => {
+      const draft = generateListing("The Great Gatsby paperback edition", "fair");
+      expect(draft.category).toBe("books");
+    });
+
+    it("detects toys from product OCR text", () => {
+      const draft = generateListing("LEGO Star Wars Millennium Falcon set", "new");
+      expect(draft.category).toBe("toys");
+    });
+
+    it("detects sports from product OCR text", () => {
+      const draft = generateListing("Wilson tennis racket pro staff", "good");
+      expect(draft.category).toBe("sports");
+    });
+
+    it("detects home from product OCR text", () => {
+      const draft = generateListing("Dyson V15 vacuum cleaner cordless", "like_new");
+      // "vacuum" and "dyson" both match — Dyson is in the brands list and
+      // "vacuum" is in the home keyword list. The category result depends
+      // only on the regex match, not on brand detection.
+      expect(draft.category).toBe("home");
+    });
+
+    it("detects auto from product OCR text", () => {
+      const draft = generateListing("Michelin tire 225/45R17 brand new", "new");
+      expect(draft.category).toBe("auto");
+    });
+
+    it('falls back to "other" when no keywords match', () => {
+      const draft = generateListing("zzz qqq xyz nothing relevant here", "good");
+      expect(draft.category).toBe("other");
+    });
+
+    it("respects an explicit user-provided category over auto-detection", () => {
+      // Pin the override contract: even if the OCR text screams "iPhone",
+      // the user's explicit category wins. This is what powers the manual
+      // category dropdown in the listing editor.
+      const draft = generateListing("Apple iPhone 13", "good", undefined, "books");
+      expect(draft.category).toBe("books");
+    });
+  });
+
+  describe("generateListing — brand & model extraction", () => {
+    it("extracts a known brand from OCR text", () => {
+      const draft = generateListing("Apple MacBook Pro 14 inch", "like_new");
+      // The brand should land in the title. We don't expose the helper, but
+      // the title is built from `${brand} ${model}` when neither is
+      // user-provided, so this is the observable contract.
+      expect(draft.title).toMatch(/Apple/);
+    });
+
+    it("extracts a model number using the alphanumeric pattern", () => {
+      // The regex matches A2442 (Apple's MacBook Pro M1 Pro identifier shape).
+      const draft = generateListing("Apple MacBook A2442", "good");
+      expect(draft.title).toMatch(/A2442/);
+    });
+
+    it("includes brand in the suggestedTags list", () => {
+      const draft = generateListing("Sony WH-1000XM4 headphones", "good");
+      expect(draft.suggestedTags).toContain("sony");
+    });
+
+    it("appends the condition label to the auto-generated title for non-new items", () => {
+      const draft = generateListing("Sony Bravia TV", "fair");
+      expect(draft.title).toMatch(/- Fair$/);
+    });
+
+    it("does NOT append a condition suffix when condition is 'new'", () => {
+      // A brand-new item shouldn't get "- New" tacked on the end — that's
+      // redundant and looks odd in the title.
+      const draft = generateListing("Sony WH-1000XM4 headphones", "new");
+      expect(draft.title).not.toMatch(/- New$/);
+    });
+
+    it("uses the first meaningful OCR line when no brand or model is detected", () => {
+      const draft = generateListing(
+        "Vintage handcrafted item\nlots of details here\nand more lines",
+        "good"
+      );
+      // No brand list match, no model regex match → first line wins.
+      expect(draft.title).toMatch(/Vintage handcrafted item/);
+    });
+
+    it("respects a user-provided title and ignores extracted brand/model", () => {
+      const draft = generateListing(
+        "Apple iPhone 13 A2628",
+        "good",
+        "My Custom Title"
+      );
+      expect(draft.title).toBe("My Custom Title");
+    });
+  });
+
+  describe("generateListing — description & tags", () => {
+    it("includes the category icon and label in the description", () => {
+      const draft = generateListing("Apple iPhone 13", "good");
+      expect(draft.description).toContain("💻");
+      expect(draft.description).toContain("Electronics");
+    });
+
+    it("includes the condition label in the description", () => {
+      const draft = generateListing("Apple iPhone 13", "like_new");
+      expect(draft.description).toContain("Condition: Like New");
+    });
+
+    it("dedupes the suggestedTags so the same tag never appears twice", () => {
+      // The internal tag list pushes brand, model, category, condition, and
+      // category-label — and category + category-label can collide when both
+      // resolve to the same lowercased string. Pin the dedupe step so a
+      // future refactor that drops the `arr.indexOf(t) === i` filter gets
+      // caught.
+      const draft = generateListing("Apple iPhone 13", "good");
+      const seen = new Set(draft.suggestedTags);
+      expect(seen.size).toBe(draft.suggestedTags.length);
+    });
+
+    it("limits product detail bullets to 10 to avoid overwhelming descriptions", () => {
+      // OCR text from a busy package can have dozens of lines. The generator
+      // caps the bullet list at 10; pin that so a refactor that swaps the
+      // slice() for a different windowing function doesn't accidentally let
+      // 50 lines through into the user's listing description.
+      const lines = Array.from({ length: 30 }, (_, i) => `Detail line number ${i}`);
+      const draft = generateListing(lines.join("\n"), "good");
+      const bulletLines = draft.description.split("\n").filter((l) => l.startsWith("• "));
+      expect(bulletLines.length).toBeLessThanOrEqual(10);
+    });
+
+    it("filters OCR lines that are too short or too long for the description", () => {
+      // The implementation requires 5 < length < 200. Lines outside that
+      // band should be dropped from the bullet list. Useful guard against
+      // OCR garbage (single-character noise) and runaway paragraphs.
+      const ocr = [
+        "ok", // too short, dropped
+        "good line that should appear",
+        "x".repeat(250), // too long, dropped
+      ].join("\n");
+      const draft = generateListing(ocr, "good");
+      const bullets = draft.description.split("\n").filter((l) => l.startsWith("• "));
+      expect(bullets.some((b) => b.includes("good line that should appear"))).toBe(true);
+      expect(bullets.some((b) => b.includes("ok"))).toBe(false);
+      expect(bullets.some((b) => b.length > 250)).toBe(false);
+    });
+
+    it("always includes the photos disclaimer at the end of the description", () => {
+      const draft = generateListing("Apple iPhone 13", "good");
+      expect(draft.description).toContain("📸 Photos show actual item condition.");
+    });
+  });
+
+  describe("formatListingForShare", () => {
+    it("renders title, separator, and description for a minimal draft", () => {
+      const out = formatListingForShare({
+        title: "Sony WH-1000XM4",
+        description: "Great headphones",
+        category: "electronics",
+        condition: "good",
+        suggestedTags: [],
+      });
+      expect(out).toContain("Sony WH-1000XM4");
+      expect(out).toContain("Great headphones");
+      // Default separator is 30 box-drawing dashes.
+      expect(out).toContain("─".repeat(30));
+    });
+
+    it("includes price and currency when provided", () => {
+      const out = formatListingForShare({
+        title: "iPhone",
+        description: "desc",
+        category: "electronics",
+        condition: "good",
+        suggestedTags: [],
+        price: "499",
+        currency: "$",
+      });
+      expect(out).toContain("💰 $499");
+    });
+
+    it('defaults the currency to "$" when only price is provided', () => {
+      const out = formatListingForShare({
+        title: "iPhone",
+        description: "desc",
+        category: "electronics",
+        condition: "good",
+        suggestedTags: [],
+        price: "499",
+      });
+      expect(out).toContain("💰 $499");
+    });
+
+    it("renders tags as hashtag-style strings with whitespace stripped", () => {
+      const out = formatListingForShare({
+        title: "iPhone",
+        description: "desc",
+        category: "electronics",
+        condition: "good",
+        suggestedTags: ["like new", "apple", "smart phone"],
+      });
+      expect(out).toContain("#likenew");
+      expect(out).toContain("#apple");
+      expect(out).toContain("#smartphone");
+    });
+
+    it("omits the tags line entirely when there are no tags", () => {
+      const out = formatListingForShare({
+        title: "iPhone",
+        description: "desc",
+        category: "electronics",
+        condition: "good",
+        suggestedTags: [],
+      });
+      expect(out).not.toContain("Tags:");
+    });
+
+    it("includes translations only when the includeTranslation flag is true", () => {
+      const draft = {
+        title: "iPhone",
+        description: "desc",
+        category: "electronics" as const,
+        condition: "good" as const,
+        suggestedTags: [],
+        translatedTitle: "苹果手机",
+        translatedDescription: "描述",
+        targetLang: "zh",
+      };
+      const without = formatListingForShare(draft, false);
+      const withTr = formatListingForShare(draft, true);
+      expect(without).not.toContain("苹果手机");
+      expect(withTr).toContain("苹果手机");
+      expect(withTr).toContain("描述");
+      expect(withTr).toContain("ZH");
+    });
+
+    it("does NOT include the translation block when flag is true but translations are missing", () => {
+      // Defensive guard: passing includeTranslation=true on a draft that
+      // hasn't been through translateListing() should not crash and should
+      // not render a half-empty translation header.
+      const out = formatListingForShare(
+        {
+          title: "iPhone",
+          description: "desc",
+          category: "electronics",
+          condition: "good",
+          suggestedTags: [],
+        },
+        true
+      );
+      expect(out).not.toContain("🌐");
+    });
+  });
+});
