@@ -33,7 +33,11 @@ import {
   parsePrice,
   CURRENCIES,
   CREW_CURRENCIES,
+  getExchangeRates,
+  getRatesCacheState,
+  getRatesFreshnessGrade,
   type ConvertedPrice,
+  type RatesFreshnessGrade,
 } from "../services/currencyExchange";
 import { primaryAlpha, type ThemeColors } from "../theme";
 
@@ -51,6 +55,33 @@ interface DetectedPrice {
   currency: string;
   amount: number;
   conversions: ConvertedPrice[];
+}
+
+/**
+ * Run 17: render a human-readable warning message for a rates freshness grade
+ * when the cache is anything worse than "fresh". `null` means "don't render"
+ * so callers can skip the chip entirely on a fresh cache. Messages are kept
+ * short (< 40 chars) so they fit the results-header chip without wrapping.
+ *
+ * Grade thresholds come from getRatesFreshnessGrade in currencyExchange.ts:
+ *  - fresh         — no warning (age < CACHE_DURATION, standard success)
+ *  - stale-ok      — soft informational (age 1–12h, prices probably fine)
+ *  - stale-warn    — hard warning (age 12–24h, refresh recommended)
+ *  - stale-critical — strongest warning (age > 24h, prices may be off by %)
+ *  - none          — no cache at all or fallback payload served
+ */
+function gradeWarningText(grade: RatesFreshnessGrade | null): string | null {
+  if (grade === null || grade === "fresh") return null;
+  if (grade === "stale-ok") return "Rates are a few hours old";
+  if (grade === "stale-warn") return "⚠️ Rates are stale — refresh in Settings";
+  if (grade === "stale-critical") return "⚠️ Rates over 24h old — refresh now";
+  if (grade === "none") return "⚠️ Using offline fallback rates";
+  return null;
+}
+
+/** Run 17: is this grade a "soft" informational warning vs a hard alert? */
+function isSoftWarning(grade: RatesFreshnessGrade | null): boolean {
+  return grade === "stale-ok";
 }
 
 function getMLKitScript(langCode: string): TextRecognitionScript {
@@ -81,6 +112,14 @@ export default function PriceTagConverter({
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [copiedText, setCopiedText] = useAutoClearFlag<string>(1500);
   const [ratesAge, setRatesAge] = useState<string>("");
+  // Run 17: rates freshness grade surfaced alongside the "Updated Xh ago"
+  // label. The grade collapses the raw cache state into one of 4 buckets
+  // (fresh / recent / stale / fallback); anything worse than "fresh" gets
+  // a visible warning chip on the results header so a user troubleshooting
+  // a conversion that looks wrong can see at a glance whether the underlying
+  // rates are actually current. Sourced from the pure accessors so no
+  // extra network traffic is generated.
+  const [ratesGrade, setRatesGrade] = useState<RatesFreshnessGrade | null>(null);
 
   useEffect(() => {
     if (visible && !hasPermission) {
@@ -96,6 +135,7 @@ export default function PriceTagConverter({
     setError(null);
     setDetectedPrices([]);
     setExpandedIdx(null);
+    setRatesGrade(null);
 
     try {
       // Step 1: Capture
@@ -143,13 +183,24 @@ export default function PriceTagConverter({
         });
       }
 
-      // Determine rates freshness
-      const { getExchangeRates } = require("../services/currencyExchange");
-      const rates = await getExchangeRates();
-      if (rates.timestamp === 0) {
+      // Determine rates freshness. getExchangeRates() is imported statically
+      // (Run 17) so the dependency graph is visible to typecheck and tree-
+      // shaking — the old `require()` dance was a legacy of an earlier
+      // circular-import fear that no longer applies. getRatesCacheState +
+      // getRatesFreshnessGrade are the pure accessors over the same cache;
+      // reading them right after getExchangeRates() resolves guarantees the
+      // grade reflects the cache entry we just converted against.
+      await getExchangeRates();
+      const cacheState = getRatesCacheState();
+      const grade = getRatesFreshnessGrade(cacheState);
+      setRatesGrade(grade);
+      if (!cacheState.hasCache) {
+        setRatesAge("Offline rates (approximate)");
+      } else if (cacheState.ageMs === null) {
+        // Cache exists but has no timestamp — treat as offline fallback.
         setRatesAge("Offline rates (approximate)");
       } else {
-        const ageMin = Math.round((Date.now() - rates.timestamp) / 60000);
+        const ageMin = Math.round(cacheState.ageMs / 60000);
         setRatesAge(ageMin < 60 ? `Updated ${ageMin}m ago` : `Updated ${Math.round(ageMin / 60)}h ago`);
       }
 
@@ -186,12 +237,17 @@ export default function PriceTagConverter({
       lines.push("");
     }
     if (ratesAge) lines.push(`\n${ratesAge}`);
+    // Run 17: include a freshness warning in the shared text when the cache
+    // isn't fresh, so the recipient of a shared quote knows the rates may
+    // be out of date. The string mirrors the on-screen chip.
+    const warnText = gradeWarningText(ratesGrade);
+    if (warnText) lines.push(warnText);
     try {
       await Share.share({ message: lines.join("\n") });
     } catch (err) {
       logger.warn("Scanner", "Share failed", err);
     }
-  }, [detectedPrices, ratesAge]);
+  }, [detectedPrices, ratesAge, ratesGrade]);
 
   if (!visible) return null;
 
@@ -286,6 +342,34 @@ export default function PriceTagConverter({
       <View style={styles.resultsHeader}>
         <Text style={[styles.resultsTitle, { color: colors.titleText }]}>💱 Price Conversion</Text>
         <Text style={[styles.ratesAge, { color: colors.mutedText }]}>{ratesAge}</Text>
+        {/* Run 17: rates freshness warning chip. Renders only when the
+            grade is worse than "fresh" — the chip is informational for
+            "recent" and urgent for "stale" / "fallback". Sourced from the
+            pure getRatesFreshnessGrade accessor so no component has to
+            duplicate the age-bucket math. `accessibilityLiveRegion="polite"`
+            announces the warning to VoiceOver once when the chip appears. */}
+        {gradeWarningText(ratesGrade) && (
+          <View
+            style={[
+              styles.ratesWarningChip,
+              {
+                backgroundColor: isSoftWarning(ratesGrade) ? colors.cardBg : colors.errorBg,
+                borderColor: isSoftWarning(ratesGrade) ? colors.border : colors.errorText,
+              },
+            ]}
+            accessibilityLiveRegion="polite"
+            accessibilityRole="alert"
+          >
+            <Text
+              style={[
+                styles.ratesWarningText,
+                { color: isSoftWarning(ratesGrade) ? colors.mutedText : colors.errorText },
+              ]}
+            >
+              {gradeWarningText(ratesGrade)}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Price cards */}
@@ -430,6 +514,20 @@ const styles = StyleSheet.create({
   resultsHeader: { alignItems: "center", marginBottom: 16 },
   resultsTitle: { fontSize: 22, fontWeight: "800" },
   ratesAge: { fontSize: 12, marginTop: 4 },
+  // Run 17: freshness-warning chip. Inline pill below the ratesAge label,
+  // self-sized so long text wraps within its max-width but short messages
+  // stay compact. Border is on so it's visible in both themes regardless of
+  // background contrast; color is computed inline from the grade.
+  ratesWarningChip: {
+    alignSelf: "flex-start",
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    maxWidth: "100%",
+  },
+  ratesWarningText: { fontSize: 12, fontWeight: "600" },
 
   priceCard: { borderRadius: 16, borderWidth: 1, marginBottom: 12, overflow: "hidden" },
   priceCardHeader: {
