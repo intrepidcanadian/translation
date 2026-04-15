@@ -21,7 +21,17 @@ import {
   convertPrice,
   batchConvertPrices,
   getExchangeRates,
+  getRatesCacheState,
+  __resetCacheForTests,
 } from "../services/currencyExchange";
+
+beforeEach(() => {
+  // #202: per-test reset of module-private cache + lastFetchAttempt so the
+  // throttle and validation cases don't leak state across tests. Avoids the
+  // jest.isolateModules+require dance for cases where the test only needs
+  // a clean cache, not a fresh module instance.
+  __resetCacheForTests();
+});
 
 describe("parsePrice", () => {
   it("parses leading $ as USD", () => {
@@ -153,6 +163,24 @@ describe("detectPricesInText", () => {
     const found = detectPricesInText(text);
     expect(found).toContainEqual(
       expect.objectContaining({ currency: "MYR", amount: 50 })
+    );
+  });
+
+  // #199 regression fence: the old `[\d,]+` accepted comma-only fragments
+  // like `$,` which then bottomed out as parsePrice null. Tightening to
+  // `\d[\d,]*` requires at least one digit so noisy OCR input doesn't
+  // generate phantom matches.
+  it("does not match a sigil followed only by punctuation", () => {
+    expect(detectPricesInText("$,")).toEqual([]);
+    expect(detectPricesInText("$,,, ")).toEqual([]);
+    expect(detectPricesInText("€,.")).toEqual([]);
+  });
+
+  it("still matches a sigil followed by digits-with-commas", () => {
+    // The tightened regex must not regress the legitimate "$1,234" case.
+    const found = detectPricesInText("Total: $1,234.56");
+    expect(found).toContainEqual(
+      expect.objectContaining({ currency: "USD", amount: 1234.56 })
     );
   });
 });
@@ -312,5 +340,99 @@ describe("getExchangeRates response validation", () => {
     const mod = loadFreshModule();
     const rates = await mod.getExchangeRates();
     expect(rates.timestamp).toBe(0);
+  });
+});
+
+describe("getExchangeRates refetch throttling (#200)", () => {
+  const realFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  it("does not refetch within the throttle window after a validation failure", async () => {
+    // First call: malformed payload → falls back to hardcoded.
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({ rates: "not an object" }),
+    }));
+    // @ts-expect-error mocking fetch
+    global.fetch = fetchMock;
+
+    await getExchangeRates();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Immediately retry. Without the throttle, this would re-fetch and
+    // re-fail. With the throttle (#200), we short-circuit to the fallback
+    // and do NOT touch the network for at least 60s.
+    await getExchangeRates();
+    await getExchangeRates();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns hardcoded fallback when throttled with no prior cache", async () => {
+    const fetchMock = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({ rates: "garbage" }),
+    }));
+    // @ts-expect-error mocking fetch
+    global.fetch = fetchMock;
+
+    const first = await getExchangeRates();
+    expect(first.timestamp).toBe(0);
+
+    const second = await getExchangeRates();
+    expect(second.timestamp).toBe(0);
+    // hardcoded fallback shape — USD self-rate of 1
+    expect(second.rates.USD).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+});
+
+describe("getRatesCacheState diagnostics", () => {
+  const realFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  it("reports empty state on a fresh module", () => {
+    const state = getRatesCacheState();
+    expect(state.hasCache).toBe(false);
+    expect(state.ageMs).toBeNull();
+    expect(state.lastAttemptAgeMs).toBeNull();
+    expect(state.isFresh).toBe(false);
+    expect(state.willThrottleNextFetch).toBe(false);
+  });
+
+  it("reports a fresh cache after a successful fetch", async () => {
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        rates: { USD: 1, HKD: 7.8, JPY: 150, EUR: 0.9, GBP: 0.79, CNY: 7.2 },
+      }),
+    }));
+    await getExchangeRates();
+    const state = getRatesCacheState();
+    expect(state.hasCache).toBe(true);
+    expect(state.ageMs).not.toBeNull();
+    expect(state.ageMs!).toBeLessThan(1000); // just fetched
+    expect(state.isFresh).toBe(true);
+    expect(state.willThrottleNextFetch).toBe(true); // attempt just landed
+  });
+
+  it("reports throttled state after a failed fetch with no cache", async () => {
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({ rates: "garbage" }),
+    }));
+    await getExchangeRates();
+    const state = getRatesCacheState();
+    expect(state.hasCache).toBe(false); // validation failed, cache still null
+    expect(state.lastAttemptAgeMs).not.toBeNull();
+    expect(state.willThrottleNextFetch).toBe(true);
   });
 });

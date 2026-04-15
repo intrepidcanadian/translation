@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { impactLight, impactMedium } from "../services/haptics";
 import { logger } from "../services/logger";
@@ -122,31 +123,59 @@ export function GlossaryProvider({ children }: { children: React.ReactNode }) {
   // dropping it. Cleared whenever the timer fires successfully.
   const pendingBackupRef = useRef<string | null>(null);
 
+  // Flush any pending debounced backup write to disk and clear the timer.
+  // Used by both the unmount cleanup and the AppState "background" listener
+  // (#189) — the latter fires earlier than unmount on a real app-close on
+  // iOS, where the JS context can be torn down before the AsyncStorage
+  // bridge flushes pending writes. Force-quit recovery would otherwise lose
+  // up to ~5s of LKG-backup recency relative to the last edit.
+  //
+  // Stable identity (empty deps) so the AppState listener's `useEffect`
+  // doesn't have to re-subscribe on every render — both refs are mutated
+  // in place so the closure always reads the latest values.
+  const flushBackupNow = useCallback((): void => {
+    if (backupTimerRef.current !== null) {
+      clearTimeout(backupTimerRef.current);
+      backupTimerRef.current = null;
+    }
+    if (pendingBackupRef.current !== null) {
+      const flushPayload = pendingBackupRef.current;
+      pendingBackupRef.current = null;
+      AsyncStorage.setItem(GLOSSARY_BACKUP_KEY, flushPayload).catch((err) =>
+        logger.warn("Glossary", "Failed to flush glossary backup", err)
+      );
+    }
+  }, []);
+
   // On unmount, flush any pending debounced backup write instead of just
   // cancelling it. The previous behavior (cancel-only) meant a fast
   // app-close within 5s of the last edit lost up to one debounce window of
   // LKG-backup recency — primary writes are immediate so the data wasn't
-  // lost, but the corruption-recovery snapshot lagged by one cycle. Now
-  // the cleanup writes the staged blob directly and clears the timer.
-  // AsyncStorage.setItem is fire-and-forget here for the same reason it is
-  // in the timer body: we can't await inside a synchronous useEffect
-  // cleanup, and a single failed write only means the next launch
-  // rehydrates from the previous backup (which the resolver handles).
+  // lost, but the corruption-recovery snapshot lagged by one cycle.
   useEffect(() => {
     return () => {
-      if (backupTimerRef.current !== null) {
-        clearTimeout(backupTimerRef.current);
-        backupTimerRef.current = null;
-      }
-      if (pendingBackupRef.current !== null) {
-        const flushPayload = pendingBackupRef.current;
-        pendingBackupRef.current = null;
-        AsyncStorage.setItem(GLOSSARY_BACKUP_KEY, flushPayload).catch((err) =>
-          logger.warn("Glossary", "Failed to flush glossary backup on unmount", err)
-        );
+      flushBackupNow();
+    };
+  }, [flushBackupNow]);
+
+  // #189: AppState listener fires before unmount on a real app
+  // background/close event. On iOS in particular the JS context can be
+  // torn down before the AsyncStorage native bridge flushes pending
+  // writes from the unmount cleanup; flushing on the
+  // `active → background` transition gives the bridge a chance to land
+  // the write while the runtime is still alive. Cheap — `flushBackupNow`
+  // is a no-op when there's nothing staged.
+  useEffect(() => {
+    const handleAppStateChange = (next: AppStateStatus): void => {
+      if (next === "background" || next === "inactive") {
+        flushBackupNow();
       }
     };
-  }, []);
+    const sub = AppState.addEventListener("change", handleAppStateChange);
+    return () => {
+      sub.remove();
+    };
+  }, [flushBackupNow]);
 
   // Persist glossary changes (skip initial load). The primary write is
   // immediate so the live glossary on disk always matches state — losing an

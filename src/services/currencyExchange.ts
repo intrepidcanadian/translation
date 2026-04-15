@@ -69,6 +69,21 @@ let cachedRates: ExchangeRates | null = null;
 const CACHE_DURATION = 4 * 60 * 60 * 1000; // 4 hours
 
 /**
+ * #200: track the last fetch *attempt* (success or failure) separately from
+ * `cachedRates.timestamp` so a sustained validation failure doesn't cause
+ * every conversion call to hammer the API. Without this guard the early
+ * return at the top of `getExchangeRates()` only fires for a fresh, validated
+ * cache — once the cache ages past CACHE_DURATION while the upstream API is
+ * returning malformed payloads, every call would re-fetch, re-validate, and
+ * fall through to the stale cache. The refetch interval is short enough
+ * (60s) that a transient hiccup is corrected quickly, but long enough that
+ * a sustained outage doesn't generate hundreds of network round-trips per
+ * minute under heavy catalog scanning.
+ */
+const MIN_REFETCH_INTERVAL_MS = 60 * 1000;
+let lastFetchAttempt = 0;
+
+/**
  * Runtime validator for the API response shape. The previous code accepted
  * anything truthy in `data.rates`, so a malformed response (e.g. an array,
  * a string, or a Record with non-numeric values) would poison the in-memory
@@ -94,10 +109,27 @@ function isValidRatesPayload(value: unknown): value is Record<string, number> {
  * Fetch exchange rates (with caching and offline fallback)
  */
 export async function getExchangeRates(): Promise<ExchangeRates> {
+  const now = Date.now();
   // Return cached if fresh
-  if (cachedRates && Date.now() - cachedRates.timestamp < CACHE_DURATION) {
+  if (cachedRates && now - cachedRates.timestamp < CACHE_DURATION) {
     return cachedRates;
   }
+
+  // #200: even when the cache is stale, throttle re-fetch attempts so a
+  // sustained API outage doesn't generate one network round-trip per
+  // conversion call. The 60s window is short enough to recover from a
+  // transient hiccup quickly, long enough to keep heavy catalog scanning
+  // from spamming the upstream while it's down.
+  if (lastFetchAttempt > 0 && now - lastFetchAttempt < MIN_REFETCH_INTERVAL_MS) {
+    if (cachedRates) return cachedRates;
+    return {
+      base: "USD",
+      timestamp: 0,
+      rates: FALLBACK_RATES,
+    };
+  }
+
+  lastFetchAttempt = now;
 
   // Try fetching from free API
   try {
@@ -145,6 +177,50 @@ export async function getExchangeRates(): Promise<ExchangeRates> {
     timestamp: 0, // Indicates fallback
     rates: FALLBACK_RATES,
   };
+}
+
+/**
+ * Diagnostic snapshot of the exchange-rate cache. Used by Settings →
+ * Diagnostics surfaces and tests; does not mutate state. `ageMs` is the
+ * time since `cachedRates.timestamp` (the last *successful* validated
+ * response), `lastAttemptAgeMs` is the time since the last fetch *attempt*
+ * regardless of outcome — together they let a reader distinguish "cache is
+ * fresh" from "cache is stale but we backed off retrying" from "cache is
+ * stale and we just retried but failed validation". Returns 0/null fields
+ * when there's been no traffic so consumers can short-circuit cleanly.
+ */
+export interface RatesCacheState {
+  hasCache: boolean;
+  ageMs: number | null;
+  lastAttemptAgeMs: number | null;
+  isFresh: boolean;
+  willThrottleNextFetch: boolean;
+}
+
+export function getRatesCacheState(): RatesCacheState {
+  const now = Date.now();
+  const ageMs = cachedRates && cachedRates.timestamp > 0 ? now - cachedRates.timestamp : null;
+  const lastAttemptAgeMs = lastFetchAttempt > 0 ? now - lastFetchAttempt : null;
+  return {
+    hasCache: cachedRates !== null,
+    ageMs,
+    lastAttemptAgeMs,
+    isFresh: ageMs !== null && ageMs < CACHE_DURATION,
+    willThrottleNextFetch:
+      lastAttemptAgeMs !== null && lastAttemptAgeMs < MIN_REFETCH_INTERVAL_MS,
+  };
+}
+
+/**
+ * Test-only escape hatch (#202) for clearing the module-private cache and
+ * refetch-attempt timestamp without going through `jest.isolateModules`.
+ * Tests that need a clean slate per case can call this in `beforeEach`
+ * instead of paying the per-test module-load cost. Production code MUST
+ * NOT call this — it would silently invalidate a perfectly good cache.
+ */
+export function __resetCacheForTests(): void {
+  cachedRates = null;
+  lastFetchAttempt = 0;
 }
 
 /**
@@ -306,7 +382,13 @@ export function detectPricesInText(text: string): Array<{ raw: string; currency:
   // matches single chars — putting `RM` inside `[…RM]` would only match `R`
   // or `M` individually, which silently broke MYR detection until #191 fixed
   // both this regex and `parsePrice`.
-  const MONEY_RE = /(?:HK\$|NT\$|S\$|A\$|US\$|RM|[$€£¥₹₩฿₫₱]|د\.إ)\s*[\d,]+(?:\.\d{1,2})?|[\d,]+(?:\.\d{1,2})?\s*(?:HK\$|NT\$|S\$|RM|[$€£¥₹₩฿₫₱]|dollars?|euros?|pounds?|yen|yuan|won|baht|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR)/gi;
+  //
+  // #199: amount sub-patterns require at least one *digit* so a stray sigil
+  // followed by punctuation only (e.g. `$,` or `$,,`) doesn't get matched
+  // and hand a NaN-yielding fragment to parsePrice. The previous `[\d,]+`
+  // matched `,` alone, which would still bottom out as a parsePrice null
+  // but wasted a regex pass per false positive on noisy OCR input.
+  const MONEY_RE = /(?:HK\$|NT\$|S\$|A\$|US\$|RM|[$€£¥₹₩฿₫₱]|د\.إ)\s*\d[\d,]*(?:\.\d{1,2})?|\d[\d,]*(?:\.\d{1,2})?\s*(?:HK\$|NT\$|S\$|RM|[$€£¥₹₩฿₫₱]|dollars?|euros?|pounds?|yen|yuan|won|baht|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR)/gi;
 
   const matches = text.match(MONEY_RE) || [];
   const results: Array<{ raw: string; currency: string; amount: number }> = [];
