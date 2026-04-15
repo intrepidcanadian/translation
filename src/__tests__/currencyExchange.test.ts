@@ -17,17 +17,12 @@ jest.mock("../services/logger", () => ({
 
 // #220: currencyExchange now imports telemetry (for `rates.validationFailed`),
 // which transitively pulls in AsyncStorage. The Node env doesn't ship the
-// native module, so stub it here. Pure in-memory store — telemetry's
+// native module, so stub it via the shared no-op factory (#199). telemetry's
 // schedulePersist() debounce never observably fires in tests because we
 // never `await initTelemetry()`, but the import itself needs to succeed.
-jest.mock("@react-native-async-storage/async-storage", () => ({
-  __esModule: true,
-  default: {
-    getItem: jest.fn(async () => null),
-    setItem: jest.fn(async () => undefined),
-    removeItem: jest.fn(async () => undefined),
-  },
-}));
+jest.mock("@react-native-async-storage/async-storage", () =>
+  require("./__mocks__/asyncStorage").asyncStorageMockFactory()
+);
 
 import {
   parsePrice,
@@ -37,6 +32,7 @@ import {
   batchConvertPrices,
   getExchangeRates,
   getRatesCacheState,
+  getRatesFreshnessGrade,
   forceRefreshExchangeRates,
   __resetCacheForTests,
 } from "../services/currencyExchange";
@@ -864,6 +860,87 @@ describe("getRatesCacheState diagnostics", () => {
   });
 });
 
+/**
+ * Run 16: `getRatesFreshnessGrade` is a pure helper — no clock reads, no
+ * side effects — that bucketizes a `RatesCacheState` into five categorical
+ * freshness tiers. We test it directly with hand-rolled state objects so
+ * the boundaries are pinned independently of the fetch plumbing. The
+ * categorical shape is consumed by SettingsModal diagnostics and the
+ * crash-report bundle, so threshold drift would be a user-visible
+ * regression.
+ */
+describe("getRatesFreshnessGrade (run 16)", () => {
+  // Minimal helper: fabricate a RatesCacheState with just the fields the
+  // grade function reads. `nextRefetchInMs`, `lastAttemptAgeMs`,
+  // `willThrottleNextFetch`, `isFresh` are all irrelevant to the grade.
+  function state(hasCache: boolean, ageMs: number | null) {
+    return {
+      hasCache,
+      ageMs,
+      lastAttemptAgeMs: null,
+      isFresh: false,
+      willThrottleNextFetch: false,
+      nextRefetchInMs: null,
+    };
+  }
+
+  it("returns 'none' when there is no cache", () => {
+    expect(getRatesFreshnessGrade(state(false, null))).toBe("none");
+  });
+
+  it("returns 'none' when ageMs is null (fallback sentinel, timestamp=0)", () => {
+    // hasCache=true with ageMs=null is the shape getRatesCacheState produces
+    // when the cache holds a fallback record (timestamp: 0). Treat it the
+    // same as no cache — conversions are running on hardcoded defaults.
+    expect(getRatesFreshnessGrade(state(true, null))).toBe("none");
+  });
+
+  it("returns 'fresh' for ageMs under 4 hours", () => {
+    expect(getRatesFreshnessGrade(state(true, 0))).toBe("fresh");
+    expect(getRatesFreshnessGrade(state(true, 60 * 1000))).toBe("fresh");
+    // Just under the 4h CACHE_DURATION boundary.
+    expect(getRatesFreshnessGrade(state(true, 4 * 60 * 60 * 1000 - 1))).toBe("fresh");
+  });
+
+  it("transitions from fresh → stale-ok at the 4h boundary", () => {
+    expect(getRatesFreshnessGrade(state(true, 4 * 60 * 60 * 1000))).toBe("stale-ok");
+  });
+
+  it("returns 'stale-ok' for ages between 4h and 12h", () => {
+    expect(getRatesFreshnessGrade(state(true, 6 * 60 * 60 * 1000))).toBe("stale-ok");
+    expect(getRatesFreshnessGrade(state(true, 12 * 60 * 60 * 1000 - 1))).toBe("stale-ok");
+  });
+
+  it("transitions from stale-ok → stale-warn at the 12h boundary", () => {
+    expect(getRatesFreshnessGrade(state(true, 12 * 60 * 60 * 1000))).toBe("stale-warn");
+  });
+
+  it("returns 'stale-warn' for ages between 12h and 24h", () => {
+    expect(getRatesFreshnessGrade(state(true, 18 * 60 * 60 * 1000))).toBe("stale-warn");
+    expect(getRatesFreshnessGrade(state(true, 24 * 60 * 60 * 1000 - 1))).toBe("stale-warn");
+  });
+
+  it("transitions from stale-warn → stale-critical at the 24h boundary", () => {
+    expect(getRatesFreshnessGrade(state(true, 24 * 60 * 60 * 1000))).toBe("stale-critical");
+  });
+
+  it("returns 'stale-critical' for ages beyond 24h", () => {
+    expect(getRatesFreshnessGrade(state(true, 48 * 60 * 60 * 1000))).toBe("stale-critical");
+    // A week old — still just "critical", not a new tier. The grade is
+    // deliberately capped so the dashboard doesn't need a 10-color legend.
+    expect(getRatesFreshnessGrade(state(true, 7 * 24 * 60 * 60 * 1000))).toBe("stale-critical");
+  });
+
+  it("integrates with getRatesCacheState on an empty module (returns 'none')", () => {
+    // End-to-end: a freshly reset module should grade as "none" via the
+    // real getRatesCacheState shape, not just fabricated state. This pins
+    // the contract that "never fetched" maps to the worst grade, which
+    // the SettingsModal dashboard relies on to render the initial banner.
+    const grade = getRatesFreshnessGrade(getRatesCacheState());
+    expect(grade).toBe("none");
+  });
+});
+
 // #209: parseLocaleAmount unit tests — the 3-rule heuristic for
 // distinguishing "comma is a thousands separator" from "comma is a European
 // decimal separator". The OCR fuzz corpus above exercises this through the
@@ -1195,5 +1272,171 @@ describe("isValidRatesPayload REQUIRED_RATE_CODES enforcement", () => {
     const rates = await mod.getExchangeRates();
     expect(rates.timestamp).toBeGreaterThan(0);
     expect(rates.rates.EUR).toBe(0.9);
+  });
+});
+
+/**
+ * Run 16: `rates.staleServed` and `rates.fallbackServed` track *silent
+ * staleness* — how often a conversion runs against data that isn't the
+ * current API snapshot. The two counters split the problem in half:
+ *
+ *   staleServed    = we still have a cached snapshot, just past its TTL
+ *   fallbackServed = we have nothing and are returning compile-time defaults
+ *
+ * The latter is much worse (hardcoded rates are potentially months out of
+ * date), so dashboards can color it separately. Together with the existing
+ * `rates.validationFailed` and `rates.manualRefreshFailed` counters we can
+ * now tell a complete story about why users see bad conversions.
+ */
+describe("rates.staleServed / rates.fallbackServed counters (run 16)", () => {
+  const realFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  function loadFreshModuleWithTelemetry(): {
+    currency: typeof import("../services/currencyExchange");
+    telemetry: typeof import("../services/telemetry");
+  } {
+    let currency: typeof import("../services/currencyExchange") | null = null;
+    let telemetry: typeof import("../services/telemetry") | null = null;
+    jest.isolateModules(() => {
+      jest.doMock("../services/logger", () => ({
+        logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      }));
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      currency = require("../services/currencyExchange");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      telemetry = require("../services/telemetry");
+    });
+    if (!currency || !telemetry) throw new Error("module load failed");
+    return { currency, telemetry };
+  }
+
+  it("increments rates.fallbackServed on first call when network fails and there is no cache", async () => {
+    global.fetch = jest.fn(async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+    const { currency, telemetry } = loadFreshModuleWithTelemetry();
+    const before = telemetry.getAll()["rates.fallbackServed"];
+    const rates = await currency.getExchangeRates();
+    // hardcoded fallback shape — timestamp:0 sentinel
+    expect(rates.timestamp).toBe(0);
+    expect(telemetry.getAll()["rates.fallbackServed"]).toBe(before + 1);
+  });
+
+  it("increments rates.staleServed when a stale cache is served after network failure", async () => {
+    // First: seed a valid cache.
+    let shouldFail = false;
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => {
+      if (shouldFail) throw new Error("network down");
+      return {
+        ok: true,
+        json: async () => ({
+          rates: { USD: 1, EUR: 0.9, GBP: 0.79, JPY: 150, HKD: 7.8 },
+        }),
+      };
+    });
+    const { currency, telemetry } = loadFreshModuleWithTelemetry();
+
+    // Seed the cache with fake timers so we can age it past CACHE_DURATION
+    // without being subject to the 60s throttle on the retry.
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date(2026, 0, 1, 12, 0, 0));
+      const seed = await currency.getExchangeRates();
+      expect(seed.timestamp).toBeGreaterThan(0);
+
+      // Advance 5 hours: cache is stale (TTL 4h) AND we're far past the 60s
+      // throttle window. Next call will attempt a network refetch that fails,
+      // and must fall through to the stale cache — bumping staleServed.
+      jest.setSystemTime(new Date(2026, 0, 1, 17, 0, 0));
+      shouldFail = true;
+      const before = telemetry.getAll()["rates.staleServed"];
+      const result = await currency.getExchangeRates();
+      // Stale cache returned — timestamp is the seed timestamp, not 0.
+      expect(result.timestamp).toBeGreaterThan(0);
+      expect(telemetry.getAll()["rates.staleServed"]).toBe(before + 1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("increments rates.staleServed on the throttled-retry-with-cache path", async () => {
+    // Seed a valid cache, then age past CACHE_DURATION but NOT past the
+    // throttle window. Next call must short-circuit via the throttle arm
+    // (lines 159–168) and bump staleServed from *that* branch.
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        rates: { USD: 1, EUR: 0.9, GBP: 0.79, JPY: 150, HKD: 7.8 },
+      }),
+    }));
+    const { currency, telemetry } = loadFreshModuleWithTelemetry();
+
+    jest.useFakeTimers();
+    try {
+      jest.setSystemTime(new Date(2026, 0, 1, 12, 0, 0));
+      await currency.getExchangeRates(); // seed
+
+      // Advance 5 hours so the cache is stale, then flip fetch to fail and
+      // call again so the real fetch attempt updates lastFetchAttempt.
+      jest.setSystemTime(new Date(2026, 0, 1, 17, 0, 0));
+      global.fetch = jest.fn(async () => {
+        throw new Error("network down");
+      }) as unknown as typeof fetch;
+      // This call attempts the network, fails, returns stale cache (first
+      // staleServed increment — the post-catch fallback path).
+      await currency.getExchangeRates();
+
+      // Now retry immediately: the 60s throttle window blocks another
+      // network attempt, so we take the throttled-with-cache branch. This
+      // is a *distinct* staleServed increment from the post-catch path.
+      const before = telemetry.getAll()["rates.staleServed"];
+      jest.setSystemTime(new Date(2026, 0, 1, 17, 0, 30)); // +30s, still throttled
+      const result = await currency.getExchangeRates();
+      expect(result.timestamp).toBeGreaterThan(0); // stale cache
+      expect(telemetry.getAll()["rates.staleServed"]).toBe(before + 1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it("does NOT increment either counter on a fresh successful fetch", async () => {
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        rates: { USD: 1, EUR: 0.9, GBP: 0.79, JPY: 150, HKD: 7.8 },
+      }),
+    }));
+    const { currency, telemetry } = loadFreshModuleWithTelemetry();
+    const beforeStale = telemetry.getAll()["rates.staleServed"];
+    const beforeFallback = telemetry.getAll()["rates.fallbackServed"];
+    const rates = await currency.getExchangeRates();
+    expect(rates.timestamp).toBeGreaterThan(0); // fresh
+    // Second call within TTL also short-circuits at the first early-return
+    // (fresh cache) and must not bump either counter.
+    await currency.getExchangeRates();
+    expect(telemetry.getAll()["rates.staleServed"]).toBe(beforeStale);
+    expect(telemetry.getAll()["rates.fallbackServed"]).toBe(beforeFallback);
+  });
+
+  it("getRatesServedStats() aggregates both counters into a total", async () => {
+    // Force a single fallbackServed increment, then assert the helper
+    // exposes it through the stats shape wired into telemetry.ts.
+    global.fetch = jest.fn(async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+    const { currency, telemetry } = loadFreshModuleWithTelemetry();
+    const before = telemetry.getRatesServedStats();
+    await currency.getExchangeRates();
+    const after = telemetry.getRatesServedStats();
+    expect(after.fallbackServed).toBe(before.fallbackServed + 1);
+    expect(after.staleServed).toBe(before.staleServed);
+    expect(after.total).toBe(before.total + 1);
   });
 });

@@ -31,12 +31,15 @@ import {
   reset as resetTelemetry,
   prunedUnknownKeys,
   getOfflineQueueStats,
+  getRatesServedStats,
   type OfflineQueueStats,
 } from "../services/telemetry";
 import {
   getRatesCacheState,
+  getRatesFreshnessGrade,
   forceRefreshExchangeRates,
   type RatesCacheState,
+  type RatesFreshnessGrade,
   type RefreshResult,
 } from "../services/currencyExchange";
 import { notifySuccess } from "../services/haptics";
@@ -190,6 +193,30 @@ function refreshOutcomeAccessibilityLabel(r: RefreshResult): string {
   return r.ageMs !== null
     ? `Exchange rate refresh failed. Falling back to cache from ${formatRelativeMs(r.ageMs)}.`
     : `Exchange rate refresh failed.`;
+}
+
+/**
+ * Run 16: short human-readable tag for a `RatesFreshnessGrade`. The grade is
+ * categorical (five buckets) so this is a pure lookup — no interpolation on
+ * `ageMs` because the caller already has a separate label for that. Shown
+ * in square brackets next to the freshness line in the dashboard and in the
+ * crash report so support can tell at a glance which band the user was in
+ * when they filed the bug. `null` return means "don't render a tag" — used
+ * for the fresh grade so the dashboard stays uncluttered in the healthy case.
+ */
+function freshnessGradeTag(g: RatesFreshnessGrade): string | null {
+  switch (g) {
+    case "fresh":
+      return null;
+    case "stale-ok":
+      return "stale";
+    case "stale-warn":
+      return "stale · consider refresh";
+    case "stale-critical":
+      return "critical · refresh now";
+    case "none":
+      return "no cache · using built-in";
+  }
 }
 
 function ratesStateAccessibilityLabel(s: RatesCacheState): string {
@@ -643,7 +670,33 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
         // converted-price displays in the bug report.
         const rates = getRatesCacheState();
         if (rates.hasCache || rates.lastAttemptAgeMs !== null) {
-          diagnosticsLines.push(`  Exchange rates: ${ratesStateLabel(rates)}`);
+          // Run 16: append the categorical freshness grade when it's worse
+          // than "fresh" so support can tell at a glance how bad the
+          // staleness was when the crash was filed. The label itself
+          // already has ageMs, but the grade gives a quick "is this a
+          // mild 5h stale or a full-day critical stale?" answer.
+          const grade = getRatesFreshnessGrade(rates);
+          const gradeTag = freshnessGradeTag(grade);
+          const gradeSuffix = gradeTag ? ` [${gradeTag}]` : "";
+          diagnosticsLines.push(`  Exchange rates: ${ratesStateLabel(rates)}${gradeSuffix}`);
+        }
+        // Run 16: silent-staleness counters. A non-zero staleServed +
+        // fallbackServed count means conversions ran against non-
+        // authoritative data during the session — the number that
+        // dashboards care about most. Split into two lines because the
+        // two conditions have very different severity (fallbackServed is
+        // much worse: the user saw hardcoded rates, not yesterday's API
+        // rates).
+        const ratesServed = getRatesServedStats();
+        if (ratesServed.staleServed > 0) {
+          diagnosticsLines.push(
+            `  Rates served stale: ${ratesServed.staleServed} time${ratesServed.staleServed === 1 ? "" : "s"} (cache past TTL)`
+          );
+        }
+        if (ratesServed.fallbackServed > 0) {
+          diagnosticsLines.push(
+            `  Rates served from built-in fallback: ${ratesServed.fallbackServed} time${ratesServed.fallbackServed === 1 ? "" : "s"} (no cache available)`
+          );
         }
         // #213: manual refresh counters — how often the user hit the
         // "Refresh Rates" override and how often it failed. A spike here
@@ -1311,6 +1364,58 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                             accessibilityLabel={`Rate payload rejected: ${validationFailed} time${validationFailed === 1 ? "" : "s"}`}
                           >
                             Payload rejected: {validationFailed} (API returned invalid data)
+                          </Text>
+                        );
+                      })()}
+                      {/* Run 16: freshness-grade tag. Renders a short
+                          categorical summary ([stale], [stale · consider
+                          refresh], [critical · refresh now], [no cache ·
+                          using built-in]) so the user doesn't have to do
+                          the "4h is the TTL, my cache is 18h old" math in
+                          their head. Silent on the healthy path. Color
+                          escalates: amber for stale/stale-consider, red
+                          for critical and none. */}
+                      {(() => {
+                        const grade = getRatesFreshnessGrade(ratesCacheState);
+                        const tag = freshnessGradeTag(grade);
+                        if (!tag) return null;
+                        const isCritical = grade === "stale-critical" || grade === "none";
+                        return (
+                          <Text
+                            style={[
+                              styles.infoText,
+                              dynamicStyles.infoText,
+                              { color: isCritical ? colors.errorText : colors.primary },
+                            ]}
+                            accessibilityLabel={`Rate freshness grade: ${tag}`}
+                          >
+                            Freshness: [{tag}]
+                          </Text>
+                        );
+                      })()}
+                      {/* Run 16: silent-staleness counters. staleServed +
+                          fallbackServed are the bottom-line numbers: "how
+                          many conversions in this session ran against
+                          non-authoritative data". Silent when both are
+                          zero (the healthy case). Red when fallbackServed
+                          is non-zero because hardcoded rates are much
+                          worse than a mildly stale cache. */}
+                      {(() => {
+                        const served = getRatesServedStats();
+                        if (served.total === 0) return null;
+                        const hasFallback = served.fallbackServed > 0;
+                        return (
+                          <Text
+                            style={[
+                              styles.infoText,
+                              dynamicStyles.infoText,
+                              hasFallback ? { color: colors.errorText } : null,
+                            ]}
+                            accessibilityLabel={
+                              `Rates served this session: ${served.staleServed} from stale cache, ${served.fallbackServed} from built-in fallback`
+                            }
+                          >
+                            Served: stale {served.staleServed} · fallback {served.fallbackServed}
                           </Text>
                         );
                       })()}

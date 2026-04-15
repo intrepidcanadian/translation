@@ -26,14 +26,11 @@ jest.mock("../services/logger", () => ({
 
 // currencyExchange transitively imports telemetry (#220) which pulls in
 // AsyncStorage. Stub the native module so the Node test env can resolve it.
-jest.mock("@react-native-async-storage/async-storage", () => ({
-  __esModule: true,
-  default: {
-    getItem: jest.fn(async () => null),
-    setItem: jest.fn(async () => undefined),
-    removeItem: jest.fn(async () => undefined),
-  },
-}));
+// Uses the shared no-op mock factory (#199) — previously each suite hand-
+// rolled an identical copy.
+jest.mock("@react-native-async-storage/async-storage", () =>
+  require("./__mocks__/asyncStorage").asyncStorageMockFactory()
+);
 
 import { preprocessOCRPriceWraps } from "../utils/ocrPricePreprocess";
 import { detectPricesInText, __resetCacheForTests } from "../services/currencyExchange";

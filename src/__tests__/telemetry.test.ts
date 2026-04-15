@@ -238,6 +238,56 @@ describe("telemetry counters", () => {
       expect(stats.deadLetter).toBe(3);
     });
   });
+
+  // Run 16: rates.staleServed + rates.fallbackServed counters surface
+  // silent staleness to the diagnostics dashboard. These tests pin the
+  // counter shapes and the getRatesServedStats aggregate so future
+  // refactors can't quietly drop the signal that tells us whether a
+  // user is currently seeing wrong conversions.
+  describe("rates served counters (run 16)", () => {
+    it("getRatesServedStats starts at zero", () => {
+      const tm = loadTelemetry();
+      const stats = tm.getRatesServedStats();
+      expect(stats.staleServed).toBe(0);
+      expect(stats.fallbackServed).toBe(0);
+      expect(stats.total).toBe(0);
+    });
+
+    it("increments each counter independently and aggregates into total", () => {
+      const tm = loadTelemetry();
+      tm.increment("rates.staleServed", 4);
+      tm.increment("rates.fallbackServed", 2);
+      const stats = tm.getRatesServedStats();
+      expect(stats.staleServed).toBe(4);
+      expect(stats.fallbackServed).toBe(2);
+      // Total is a simple sum — unlike offlineQueue.failRate, the rates
+      // served counters don't share a denominator, so "how many conversions
+      // did we serve from non-authoritative data" is just staleServed +
+      // fallbackServed. The dashboard can still color the two buckets
+      // differently to signal that fallbackServed is worse.
+      expect(stats.total).toBe(6);
+    });
+
+    it("does NOT contribute to getTypeAheadTotal (isolation fence)", () => {
+      // Same regression fence as offlineQueue — the typeAhead aggregate
+      // must not accidentally sweep up a new counter family added later.
+      const tm = loadTelemetry();
+      tm.increment("rates.staleServed", 10);
+      tm.increment("rates.fallbackServed", 10);
+      expect(tm.getTypeAheadTotal()).toBe(0);
+    });
+
+    it("reset() zeroes both rates served counters", () => {
+      const tm = loadTelemetry();
+      tm.increment("rates.staleServed", 5);
+      tm.increment("rates.fallbackServed", 3);
+      tm.reset();
+      const stats = tm.getRatesServedStats();
+      expect(stats.staleServed).toBe(0);
+      expect(stats.fallbackServed).toBe(0);
+      expect(stats.total).toBe(0);
+    });
+  });
 });
 
 describe("telemetry hydration", () => {

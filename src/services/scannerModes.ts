@@ -39,7 +39,10 @@ const TOTAL_PATTERN = /(?:total|grand total|subtotal|sub-total|合計|总计|합
 const TIP_PATTERN = /(?:tip|gratuity|service charge|pourboire|propina|trinkgeld|チップ|小费)\s*[:：]?\s*(?:[$€£¥₹₩฿]?\s*[\d,.]+)/gi;
 const DATE_PATTERN = /\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}/g;
 
-function extractReceiptFields(text: string, translated: string): ExtractedField[] {
+// Exported for unit tests (run 16). The extractor is pure — same inputs
+// always produce the same output — so we test it directly instead of
+// going through the ScannerMode.extractFields indirection.
+export function extractReceiptFields(text: string, translated: string): ExtractedField[] {
   const combined = `${text}\n${translated}`;
   const fields: ExtractedField[] = [];
 
@@ -82,7 +85,8 @@ const PHONE_PATTERN = /(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\
 const URL_PATTERN = /(?:https?:\/\/|www\.)[^\s,]+/gi;
 const JOB_TITLE_KEYWORDS = /(?:CEO|CTO|CFO|COO|VP|Director|Manager|Engineer|Developer|Designer|Founder|President|Head of|Lead|Senior|Junior|Associate|Consultant|Advisor|Professor|Dr\.?|MD|PhD)/gi;
 
-function extractBusinessCardFields(text: string, translated: string): ExtractedField[] {
+// Exported for unit tests (run 16). Same rationale as extractReceiptFields.
+export function extractBusinessCardFields(text: string, translated: string): ExtractedField[] {
   const combined = `${text}\n${translated}`;
   const fields: ExtractedField[] = [];
 

@@ -157,7 +157,20 @@ export async function getExchangeRates(): Promise<ExchangeRates> {
   // transient hiccup quickly, long enough to keep heavy catalog scanning
   // from spamming the upstream while it's down.
   if (lastFetchAttempt > 0 && now - lastFetchAttempt < MIN_REFETCH_INTERVAL_MS) {
-    if (cachedRates) return cachedRates;
+    if (cachedRates) {
+      // Run 16: throttle suppressed the retry AND the cache is stale
+      // (the first early-return already handled the fresh case). Bump the
+      // staleServed counter so the dashboard can measure how many conversions
+      // are being served by an out-of-date snapshot while we wait for the
+      // throttle window to elapse.
+      incrementTelemetry("rates.staleServed");
+      return cachedRates;
+    }
+    // No cache at all — falling back to hardcoded rates. These are almost
+    // certainly misaligned with real market rates (they're a compile-time
+    // snapshot) so bumping `fallbackServed` is a strong signal that the user
+    // is seeing wrong conversions right now.
+    incrementTelemetry("rates.fallbackServed");
     return {
       base: "USD",
       timestamp: 0,
@@ -211,9 +224,18 @@ export async function getExchangeRates(): Promise<ExchangeRates> {
     logger.warn("Product", "Failed to fetch exchange rates, using fallback", err);
   }
 
-  // Fallback to hardcoded rates
-  if (cachedRates) return cachedRates; // Stale cache better than hardcoded
+  // Fallback to hardcoded rates. Either the network call threw, the response
+  // was non-ok, or the payload failed validation (validation already bumped
+  // its own counter above). In all three cases we're about to serve a stale
+  // cache or the hardcoded snapshot — surface that as a first-class metric
+  // so the dashboard can distinguish "API is up and fresh" from "we're on
+  // yesterday's data" from "we never had any data at all". Run 16.
+  if (cachedRates) {
+    incrementTelemetry("rates.staleServed");
+    return cachedRates; // Stale cache better than hardcoded
+  }
 
+  incrementTelemetry("rates.fallbackServed");
   return {
     base: "USD",
     timestamp: 0, // Indicates fallback
@@ -264,6 +286,65 @@ export function getRatesCacheState(): RatesCacheState {
       ? Math.max(0, MIN_REFETCH_INTERVAL_MS - (lastAttemptAgeMs ?? 0))
       : null,
   };
+}
+
+/**
+ * Run 16: categorical freshness grade derived from a `RatesCacheState`
+ * snapshot. Pure helper — no clock reads, no side effects, so it's trivially
+ * testable and callable from any render path without forcing a re-render on
+ * the wall clock. The five grades correspond to distinct UX affordances:
+ *
+ *   - "none"           → no cache at all. Conversions are using hardcoded
+ *                        compile-time fallback rates. The dashboard should
+ *                        show a hard red "⚠ Using built-in rates" banner.
+ *   - "fresh"          → cache age ≤ 4h (CACHE_DURATION). Normal operation,
+ *                        render as unobtrusive green/neutral.
+ *   - "stale-ok"       → cache age between 4h and 12h. Past TTL but not by
+ *                        much — the rates are likely still close to current.
+ *                        Render as a quiet yellow "Stale, auto-refresh on
+ *                        next call".
+ *   - "stale-warn"     → cache age between 12h and 24h. Getting old enough
+ *                        that currency pairs may have drifted non-trivially.
+ *                        Render as an amber "Consider manual refresh".
+ *   - "stale-critical" → cache age > 24h. Conversions are running on data
+ *                        that's older than a full trading day, which is
+ *                        worse than useless for volatile pairs. Render as
+ *                        red "Refresh now".
+ *
+ * Why four stale tiers instead of one binary stale flag: during background
+ * API outages the cache drifts through these bands over hours, and the
+ * dashboard can use the grade to decide whether to nag the user into a
+ * manual refresh vs. silently absorb the gap. Also, the crash report bundles
+ * the grade so support can tell at a glance whether a user's bad conversion
+ * came from a mildly stale cache or a day-old one.
+ *
+ * The 12h / 24h thresholds are heuristic — major currency pairs (USD/EUR,
+ * USD/GBP, USD/JPY) typically move <0.5% intraday, so 12h of staleness
+ * compounds to maybe 1% error on average. A full 24h can push that to 2–3%
+ * on volatile days, which is the threshold at which the "wrong price" UX
+ * complaint starts to dominate.
+ */
+export type RatesFreshnessGrade =
+  | "none"
+  | "fresh"
+  | "stale-ok"
+  | "stale-warn"
+  | "stale-critical";
+
+const STALE_OK_CEILING_MS = 12 * 60 * 60 * 1000; // 12h
+const STALE_WARN_CEILING_MS = 24 * 60 * 60 * 1000; // 24h
+
+export function getRatesFreshnessGrade(state: RatesCacheState): RatesFreshnessGrade {
+  // No cache at all (first boot, or cache never populated) → treat as the
+  // worst case. Note that `hasCache=true` with `ageMs=null` can happen
+  // briefly if we seeded with a fallback payload (`timestamp: 0`) — the
+  // getRatesCacheState() implementation already normalizes that branch
+  // to `ageMs=null`, so we treat it identically to no cache.
+  if (!state.hasCache || state.ageMs === null) return "none";
+  if (state.ageMs < CACHE_DURATION) return "fresh";
+  if (state.ageMs < STALE_OK_CEILING_MS) return "stale-ok";
+  if (state.ageMs < STALE_WARN_CEILING_MS) return "stale-warn";
+  return "stale-critical";
 }
 
 /**

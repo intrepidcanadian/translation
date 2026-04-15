@@ -114,7 +114,21 @@ export type OfflineQueueKey =
 export type RatesKey =
   | "rates.manualRefresh"
   | "rates.manualRefreshFailed"
-  | "rates.validationFailed";
+  | "rates.validationFailed"
+  // New in run 16: distinguishes the two distinct "silently running on stale
+  // rates" conditions that users previously couldn't see. `staleServed` fires
+  // whenever `getExchangeRates()` returns a cache whose timestamp is past the
+  // 4-hour TTL — either because the refetch throttle (#200) suppressed a
+  // retry, or because the retry happened and failed (network error, validation
+  // rejection). `fallbackServed` fires when even a stale cache isn't available
+  // and the function returns the hardcoded `FALLBACK_RATES` constant, which is
+  // almost certainly misaligned with real market rates. A spike in either is a
+  // leading indicator that conversions in the wild are incorrect — separating
+  // them lets the dashboard tell "API is down but we still have yesterday's
+  // snapshot" from "we have nothing and are guessing at JPY/154.5". Pairs with
+  // the freshness-grade helper #3 and the SettingsModal dashboard surface #5.
+  | "rates.staleServed"
+  | "rates.fallbackServed";
 
 export type TelemetryKey = TypeAheadKey | SpeechKey | OfflineQueueKey | RatesKey;
 
@@ -135,6 +149,8 @@ const counters: Record<TelemetryKey, number> = {
   "rates.manualRefresh": 0,
   "rates.manualRefreshFailed": 0,
   "rates.validationFailed": 0,
+  "rates.staleServed": 0,
+  "rates.fallbackServed": 0,
 };
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -371,6 +387,30 @@ export function getOfflineQueueStats(): OfflineQueueStats {
   const total = success + failed;
   const failRate = total === 0 ? 0 : failed / total;
   return { success, failed, deadLetter, total, failRate };
+}
+
+/**
+ * Run 16: aggregate view of the exchange-rate "silent staleness" counters.
+ * `staleServed` and `fallbackServed` are bumped every time `getExchangeRates`
+ * returns a snapshot that isn't fresh — either because the refetch throttle
+ * suppressed a retry, because the retry failed, or because we have no cache
+ * at all and are using the hardcoded FALLBACK_RATES snapshot.
+ *
+ * Dashboard and crash report want a single structured read instead of four
+ * individual `get()` calls, and want the derived `total = stale + fallback`
+ * so they can compute "N of M conversions served from stale data" hints.
+ */
+export interface RatesServedStats {
+  staleServed: number;
+  fallbackServed: number;
+  /** Sum of staleServed + fallbackServed. A fresh cache hit is not counted. */
+  total: number;
+}
+
+export function getRatesServedStats(): RatesServedStats {
+  const staleServed = counters["rates.staleServed"];
+  const fallbackServed = counters["rates.fallbackServed"];
+  return { staleServed, fallbackServed, total: staleServed + fallbackServed };
 }
 
 /**
