@@ -134,7 +134,12 @@ const FREQUENCY_PATTERN = /(?:once|twice|three times|four times|\d+\s*(?:times?|
 const WARNING_KEYWORDS = /(?:warning|caution|do not|avoid|allergy|allergic|side effect|contraindic|interaction|overdose|poison|emergency|danger|precaution|注意|警告|禁忌|副作用)/gi;
 const DRUG_NAME_PATTERN = /(?:acetaminophen|ibuprofen|aspirin|amoxicillin|metformin|lisinopril|atorvastatin|omeprazole|amlodipine|metoprolol|losartan|gabapentin|hydrochlorothiazide|sertraline|paracetamol|diclofenac|ciprofloxacin|azithromycin|prednisone|insulin|codeine|morphine|tramadol|oxycodone|penicillin|cephalexin)/gi;
 
-function extractMedicineFields(text: string, translated: string): ExtractedField[] {
+// Exported for unit tests (run 17). Same pure-extractor rationale as
+// extractReceiptFields / extractBusinessCardFields — medicine/menu/textbook
+// scanner output must not silently drift when a keyword list changes or a
+// regex bound shifts, and component-level snapshot tests are a poor fit
+// because the extractors don't render anything.
+export function extractMedicineFields(text: string, translated: string): ExtractedField[] {
   const combined = `${text}\n${translated}`;
   const fields: ExtractedField[] = [];
 
@@ -177,7 +182,8 @@ const PRICE_PATTERN = /(?:[$€£¥₹₩฿₫₱₸₺₽₴])\s*[\d,]+(?:\.\d
 const ALLERGEN_KEYWORDS = /(?:nuts?|peanut|tree nut|gluten|wheat|dairy|milk|lactose|egg|soy|soya|shellfish|fish|sesame|mustard|celery|lupin|mollusc|sulphite|sulfite|vegan|vegetarian|halal|kosher|spicy|hot|organic|gluten.?free|nut.?free|dairy.?free|含坚果|小麦|乳|卵|大豆|えび|かに|アレルギー)/gi;
 const CATEGORY_KEYWORDS = /(?:appetizer|starter|entrée|main|course|dessert|drink|beverage|soup|salad|side|special|breakfast|lunch|dinner|前菜|スープ|メイン|デザート|飲み物|开胃菜|主菜|甜点|饮料)/gi;
 
-function extractMenuFields(text: string, translated: string): ExtractedField[] {
+// Exported for unit tests (run 17). See extractMedicineFields rationale.
+export function extractMenuFields(text: string, translated: string): ExtractedField[] {
   const combined = `${text}\n${translated}`;
   const fields: ExtractedField[] = [];
 
@@ -236,7 +242,8 @@ function extractMenuFields(text: string, translated: string): ExtractedField[] {
 
 // ---- Textbook / Notes ----
 
-function extractTextbookFields(text: string, translated: string): ExtractedField[] {
+// Exported for unit tests (run 17). See extractMedicineFields rationale.
+export function extractTextbookFields(text: string, translated: string): ExtractedField[] {
   const fields: ExtractedField[] = [];
 
   // Word/sentence counts

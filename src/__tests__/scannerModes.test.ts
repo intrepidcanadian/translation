@@ -23,15 +23,20 @@
  *   Pins the 40-char length guard and the leading-digit guard that
  *   distinguish a name from an address line.
  *
- * We do NOT test the menu/medicine/textbook/document extractors here —
- * they have narrower keyword vocabularies that are essentially regression
- * guards against their own source code. Receipts and business cards carry
- * the bulk of the product traffic and are worth the explicit fence.
+ * Run 17 adds coverage for the menu / medicine / textbook extractors,
+ * because those keyword lists drift just as easily as the receipt regexes
+ * — a user renaming ALLERGEN_KEYWORDS or DRUG_NAME_PATTERN would silently
+ * break the scanner UI with no unit-level fence. Each suite pins the
+ * high-value contract (what gets extracted, what icons/colors it gets,
+ * how the action verbs wire up) without locking in every keyword.
  */
 
 import {
   extractReceiptFields,
   extractBusinessCardFields,
+  extractMedicineFields,
+  extractMenuFields,
+  extractTextbookFields,
 } from "../services/scannerModes";
 
 describe("extractReceiptFields (run 16)", () => {
@@ -209,5 +214,215 @@ describe("extractBusinessCardFields (run 16)", () => {
     const fields = extractBusinessCardFields("jane@example.com", "jane@example.com");
     const emails = fields.filter((f) => f.label === "Email");
     expect(emails.length).toBe(1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Run 17: medicine / menu / textbook extractors.
+// Narrow keyword vocabularies are still worth pinning because a traveler
+// scanning a prescription label in a foreign country has high safety stakes
+// — a silently-dropped warning or dosage is a user-harm failure mode, not
+// just a rendering glitch. Receipts carry financial stakes, these carry
+// health/safety stakes, menus carry allergen stakes. All three justify the
+// fence.
+// ─────────────────────────────────────────────────────────────────────────
+
+describe("extractMedicineFields (run 17)", () => {
+  it("extracts a known drug name with the Rx icon", () => {
+    // DRUG_NAME_PATTERN is a literal alternation of common generic names;
+    // the set is the product contract. Pin the extraction for a small
+    // representative sample so a typo in the list fails loudly.
+    const fields = extractMedicineFields("Take ibuprofen 400mg twice daily", "");
+    const drug = fields.find((f) => f.label === "Drug Name");
+    expect(drug).toBeDefined();
+    expect(drug?.value.toLowerCase()).toBe("ibuprofen");
+    expect(drug?.icon).toBe("Rx");
+  });
+
+  it("extracts a dosage with amount + unit", () => {
+    const fields = extractMedicineFields("500mg once daily", "");
+    const dosage = fields.find((f) => f.label === "Dosage");
+    expect(dosage).toBeDefined();
+    expect(dosage?.value).toMatch(/500\s*mg/i);
+  });
+
+  it("recognizes multiple dosage units (mg, ml, mcg, tablet)", () => {
+    // DOSAGE_PATTERN covers several unit suffixes. Pin a sample so a
+    // narrowing of the pattern fails the suite.
+    const fields = extractMedicineFields("2 tablets, 10ml liquid, 250mcg injection", "");
+    const dosages = fields.filter((f) => f.label === "Dosage").map((f) => f.value);
+    expect(dosages.some((d) => /tablet/i.test(d))).toBe(true);
+    expect(dosages.some((d) => /ml/i.test(d))).toBe(true);
+    expect(dosages.some((d) => /mcg/i.test(d))).toBe(true);
+  });
+
+  it("extracts a frequency phrase ('twice a day')", () => {
+    const fields = extractMedicineFields("Take one tablet twice a day", "");
+    const freq = fields.find((f) => f.label === "Frequency");
+    expect(freq).toBeDefined();
+    expect(freq?.value.toLowerCase()).toMatch(/twice\s+a\s+day/);
+  });
+
+  it("extracts a Latin-abbreviation frequency (b.i.d.)", () => {
+    // Prescription Latin — common enough on real labels to be worth pinning.
+    const fields = extractMedicineFields("ibuprofen 400mg b.i.d.", "");
+    const freq = fields.find((f) => f.label === "Frequency");
+    expect(freq).toBeDefined();
+    expect(freq?.value.toLowerCase()).toMatch(/b\.?i\.?d\.?/);
+  });
+
+  it("surfaces a warning with a red color and a single joined field", () => {
+    // Warnings all collapse into one red-colored field so the UI can render
+    // a single "!" badge instead of scattering them through the list.
+    const fields = extractMedicineFields("Warning: do not take with alcohol. Caution when driving.", "");
+    const warn = fields.find((f) => f.label === "Warnings Found");
+    expect(warn).toBeDefined();
+    expect(warn?.color).toBe("#ef4444"); // red
+    // Multiple warning tokens joined in one field.
+    expect(warn?.value.toLowerCase()).toMatch(/warning/);
+    expect(warn?.value.toLowerCase()).toMatch(/caution|do not/);
+  });
+
+  it("extracts expiry dates as a Date field", () => {
+    const fields = extractMedicineFields("Expires 2027-06-30\nLot 12345", "");
+    const date = fields.find((f) => f.label === "Date");
+    expect(date).toBeDefined();
+    expect(date?.value).toBe("2027-06-30");
+  });
+
+  it("returns an empty array on unrelated text", () => {
+    // No drug names, no dosages, no warnings, no dates → no fields.
+    expect(extractMedicineFields("Hello world", "")).toEqual([]);
+  });
+});
+
+describe("extractMenuFields (run 17)", () => {
+  it("produces a price range field when multiple prices are present", () => {
+    // Price Range collapses min/max into one field. The label uses an em-dash
+    // separator. Pin both ends of the range so a parseFloat bug surfaces.
+    const fields = extractMenuFields("Pasta $12.00\nSteak $32.50\nSalad $8.00", "");
+    const range = fields.find((f) => f.label === "Price Range");
+    expect(range).toBeDefined();
+    expect(range?.value).toMatch(/\$8\.00.*\$32\.50/);
+  });
+
+  it("collapses a single-price menu into a single-value range", () => {
+    // When min === max the extractor should emit just the one price, not
+    // "$12.00 – $12.00". Pins the equality branch in the range formatter.
+    const fields = extractMenuFields("Dish of the day $12.00", "");
+    const range = fields.find((f) => f.label === "Price Range");
+    expect(range).toBeDefined();
+    expect(range?.value).toBe("$12.00");
+  });
+
+  it("counts items with prices", () => {
+    const fields = extractMenuFields("Item1 $5\nItem2 $10\nItem3 $15", "");
+    const count = fields.find((f) => f.label === "Items with Prices");
+    expect(count).toBeDefined();
+    expect(count?.value).toMatch(/3 items/);
+  });
+
+  it("surfaces an allergen field in red when dietary keywords are present", () => {
+    const fields = extractMenuFields("Contains nuts and dairy. Gluten-free options.", "");
+    const allergens = fields.find((f) => f.label === "Allergens/Dietary");
+    expect(allergens).toBeDefined();
+    expect(allergens?.color).toBe("#ef4444");
+    // Multiple allergen tokens present, joined into one field.
+    expect(allergens?.value.toLowerCase()).toMatch(/nut/);
+    expect(allergens?.value.toLowerCase()).toMatch(/dairy|milk/);
+  });
+
+  it("surfaces menu section categories (appetizer / main / dessert)", () => {
+    const fields = extractMenuFields("Appetizer\nMain Course\nDessert", "");
+    const sections = fields.find((f) => f.label === "Sections");
+    expect(sections).toBeDefined();
+    const v = sections?.value.toLowerCase() ?? "";
+    expect(v).toMatch(/appetizer/);
+    expect(v).toMatch(/main|course/);
+    expect(v).toMatch(/dessert/);
+  });
+
+  it("returns an empty array on a menu with no prices or keywords", () => {
+    expect(extractMenuFields("Welcome to our restaurant", "")).toEqual([]);
+  });
+
+  it("does not emit a Price Range field when no prices match", () => {
+    // Category-only text (no money) should skip the price branch entirely.
+    const fields = extractMenuFields("Appetizer Main Dessert", "");
+    expect(fields.some((f) => f.label === "Price Range")).toBe(false);
+    // But should still get the Sections field.
+    expect(fields.some((f) => f.label === "Sections")).toBe(true);
+  });
+});
+
+describe("extractTextbookFields (run 17)", () => {
+  it("counts words and sentences on the translated text", () => {
+    const fields = extractTextbookFields(
+      "",
+      "This is a sentence. This is another one. And a third."
+    );
+    const words = fields.find((f) => f.label === "Words");
+    const sentences = fields.find((f) => f.label === "Sentences");
+    expect(words?.value).toBe("11"); // 11 words
+    expect(sentences?.value).toBe("3"); // 3 sentences
+  });
+
+  it("counts paragraphs only when there is more than one", () => {
+    // The extractor suppresses the Paragraphs field when paragraphs <= 1
+    // so short single-paragraph notes don't get a useless "Paragraphs: 1".
+    const singleParaFields = extractTextbookFields("", "Just one paragraph here.");
+    expect(singleParaFields.some((f) => f.label === "Paragraphs")).toBe(false);
+
+    const multiParaFields = extractTextbookFields(
+      "",
+      "First paragraph.\n\nSecond paragraph.\n\nThird paragraph."
+    );
+    const paras = multiParaFields.find((f) => f.label === "Paragraphs");
+    expect(paras?.value).toBe("3");
+  });
+
+  it("extracts referenced dates from the combined corpus", () => {
+    // `${text}\n${translated}` — dates from either side count.
+    const fields = extractTextbookFields(
+      "Chapter 1 — 2024-01-15",
+      "See also 2023-07-20"
+    );
+    const dates = fields.find((f) => f.label === "Dates Referenced");
+    expect(dates).toBeDefined();
+    expect(dates?.value).toMatch(/2024-01-15/);
+    expect(dates?.value).toMatch(/2023-07-20/);
+  });
+
+  it("extracts key numbers from the translated text, capped at 10", () => {
+    // The number extractor slices to the first 10 so a table of 50 figures
+    // doesn't blow out the field. Pin the cap.
+    const numbers = Array.from({ length: 15 }, (_, i) => `${(i + 1) * 100}`);
+    const fields = extractTextbookFields("", numbers.join(" "));
+    const keyNums = fields.find((f) => f.label === "Key Numbers");
+    expect(keyNums).toBeDefined();
+    const extracted = keyNums?.value.split(",").map((s) => s.trim()) ?? [];
+    expect(extracted.length).toBeLessThanOrEqual(10);
+  });
+
+  it("skips single-digit numbers (length > 1 guard)", () => {
+    // The `.filter((n) => n.length > 1)` drops bare digits so "I have 5"
+    // doesn't fill Key Numbers with useless single-char entries.
+    const fields = extractTextbookFields("", "I have 5 books and 2 pens");
+    const keyNums = fields.find((f) => f.label === "Key Numbers");
+    // Might be undefined if no multi-char numbers are found, or present
+    // but without 5 / 2.
+    if (keyNums) {
+      const vals = keyNums.value.split(",").map((s) => s.trim());
+      expect(vals).not.toContain("5");
+      expect(vals).not.toContain("2");
+    }
+  });
+
+  it("always returns at least the Words and Sentences fields", () => {
+    // Even an empty translated string should produce Words=0 and Sentences=0
+    // — the extractor always emits those two as the baseline.
+    const fields = extractTextbookFields("", "");
+    expect(fields.some((f) => f.label === "Words")).toBe(true);
+    expect(fields.some((f) => f.label === "Sentences")).toBe(true);
   });
 });
