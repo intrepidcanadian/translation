@@ -11,19 +11,79 @@ interface DetectedBlock {
   frame: { top: number; left: number; width: number; height: number };
 }
 
+// Shape returned by react-native-vision-camera-ocr-plus's scanText frame
+// processor — see node_modules/react-native-vision-camera-ocr-plus/src/types.ts.
+// The native iOS/Android plugins prefix every field with its container name
+// (blockText/blockFrame/lineText/lineFrame) to keep block and line data
+// distinct when flattened, so the keys we read here must match exactly or
+// every OCR frame silently resolves to zero lines and nothing renders.
 interface OCRFrame {
-  x?: number;
-  y?: number;
-  top?: number;
-  left?: number;
-  width?: number;
-  height?: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  boundingCenterX?: number;
+  boundingCenterY?: number;
+}
+
+interface OCRLine {
+  lineText: string;
+  lineFrame: OCRFrame;
 }
 
 interface OCRBlock {
+  blockText: string;
+  blockFrame: OCRFrame;
+  lines?: OCRLine[];
+}
+
+export interface ParsedOCRLine {
   text: string;
-  lines?: Array<{ text: string; frame?: OCRFrame }>;
-  frame?: OCRFrame;
+  frame: { top: number; left: number; width: number; height: number };
+}
+
+/**
+ * Normalize the raw react-native-vision-camera-ocr-plus frame callback data
+ * into a flat list of `{ text, frame }` pairs. Extracted so the field-name
+ * mapping (blockText/blockFrame/lineText/lineFrame → text/frame/top/left)
+ * can be unit-tested without mounting the hook.
+ *
+ * Prefers line-level text when the block carries `lines`, falls back to
+ * block-level text for blocks without line decomposition (Android
+ * lightweight mode emits blocks without lines). Skips blank strings and
+ * entries missing a frame.
+ */
+export function parseOCRFrameData(data: unknown): ParsedOCRLine[] {
+  const ocrData = data as { blocks?: OCRBlock[] } | null;
+  const blocks: OCRBlock[] = ocrData?.blocks || [];
+  const lines: ParsedOCRLine[] = [];
+  for (const block of blocks) {
+    if (block?.lines && block.lines.length) {
+      for (const line of block.lines) {
+        if (!line?.lineText?.trim() || !line.lineFrame) continue;
+        lines.push({
+          text: line.lineText.trim(),
+          frame: {
+            top: line.lineFrame.y ?? 0,
+            left: line.lineFrame.x ?? 0,
+            width: line.lineFrame.width ?? 0,
+            height: line.lineFrame.height ?? 0,
+          },
+        });
+      }
+    } else if (block?.blockText?.trim() && block.blockFrame) {
+      lines.push({
+        text: block.blockText.trim(),
+        frame: {
+          top: block.blockFrame.y ?? 0,
+          left: block.blockFrame.x ?? 0,
+          width: block.blockFrame.width ?? 0,
+          height: block.blockFrame.height ?? 0,
+        },
+      });
+    }
+  }
+  return lines;
 }
 
 interface UseLiveOCRParams {
@@ -101,45 +161,16 @@ export function useLiveOCR({
     if (isPaused || isCaptured || !isMountedRef.current) return;
 
     try {
-      const ocrData = data as { result?: { blocks?: OCRBlock[] }; blocks?: OCRBlock[] } | null;
-      const blocks: OCRBlock[] = ocrData?.result?.blocks || ocrData?.blocks || [];
-      if (!blocks.length) {
+      const lines = parseOCRFrameData(data);
+      if (lines.length === 0) {
+        // Empty frame — clear stale detections so overlays fade out when
+        // the user moves the camera away from text.
         if (lastOCRTextRef.current !== "") {
           lastOCRTextRef.current = "";
           setDetectedBlocks([]);
         }
         return;
       }
-
-      const lines: Array<{ text: string; frame: { top: number; left: number; width: number; height: number } }> = [];
-      for (const block of blocks) {
-        if (block.lines) {
-          for (const line of block.lines) {
-            if (!line.text?.trim() || !line.frame) continue;
-            lines.push({
-              text: line.text.trim(),
-              frame: {
-                top: line.frame.y ?? line.frame.top ?? 0,
-                left: line.frame.x ?? line.frame.left ?? 0,
-                width: line.frame.width ?? 0,
-                height: line.frame.height ?? 0,
-              },
-            });
-          }
-        } else if (block.text?.trim() && block.frame) {
-          lines.push({
-            text: block.text.trim(),
-            frame: {
-              top: block.frame.y ?? block.frame.top ?? 0,
-              left: block.frame.x ?? block.frame.left ?? 0,
-              width: block.frame.width ?? 0,
-              height: block.frame.height ?? 0,
-            },
-          });
-        }
-      }
-
-      if (lines.length === 0) return;
 
       const currentText = lines.map((l) => l.text).join("|");
       if (currentText === lastOCRTextRef.current) return;

@@ -42,9 +42,12 @@ type Phase = "scanning" | "loading" | "results" | "not_found" | "ocr";
 // Shape returned by react-native-vision-camera-ocr-plus's frame callback.
 // Mirrors the parsing in src/hooks/useLiveOCR.ts so we don't depend on
 // that hook's translation pipeline (we just want the raw text here).
-interface OCRLine { text?: string }
-interface OCRBlock { text?: string; lines?: OCRLine[] }
-interface OCRFrameData { result?: { blocks?: OCRBlock[] }; blocks?: OCRBlock[] }
+// Field names must match the native plugin exactly — it prefixes every
+// field with its container name (lineText/blockText) and emits no
+// `result` wrapper around the top-level `blocks` array.
+interface OCRLine { lineText?: string }
+interface OCRBlock { blockText?: string; lines?: OCRLine[] }
+interface OCRFrameData { blocks?: OCRBlock[] }
 
 function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
   const device = useCameraDevice("back");
@@ -90,17 +93,17 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
   // just feeding text into a product search.
   const handleOCRFrame = useCallback((data: unknown) => {
     const ocrData = data as OCRFrameData | null;
-    const blocks: OCRBlock[] = ocrData?.result?.blocks || ocrData?.blocks || [];
+    const blocks: OCRBlock[] = ocrData?.blocks || [];
     if (!blocks.length) return;
     const lines: string[] = [];
     for (const block of blocks) {
       if (block.lines?.length) {
         for (const line of block.lines) {
-          const t = line.text?.trim();
+          const t = line.lineText?.trim();
           if (t) lines.push(t);
         }
-      } else if (block.text?.trim()) {
-        lines.push(block.text.trim());
+      } else if (block.blockText?.trim()) {
+        lines.push(block.blockText.trim());
       }
     }
     if (!lines.length) return;
