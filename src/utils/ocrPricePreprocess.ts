@@ -47,7 +47,7 @@
  * merges in long digit runs from OCR garbage.
  */
 
-const PRICE_PREFIX = "(?:\\bHK\\$|\\bNT\\$|\\bMX\\$|\\bS\\$|\\bA\\$|\\bUS\\$|\\bRM|[$€£¥₹₩฿₫₱]|د\\.إ)";
+const PRICE_PREFIX = "(?:\\bHK\\$|\\bNT\\$|\\bMX\\$|\\bRD\\$|\\bS\\$|\\bA\\$|\\bUS\\$|\\bRM|[$€£¥₹₩฿₫₱]|د\\.إ)";
 
 // Globally scoped so .replace() can sweep every wrap in a multi-line block.
 // The capture groups feed the merge function.

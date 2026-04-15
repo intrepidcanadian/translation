@@ -46,6 +46,16 @@ export const CURRENCIES: Record<string, { symbol: string; flag: string; name: st
   // letter-code path. `pesos?` word form folds Argentine/Chilean pesos into
   // MXN by default, which is a known compromise documented in nameToCurrency.
   MXN: { symbol: "MX$", flag: "🇲🇽", name: "Mexican Peso", decimals: 2 },
+  // #196: other "peso" currencies — enabled so the peso-region setting can
+  // resolve `parsePrice("250 pesos")` to ARS/CLP/COP/CUP/DOP and have the
+  // downstream convertPrice/batchConvertPrices paths actually produce a
+  // conversion. Without these entries `fromRate = rates.rates[code]` would
+  // miss and the UI would silently drop the price.
+  ARS: { symbol: "$", flag: "🇦🇷", name: "Argentine Peso", decimals: 2 },
+  CLP: { symbol: "$", flag: "🇨🇱", name: "Chilean Peso", decimals: 0 },
+  COP: { symbol: "$", flag: "🇨🇴", name: "Colombian Peso", decimals: 0 },
+  CUP: { symbol: "$", flag: "🇨🇺", name: "Cuban Peso", decimals: 2 },
+  DOP: { symbol: "RD$", flag: "🇩🇴", name: "Dominican Peso", decimals: 2 },
 };
 
 // Default display currencies for airline crew (most relevant markets)
@@ -72,6 +82,15 @@ const FALLBACK_RATES: Record<string, number> = {
   PHP: 56.8,
   IDR: 15900,
   MXN: 17.05,
+  // #196: approximate fallback rates for the peso-region set. Real values
+  // drift daily; these are compile-time snapshots used only when the API
+  // is unreachable and no cache exists. The fallbackServed telemetry
+  // counter bumps loudly when these are actually used, so users notice.
+  ARS: 1020,
+  CLP: 970,
+  COP: 4050,
+  CUP: 24,
+  DOP: 60,
 };
 
 // Module-level cache
@@ -357,6 +376,10 @@ export function getRatesFreshnessGrade(state: RatesCacheState): RatesFreshnessGr
 export function __resetCacheForTests(): void {
   cachedRates = null;
   lastFetchAttempt = 0;
+  // #196: peso region also reverts to the MXN default so tests that bump
+  // the setter don't bleed their state across suites. Production code
+  // MUST NOT call this — it would silently clobber the user's setting.
+  pesoDefaultRegion = "MXN";
 }
 
 /**
@@ -527,7 +550,7 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   // naive `.`-only class would have dropped the last two digits before
   // parseLocaleAmount got a chance to interpret them.
   // #218: amount sub-pattern widened — see the rmFirst comment above.
-  const symbolFirst = cleaned.match(/^([HKNTSAMXد.إ]*[$€£¥₹₩฿₫₱¢])\s*(\d(?:[\d.,]*\d)?)/);
+  const symbolFirst = cleaned.match(/^([HKNTSAMXRDد.إ]*[$€£¥₹₩฿₫₱¢])\s*(\d(?:[\d.,]*\d)?)/);
   if (symbolFirst) {
     const sym = symbolFirst[1];
     const num = parseLocaleAmount(symbolFirst[2]);
@@ -537,7 +560,7 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   }
 
   // Symbol-last patterns: 100$, 100€
-  const symbolLast = cleaned.match(/(\d(?:[\d.,]*\d)?)\s*([HKNTSAMXد.إ]*[$€£¥₹₩฿₫₱¢])/);
+  const symbolLast = cleaned.match(/(\d(?:[\d.,]*\d)?)\s*([HKNTSAMXRDد.إ]*[$€£¥₹₩฿₫₱¢])/);
   if (symbolLast) {
     const num = parseLocaleAmount(symbolLast[1]);
     const sym = symbolLast[2];
@@ -553,7 +576,7 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   // Without this, `parsePrice("BAHT 120")` would have to fall through to the
   // codeAfter branch which only matches digit-then-word, so leading-word
   // forms silently returned null.
-  const codePattern = cleaned.match(/(?:^|\s)(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|MXN|dollars?|euros?|pounds?|yen|yuan|won|baht|pesos?)\s*(\d(?:[\d.,]*\d)?)/i);
+  const codePattern = cleaned.match(/(?:^|\s)(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|MXN|ARS|CLP|COP|CUP|DOP|dollars?|euros?|pounds?|yen|yuan|won|baht|pesos?)\s*(\d(?:[\d.,]*\d)?)/i);
   if (codePattern) {
     const num = parseLocaleAmount(codePattern[2]);
     if (!isNaN(num)) {
@@ -566,7 +589,7 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   // already had a THB branch. The OCR fuzz corpus pinned the bug as a
   // current-behavior fixture — flipping the corpus expectation to include
   // THB 120 is part of this fix.
-  const codeAfter = cleaned.match(/(\d(?:[\d.,]*\d)?)\s*(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|MXN|dollars?|euros?|pounds?|yen|yuan|won|baht|pesos?)/i);
+  const codeAfter = cleaned.match(/(\d(?:[\d.,]*\d)?)\s*(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|MXN|ARS|CLP|COP|CUP|DOP|dollars?|euros?|pounds?|yen|yuan|won|baht|pesos?)/i);
   if (codeAfter) {
     const num = parseLocaleAmount(codeAfter[1]);
     const code = codeAfter[2].toUpperCase();
@@ -709,7 +732,13 @@ export function detectPricesInText(text: string): Array<{ raw: string; currency:
   // parseLocaleAmount sorts out the locale heuristic for the captured tail.
   // #219: MX$ joins the multi-char prefix list and `MXN` / `pesos?` join the
   // letter-code alternations so Mexican Peso receipts extract end-to-end.
-  const MONEY_RE = /(?:\bHK\$|\bNT\$|\bMX\$|\bS\$|\bA\$|\bUS\$|\bRM|[$€£¥₹₩฿₫₱]|د\.إ)\s*\d(?:[\d.,]*\d)?|\b(?:USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|MXN|dollars?|euros?|pounds?|yen|yuan|won|baht|pesos?)\b\s*\d(?:[\d.,]*\d)?|\d(?:[\d.,]*\d)?\s*(?:\bHK\$|\bNT\$|\bMX\$|\bS\$|[$€£¥₹₩฿₫₱]|\b(?:RM|dollars?|euros?|pounds?|yen|yuan|won|baht|pesos?|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|MXN)\b)/gi;
+  // #196: ARS/CLP/COP/CUP/DOP join the letter-code alternations so an
+  // "AR$ 250" / "250 ARS" / "CLP 5000" input reaches parsePrice. The bare
+  // `$` sigil still resolves to USD by default — Latin-America travelers
+  // who want bare `$` to mean ARS/CLP/COP should set the peso region AND
+  // expect receipts to include a currency code. The regex can't infer
+  // region from context alone.
+  const MONEY_RE = /(?:\bHK\$|\bNT\$|\bMX\$|\bRD\$|\bS\$|\bA\$|\bUS\$|\bRM|[$€£¥₹₩฿₫₱]|د\.إ)\s*\d(?:[\d.,]*\d)?|\b(?:USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|MXN|ARS|CLP|COP|CUP|DOP|dollars?|euros?|pounds?|yen|yuan|won|baht|pesos?)\b\s*\d(?:[\d.,]*\d)?|\d(?:[\d.,]*\d)?\s*(?:\bHK\$|\bNT\$|\bMX\$|\bRD\$|\bS\$|[$€£¥₹₩฿₫₱]|\b(?:RM|dollars?|euros?|pounds?|yen|yuan|won|baht|pesos?|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|MXN|ARS|CLP|COP|CUP|DOP)\b)/gi;
 
   // #215: merge OCR line-wrap fragments before regex matching. Pure passthrough
   // for clean text — only mutates inputs that match the unambiguous wrap shape
@@ -742,6 +771,8 @@ function symbolToCurrency(symbol: string): string {
   if (symbol.includes("HK$") || symbol === "HK$") return "HKD";
   if (symbol.includes("NT$") || symbol === "NT$") return "TWD";
   if (symbol.includes("MX$") || symbol === "MX$") return "MXN";
+  // #196: Dominican Peso prefix. Must come before the bare `$` fallthrough.
+  if (symbol.includes("RD$") || symbol === "RD$") return "DOP";
   if (symbol.includes("S$") || symbol === "S$") return "SGD";
   if (symbol.includes("A$") || symbol === "A$") return "AUD";
   if (symbol.includes("د.إ")) return "AED";
@@ -761,6 +792,64 @@ function symbolToCurrency(symbol: string): string {
   }
 }
 
+/**
+ * #196: "peso" is ambiguous — could be MXN, ARS, CLP, COP, CUP, DOP, or PHP
+ * depending on the traveler's region. The parser can't disambiguate from the
+ * text alone, so we expose a user-level setting. Settings hydration calls
+ * `setPesoDefaultRegion()` at startup and whenever the user changes it, so
+ * `parsePrice("250 pesos")` returns the region the user actually cares about
+ * instead of always defaulting to MXN.
+ *
+ * Default is MXN because Cancun/Mexico City duty-free is still the highest-
+ * volume peso the app sees in practice, but Latin America crew can now flip
+ * to ARS/CLP/COP without every receipt coming back mis-classified.
+ *
+ * The setter is intentionally module-level rather than threaded through every
+ * parsePrice call site because the peso default is a singleton preference:
+ * one user, one region at a time. Passing it as an argument would bloat every
+ * OCR/scanner/price-tag path for no real benefit.
+ */
+export type PesoRegion = "MXN" | "ARS" | "CLP" | "COP" | "CUP" | "DOP" | "PHP";
+
+const PESO_REGIONS: readonly PesoRegion[] = [
+  "MXN",
+  "ARS",
+  "CLP",
+  "COP",
+  "CUP",
+  "DOP",
+  "PHP",
+] as const;
+
+let pesoDefaultRegion: PesoRegion = "MXN";
+
+/**
+ * Set the default currency code for the ambiguous "peso" / "pesos" word form.
+ * Called from SettingsContext on hydrate and whenever the user changes the
+ * `pesoRegion` setting. Passing an unknown code (e.g. from a forward-compat
+ * settings blob written by a newer client) silently falls back to MXN so a
+ * downgrade can't poison parsePrice. The returned value is the code that was
+ * actually applied, so callers that want to re-sync state (e.g. tests) can
+ * assert on it.
+ */
+export function setPesoDefaultRegion(region: string): PesoRegion {
+  if ((PESO_REGIONS as readonly string[]).includes(region)) {
+    pesoDefaultRegion = region as PesoRegion;
+  } else {
+    pesoDefaultRegion = "MXN";
+  }
+  return pesoDefaultRegion;
+}
+
+/**
+ * Read the current peso default region. Primarily used by tests; production
+ * code should rely on parsePrice/nameToCurrency reading the module-level
+ * value directly so there's no cache-staleness footgun.
+ */
+export function getPesoDefaultRegion(): PesoRegion {
+  return pesoDefaultRegion;
+}
+
 function nameToCurrency(name: string): string {
   const upper = name.toUpperCase();
   if (["DOLLAR", "DOLLARS"].includes(upper)) return "USD";
@@ -770,13 +859,12 @@ function nameToCurrency(name: string): string {
   if (upper === "YUAN") return "CNY";
   if (upper === "WON") return "KRW";
   if (upper === "BAHT") return "THB";
-  // #219: `peso`/`pesos` is ambiguous — could be MXN, ARS, CLP, COP, etc.
-  // Default to MXN because it's by far the highest-volume "peso" the app
-  // sees in practice (Cancun/Mexico City duty-free OCR). Users on Latin
-  // America routes who scan an Argentine receipt will get the wrong code,
-  // but the UI exposes the parsed currency so they can see the mismatch.
-  // A future per-region locale picker (#216) would fix this properly.
-  if (upper === "PESO" || upper === "PESOS") return "MXN";
+  // #196: `peso`/`pesos` resolves to whatever the user has configured via
+  // `setPesoDefaultRegion`. Default is MXN for backwards compatibility with
+  // pre-#196 behavior; Settings now surfaces a picker so Latin America crew
+  // can flip to ARS/CLP/COP/CUP/DOP or Philippine travelers to PHP without
+  // every receipt coming back mis-classified.
+  if (upper === "PESO" || upper === "PESOS") return pesoDefaultRegion;
   // If it's already a code, pass through
   if (CURRENCIES[upper]) return upper;
   return upper;

@@ -41,6 +41,7 @@ import {
   type RatesCacheState,
   type RatesFreshnessGrade,
   type RefreshResult,
+  type PesoRegion,
 } from "../services/currencyExchange";
 import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
@@ -264,6 +265,14 @@ export interface Settings {
    * because the data is innocuous, but users can opt out if they'd rather not
    * send metadata about their session alongside the crash itself (#120). */
   shareDiagnosticsInCrashReports: boolean;
+  /** #196: default currency for the ambiguous "peso" / "pesos" word form
+   * when parsePrice can't infer it from context. Defaults to MXN because
+   * Mexican-peso duty-free is the highest-volume peso the app sees; Latin
+   * America crew or Philippine travelers can flip to ARS/CLP/COP/CUP/DOP/PHP
+   * via the Currency section in Settings so their receipts stop coming back
+   * mis-classified. Threaded into currencyExchange.ts via
+   * `setPesoDefaultRegion()` on hydrate + whenever the user changes it. */
+  pesoRegion: PesoRegion;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -279,6 +288,7 @@ export const DEFAULT_SETTINGS: Settings = {
   silenceTimeout: 0,
   confidenceThreshold: 0,
   shareDiagnosticsInCrashReports: true,
+  pesoRegion: "MXN",
 };
 
 interface Props {
@@ -1013,6 +1023,28 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                 MyMemory cloud API — free, requires internet. Used as fallback when on-device fails.
               </Text>
             )}
+
+            {/* #196: peso-region picker. "peso" / "pesos" in receipt text is
+                ambiguous — could be MXN, ARS, CLP, COP, CUP, DOP, or PHP.
+                parsePrice can't infer region from text alone, so we expose a
+                user-level setting. `setPesoDefaultRegion()` is called from
+                SettingsContext on hydrate + whenever this value changes. */}
+            <View style={[styles.row, dynamicStyles.rowBorder]}>
+              <View style={styles.rowText}>
+                <Text style={[styles.rowTitle, dynamicStyles.rowTitle]}>Peso Region</Text>
+                <Text style={[styles.rowSubtitle, dynamicStyles.rowSubtitle]}>
+                  Which peso &quot;pesos&quot; means on receipts
+                </Text>
+              </View>
+            </View>
+            <OptionPicker
+              options={["MXN", "ARS", "CLP", "COP", "DOP", "PHP"] as PesoRegion[]}
+              selected={settings.pesoRegion === "CUP" ? "MXN" : settings.pesoRegion}
+              onSelect={(value) => onUpdate({ ...settings, pesoRegion: value })}
+              labelFn={(v) => v}
+              accessibilityPrefix="Peso region"
+              colors={colors}
+            />
 
             {/* Offline feature indicator */}
             <View style={styles.infoSection}>

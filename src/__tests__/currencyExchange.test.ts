@@ -34,6 +34,8 @@ import {
   getRatesCacheState,
   getRatesFreshnessGrade,
   forceRefreshExchangeRates,
+  setPesoDefaultRegion,
+  getPesoDefaultRegion,
   __resetCacheForTests,
 } from "../services/currencyExchange";
 
@@ -127,6 +129,58 @@ describe("parsePrice", () => {
   it("parses 'pesos' word form as MXN", () => {
     expect(parsePrice("250 pesos")).toEqual({ currency: "MXN", amount: 250 });
     expect(parsePrice("1 peso")).toEqual({ currency: "MXN", amount: 1 });
+  });
+
+  // #196: peso region locale picker. `setPesoDefaultRegion` is the knob
+  // SettingsContext calls on hydrate + whenever the user flips the picker.
+  // The parser reads the module-level value each time, so flipping the
+  // setting must immediately affect subsequent parsePrice calls without
+  // having to thread a param through the call tree.
+  describe("setPesoDefaultRegion (#196)", () => {
+    it("defaults to MXN at startup", () => {
+      expect(getPesoDefaultRegion()).toBe("MXN");
+    });
+
+    it("routes 'pesos' to ARS when region is ARS", () => {
+      setPesoDefaultRegion("ARS");
+      expect(parsePrice("250 pesos")).toEqual({ currency: "ARS", amount: 250 });
+      expect(parsePrice("1 peso")).toEqual({ currency: "ARS", amount: 1 });
+    });
+
+    it("routes 'pesos' to CLP when region is CLP", () => {
+      setPesoDefaultRegion("CLP");
+      expect(parsePrice("5000 pesos")).toEqual({ currency: "CLP", amount: 5000 });
+    });
+
+    it("routes 'pesos' to PHP when region is PHP", () => {
+      setPesoDefaultRegion("PHP");
+      expect(parsePrice("120 pesos")).toEqual({ currency: "PHP", amount: 120 });
+    });
+
+    it("falls back to MXN when given an unknown region code", () => {
+      setPesoDefaultRegion("XYZ");
+      expect(getPesoDefaultRegion()).toBe("MXN");
+      expect(parsePrice("250 pesos")).toEqual({ currency: "MXN", amount: 250 });
+    });
+
+    it("returns the applied region", () => {
+      expect(setPesoDefaultRegion("DOP")).toBe("DOP");
+      expect(setPesoDefaultRegion("not-a-code")).toBe("MXN");
+    });
+
+    it("letter-code parses still trump the word form (ARS 500 != current region)", () => {
+      // Explicit codes should win even when the region is something else —
+      // the peso region is only the default for the ambiguous word form.
+      setPesoDefaultRegion("CLP");
+      expect(parsePrice("500 ARS")).toEqual({ currency: "ARS", amount: 500 });
+      expect(parsePrice("ARS 500")).toEqual({ currency: "ARS", amount: 500 });
+    });
+
+    it("parses RD$ prefix as DOP regardless of region", () => {
+      setPesoDefaultRegion("MXN");
+      expect(parsePrice("RD$1,250.00")).toEqual({ currency: "DOP", amount: 1250 });
+      expect(parsePrice("RD$45")).toEqual({ currency: "DOP", amount: 45 });
+    });
   });
 
   it("parses USD code suffix", () => {

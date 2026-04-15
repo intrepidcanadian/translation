@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as StoreReview from "expo-store-review";
 import { Settings, DEFAULT_SETTINGS } from "../components/SettingsModal";
 import { setHapticsEnabled } from "../services/haptics";
+import { setPesoDefaultRegion } from "../services/currencyExchange";
 import { logger } from "../services/logger";
 
 const SETTINGS_KEY = "app_settings";
@@ -101,6 +102,15 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setHapticsEnabled(settings.hapticsEnabled);
   }, [settings.hapticsEnabled]);
+
+  // #196: keep the module-level peso region in currencyExchange.ts in sync
+  // with the user's setting. Runs on initial hydrate (default MXN) and every
+  // time the user flips the Peso Region picker in Settings, so parsePrice
+  // resolves "250 pesos" to the user's expected currency without any code
+  // threading a param through every call site.
+  useEffect(() => {
+    setPesoDefaultRegion(settings.pesoRegion);
+  }, [settings.pesoRegion]);
 
   const updateSettings = useCallback((newSettings: Settings) => {
     setSettings(newSettings);
