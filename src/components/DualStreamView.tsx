@@ -29,7 +29,7 @@ import { useLiveOCR } from "../hooks/useLiveOCR";
 import { impactLight, impactMedium } from "../services/haptics";
 import { logger } from "../services/logger";
 import * as telemetry from "../services/telemetry";
-import { primaryAlpha, type ThemeColors } from "../theme";
+import { primaryAlpha, textOnGlass, type ThemeColors } from "../theme";
 
 interface DetectedBlock {
   id: string;
@@ -51,39 +51,81 @@ interface DualStreamViewProps {
   colors: ThemeColors;
 }
 
-// OCR overlay for live text blocks (reused from CameraTranslator pattern)
+// OCR overlay for live text blocks. Renders a horizontal glass label
+// anchored next to each detected line — same side-label pattern as
+// CameraTranslator so the two scanner modes present translations
+// consistently and don't paint over the text the user is trying to read.
+// Prefers the right side of the text (matching LTR reading flow), flips
+// to the left when the text is near the right edge, and falls back to a
+// position just below the line when neither side has enough room.
+const LABEL_GAP = 6;
+const LABEL_MIN_SIDE = 80;
+const LABEL_SIDE_MAX_WIDTH = 240;
+const LABEL_SIDE_PADDING = 12;
+const LABEL_MIN_HEIGHT = 22;
+
 const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
   block,
   animatedOpacity,
+  screenWidth,
+  screenHeight,
 }: {
   block: DetectedBlock;
   animatedOpacity: Animated.Value;
+  screenWidth: number;
+  screenHeight: number;
 }) {
-  const fontSize = Math.max(10, block.frame.height * 0.65);
+  const textTop = block.frame.top;
+  const textLeft = block.frame.left;
+  const textRight = textLeft + block.frame.width;
+  const textBottom = textTop + block.frame.height;
+
+  const roomRight = Math.max(0, screenWidth - LABEL_SIDE_PADDING - (textRight + LABEL_GAP));
+  const roomLeft = Math.max(0, textLeft - LABEL_GAP - LABEL_SIDE_PADDING);
+
+  const labelHeight = Math.max(LABEL_MIN_HEIGHT, block.frame.height);
+  const fontSize = Math.max(12, Math.min(24, labelHeight * 0.54));
+
+  let pos: { top: number; left: number; maxWidth: number };
+  if (roomRight >= LABEL_MIN_SIDE) {
+    pos = { top: textTop, left: textRight + LABEL_GAP, maxWidth: Math.min(LABEL_SIDE_MAX_WIDTH, roomRight) };
+  } else if (roomLeft >= LABEL_MIN_SIDE) {
+    const maxW = Math.min(LABEL_SIDE_MAX_WIDTH, roomLeft);
+    pos = { top: textTop, left: textLeft - LABEL_GAP - maxW, maxWidth: maxW };
+  } else {
+    pos = {
+      top: Math.min(textBottom + LABEL_GAP, screenHeight - labelHeight - LABEL_SIDE_PADDING),
+      left: Math.max(LABEL_SIDE_PADDING, Math.min(textLeft, screenWidth - LABEL_SIDE_MAX_WIDTH - LABEL_SIDE_PADDING)),
+      maxWidth: LABEL_SIDE_MAX_WIDTH,
+    };
+  }
+
   return (
     <Animated.View
+      pointerEvents="none"
       style={{
         position: "absolute",
-        top: block.frame.top,
-        left: block.frame.left,
-        width: block.frame.width,
-        minHeight: block.frame.height,
-        backgroundColor: "rgba(255,255,255,0.92)",
+        top: pos.top,
+        left: pos.left,
+        maxWidth: pos.maxWidth,
+        minHeight: labelHeight,
         justifyContent: "center",
-        paddingHorizontal: 2,
+        paddingHorizontal: 10,
+        paddingVertical: 3,
+        backgroundColor: "rgba(26, 26, 46, 0.92)",
+        borderRadius: 8,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: primaryAlpha.border,
+        borderLeftWidth: 3,
+        borderLeftColor: "#a8a4ff",
         opacity: animatedOpacity,
       }}
     >
       <Text
-        style={{
-          fontSize,
-          color: "#1a1a2e",
-          fontWeight: "600",
-          lineHeight: fontSize * 1.15,
-        }}
+        style={[{ color: "#fff", fontSize, fontWeight: "700", lineHeight: fontSize * 1.2 }, textOnGlass]}
         numberOfLines={2}
         adjustsFontSizeToFit
-        minimumFontScale={0.5}
+        minimumFontScale={0.6}
       >
         {block.translatedText}
       </Text>
@@ -129,6 +171,13 @@ export default function DualStreamView({
   const blockOpacities = useRef(new Map<string, Animated.Value>()).current;
   const isMountedRef = useRef(true);
   const lastOCRTextRef = useRef("");
+  // Window dimensions are used for image-space → screen-space mapping in
+  // useLiveOCR. Kept in state so a rotation / window resize is picked up.
+  const [screenDims, setScreenDims] = useState(() => Dimensions.get("window"));
+  useEffect(() => {
+    const sub = Dimensions.addEventListener("change", ({ window }) => setScreenDims(window));
+    return () => sub.remove();
+  }, []);
 
   // --- Speech Pipeline State ---
   const [isMicActive, setIsMicActive] = useState(false);
@@ -173,6 +222,7 @@ export default function DualStreamView({
     blockOpacities,
     isMountedRef,
     lastOCRTextRef,
+    screenDims,
   });
 
   // --- Lifecycle ---
@@ -538,6 +588,8 @@ export default function DualStreamView({
             key={block.id}
             block={block}
             animatedOpacity={blockOpacities.get(block.id)!}
+            screenWidth={screenDims.width}
+            screenHeight={screenDims.height}
           />
         );
       })}

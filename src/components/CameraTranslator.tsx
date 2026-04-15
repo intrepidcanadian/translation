@@ -84,37 +84,142 @@ const CapturedBlockOverlay = React.memo(function CapturedBlockOverlay({
   );
 });
 
-// Memoized overlay for live OCR detected text blocks
+// Memoized overlay for live OCR detected text blocks.
+//
+// "label" mode renders a horizontal glass label anchored next to the
+// detected text line rather than on top of it — the user sees the original
+// sign/menu/document unobstructed, with a floating translation pinned
+// alongside. It prefers the right side of the text (to match natural
+// left-to-right reading flow) and flips to the left when the text sits
+// within ~160 px of the screen's right edge. If both sides are too narrow
+// the label is placed just below the line as a last resort, so it's
+// always visible.
+//
+// "bubble" mode stacks translation + original in a dark glass card floating
+// above the top-left of the text. Kept for users who want to see both at
+// once.
+const LABEL_GAP = 6;            // px gap between text and the floating label
+const LABEL_MIN_SIDE = 80;      // px — below this width we fall back to the other side / below
+const LABEL_SIDE_MAX_WIDTH = 240; // cap so a long line doesn't cross the whole screen
+const LABEL_SIDE_PADDING = 12;  // screen margin — stay this far from the edges
+const LABEL_MIN_HEIGHT = 22;    // px — small OCR boxes still get a tappable label
+
 const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
   block,
   overlayMode,
   animatedOpacity,
+  screenWidth,
+  screenHeight,
 }: {
   block: DetectedBlock;
-  overlayMode: "bubble" | "replace";
+  overlayMode: "bubble" | "label";
   animatedOpacity: Animated.Value;
+  screenWidth: number;
+  screenHeight: number;
 }) {
-  if (overlayMode === "replace") {
-    const fontSize = Math.max(10, block.frame.height * 0.65);
+  if (overlayMode === "label") {
+    // Decide side: try right, then left, then below. Only the chosen branch
+    // renders — we avoid a flicker where the label briefly spans both sides.
+    const textTop = block.frame.top;
+    const textLeft = block.frame.left;
+    const textRight = textLeft + block.frame.width;
+    const textBottom = textTop + block.frame.height;
+
+    const roomRight = Math.max(0, screenWidth - LABEL_SIDE_PADDING - (textRight + LABEL_GAP));
+    const roomLeft = Math.max(0, textLeft - LABEL_GAP - LABEL_SIDE_PADDING);
+
+    const labelHeight = Math.max(LABEL_MIN_HEIGHT, block.frame.height);
+    // Font scales to fill the detected line height, capped so very tall
+    // OCR boxes (headlines) don't produce absurd text. ~54% of line height
+    // is a readable ratio for a bold sans-serif.
+    const fontSize = Math.max(12, Math.min(24, labelHeight * 0.54));
+
+    let sideStyle: { top: number; left: number; maxWidth: number } | null = null;
+    if (roomRight >= LABEL_MIN_SIDE) {
+      sideStyle = {
+        top: textTop,
+        left: textRight + LABEL_GAP,
+        maxWidth: Math.min(LABEL_SIDE_MAX_WIDTH, roomRight),
+      };
+    } else if (roomLeft >= LABEL_MIN_SIDE) {
+      // Anchor by right edge via negative left: place the label so its
+      // right side butts up against the text with a gap.
+      const maxW = Math.min(LABEL_SIDE_MAX_WIDTH, roomLeft);
+      sideStyle = {
+        top: textTop,
+        left: textLeft - LABEL_GAP - maxW,
+        maxWidth: maxW,
+      };
+    }
+
+    if (sideStyle) {
+      return (
+        <Animated.View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: sideStyle.top,
+            left: sideStyle.left,
+            maxWidth: sideStyle.maxWidth,
+            minHeight: labelHeight,
+            justifyContent: "center",
+            paddingHorizontal: 10,
+            paddingVertical: 3,
+            backgroundColor: "rgba(26, 26, 46, 0.92)",
+            borderRadius: 8,
+            borderWidth: StyleSheet.hairlineWidth,
+            borderColor: primaryAlpha.border,
+            opacity: animatedOpacity,
+            // Small left-edge accent bar so the label reads as "attached to"
+            // the text rather than floating randomly. Matches the primary
+            // purple used elsewhere in the app.
+            borderLeftWidth: 3,
+            borderLeftColor: "#a8a4ff",
+          }}
+        >
+          <Text
+            style={[{ color: "#fff", fontSize, fontWeight: "700", lineHeight: fontSize * 1.2 }, textOnGlass]}
+            numberOfLines={2}
+            adjustsFontSizeToFit
+            minimumFontScale={0.6}
+          >
+            {block.translatedText}
+          </Text>
+        </Animated.View>
+      );
+    }
+
+    // Fallback: neither side has room (text spans almost the entire width).
+    // Drop the label just below the line, clamped to the screen bounds, so
+    // it's always visible even on full-width banners.
+    const fallbackTop = Math.min(textBottom + LABEL_GAP, screenHeight - labelHeight - LABEL_SIDE_PADDING);
+    const fallbackLeft = Math.max(LABEL_SIDE_PADDING, Math.min(textLeft, screenWidth - LABEL_SIDE_MAX_WIDTH - LABEL_SIDE_PADDING));
     return (
       <Animated.View
+        pointerEvents="none"
         style={{
           position: "absolute",
-          top: block.frame.top,
-          left: block.frame.left,
-          width: block.frame.width,
-          minHeight: block.frame.height,
-          backgroundColor: "rgba(255,255,255,0.92)",
+          top: fallbackTop,
+          left: fallbackLeft,
+          maxWidth: LABEL_SIDE_MAX_WIDTH,
+          minHeight: labelHeight,
           justifyContent: "center",
-          paddingHorizontal: 2,
+          paddingHorizontal: 10,
+          paddingVertical: 3,
+          backgroundColor: "rgba(26, 26, 46, 0.92)",
+          borderRadius: 8,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: primaryAlpha.border,
+          borderLeftWidth: 3,
+          borderLeftColor: "#a8a4ff",
           opacity: animatedOpacity,
         }}
       >
         <Text
-          style={{ fontSize, color: "#1a1a2e", fontWeight: "600", lineHeight: fontSize * 1.15 }}
+          style={[{ color: "#fff", fontSize, fontWeight: "700", lineHeight: fontSize * 1.2 }, textOnGlass]}
           numberOfLines={2}
           adjustsFontSizeToFit
-          minimumFontScale={0.5}
+          minimumFontScale={0.6}
         >
           {block.translatedText}
         </Text>
@@ -156,7 +261,11 @@ export default function CameraTranslator({
   const captureRef = useRef<Camera>(null);
 
   const [isPaused, setIsPaused] = useState(false);
-  const [overlayMode, setOverlayMode] = useState<"bubble" | "replace">("replace");
+  // "label" — horizontal glass label anchored next to each detected line
+  // (default, and the mode users see when opening the scanner).
+  // "bubble" — stacked translation+original in a glass card at the text's
+  // top-left. Retained for users who want to see both strings at once.
+  const [overlayMode, setOverlayMode] = useState<"bubble" | "label">("label");
   const blockOpacities = useRef(new Map<string, Animated.Value>()).current;
   const isMountedRef = useRef(true);
   const lastOCRTextRef = useRef("");
@@ -184,6 +293,7 @@ export default function CameraTranslator({
     blockOpacities,
     isMountedRef,
     lastOCRTextRef,
+    screenDims,
   });
 
   // Track screen dimensions for overlay mapping
@@ -308,6 +418,8 @@ export default function CameraTranslator({
             block={block}
             overlayMode={overlayMode}
             animatedOpacity={blockOpacities.get(block.id)!}
+            screenWidth={screenDims.width}
+            screenHeight={screenDims.height}
           />
         );
       })}
@@ -346,26 +458,26 @@ export default function CameraTranslator({
         {!isCaptured && (
           <>
             {/* Segmented overlay-mode toggle. The previous single button
-                cycled between "AR" and "💬" with no indication of what
-                each meant or which was active — users couldn't tell if the
+                cycled between two modes with no indication of what each
+                meant or which was active — users couldn't tell if the
                 visible label was the current mode or the next mode. This
                 pill shows BOTH options at once, with the active one
                 highlighted, so the action ("tap to switch to the other")
                 is unambiguous. */}
             <View style={styles.overlayToggle}>
               <TouchableOpacity
-                style={[styles.overlayToggleSegment, overlayMode === "replace" && styles.overlayToggleSegmentActive]}
+                style={[styles.overlayToggleSegment, overlayMode === "label" && styles.overlayToggleSegmentActive]}
                 onPress={() => {
-                  if (overlayMode !== "replace") {
-                    setOverlayMode("replace");
+                  if (overlayMode !== "label") {
+                    setOverlayMode("label");
                     blockOpacities.clear();
                   }
                 }}
                 accessibilityRole="button"
-                accessibilityState={{ selected: overlayMode === "replace" }}
-                accessibilityLabel="AR overlay: replace original text in place"
+                accessibilityState={{ selected: overlayMode === "label" }}
+                accessibilityLabel="Label overlay: show translations as a horizontal label next to each line of text"
               >
-                <Text style={[styles.overlayToggleText, overlayMode === "replace" && styles.overlayToggleTextActive]}>AR</Text>
+                <Text style={[styles.overlayToggleText, overlayMode === "label" && styles.overlayToggleTextActive]}>Label</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.overlayToggleSegment, overlayMode === "bubble" && styles.overlayToggleSegmentActive]}
