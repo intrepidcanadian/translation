@@ -183,6 +183,187 @@ describe("detectPricesInText", () => {
       expect.objectContaining({ currency: "USD", amount: 1234.56 })
     );
   });
+
+  // #199 v2 regression fence: alphabetic currency prefixes/codes used to drag
+  // in surrounding letters as false positives. The regex now anchors RM, HK$,
+  // NT$, S$, A$, US$, and the trailing letter-only codes (RM, USD, EUR, EURO,
+  // ...) with `\b` word boundaries on the alphabetic side. These tests are the
+  // load-bearing fence — a future regex tweak that drops the boundaries would
+  // need to either delete or rewrite each of them.
+  describe("alphabetic boundary tightening (#199)", () => {
+    it("does not match RM inside a larger leading word (ARM)", () => {
+      // Without `\bRM`, `ARM 100` matched the `RM 100` fragment and parsed as
+      // MYR 100 — an entire push-up count became a Malaysian Ringgit price.
+      expect(detectPricesInText("ARM 100 push-ups")).toEqual([]);
+      expect(detectPricesInText("ARMY 250 strong")).toEqual([]);
+    });
+
+    it("does not match S$ inside a larger leading word (WAS$5)", () => {
+      // `WAS$5 reduced` used to parse as SGD 5 because `S$5` was a substring
+      // match. The `\bS\$` boundary requires a non-word char (or string start)
+      // immediately before the `S`. The bare `$5` substring still matches via
+      // the un-anchored `[$...]` branch — that's correct behavior, since "WAS$5"
+      // is a price tag meaning USD 5, not SGD 5. The fence is that the SGD
+      // misparse is gone, not that the literal `$5` evaporates.
+      const found = detectPricesInText("WAS$5 reduced from $10");
+      expect(found).toContainEqual(expect.objectContaining({ currency: "USD", amount: 5 }));
+      expect(found).toContainEqual(expect.objectContaining({ currency: "USD", amount: 10 }));
+      expect(found).not.toContainEqual(expect.objectContaining({ currency: "SGD" }));
+    });
+
+    it("does not match EURO inside EUROPEAN as a trailing code", () => {
+      // The trailing-code branch contains `\beuros?\b`, which previously had
+      // no trailing boundary and matched the `EURO` prefix of `EUROPEAN`.
+      expect(detectPricesInText("100 EUROPEAN COUNTRIES")).toEqual([]);
+      expect(detectPricesInText("50 EUROZONE members")).toEqual([]);
+    });
+
+    it("does not match USD inside a larger trailing word", () => {
+      // The trailing-code branch wraps the letter-only codes in `\b...\b`, so
+      // `100 USDA approved` no longer matches `100 USD` (false positive: parsed
+      // as USD 100 because the next chars happened to be USD-prefixed).
+      expect(detectPricesInText("100 USDA approved beef")).toEqual([]);
+    });
+
+    it("still matches the legitimate cases the boundary fix is fencing", () => {
+      // Positive regression fence — every alphabetic prefix/code that the
+      // tightening guards must continue to match its legitimate form. If a
+      // future regex change accidentally over-fences (e.g. adds a boundary
+      // that excludes a sigil that *isn't* a word char), this test catches
+      // it before the next backlog run.
+      const found = detectPricesInText(
+        "Lunch RM 50, ride S$8, snack 100 EURO, fee 25 USD."
+      );
+      expect(found).toContainEqual(expect.objectContaining({ currency: "MYR", amount: 50 }));
+      expect(found).toContainEqual(expect.objectContaining({ currency: "SGD", amount: 8 }));
+      expect(found).toContainEqual(expect.objectContaining({ currency: "EUR", amount: 100 }));
+      expect(found).toContainEqual(expect.objectContaining({ currency: "USD", amount: 25 }));
+    });
+  });
+
+  // #206: OCR fuzz corpus. Real-world receipt OCR is messy — variable
+  // whitespace, smudged punctuation, line wraps, mixed currencies in one
+  // image. This corpus pins the *current* extraction behavior on a set of
+  // representative noisy inputs so a future regex tweak that "looks fine"
+  // in isolation doesn't silently break a class of receipts. Treat the
+  // expected match sets as a regression baseline, not a spec — if a fixture
+  // changes, decide whether the new behavior is better and update the
+  // expectation, don't just delete the failing case.
+  describe("OCR fuzz corpus (#206)", () => {
+    const fixtures: Array<{
+      name: string;
+      input: string;
+      expected: Array<{ currency: string; amount: number }>;
+    }> = [
+      {
+        name: "duty-free receipt with mixed currencies",
+        input: "PERFUME    $89.50\nCHOCOLATE  €12.00\nTOTAL HK$780.00",
+        expected: [
+          { currency: "USD", amount: 89.5 },
+          { currency: "EUR", amount: 12 },
+          { currency: "HKD", amount: 780 },
+        ],
+      },
+      {
+        name: "Malaysian receipt with RM prefix and trailing code",
+        input: "Nasi Lemak RM 12.50\nTeh Tarik RM3.00\nTotal: 15.50 MYR",
+        expected: [
+          { currency: "MYR", amount: 12.5 },
+          { currency: "MYR", amount: 3 },
+          { currency: "MYR", amount: 15.5 },
+        ],
+      },
+      {
+        name: "comma-decimal European receipt (currently unsupported, pins behavior)",
+        input: "Cafe €4,50\nCroissant €3,20",
+        // parsePrice expects `.` as decimal separator; `,` parses as thousands.
+        // €4,50 → EUR 450 today. This fixture pins the current (admittedly
+        // wrong-for-EU) behavior so the day someone adds locale-aware decimal
+        // parsing, this test fails loudly and forces an explicit decision.
+        expected: [
+          { currency: "EUR", amount: 450 },
+          { currency: "EUR", amount: 320 },
+        ],
+      },
+      {
+        name: "smudged sigils with stray punctuation",
+        input: "Total :: $.. $42.00 ... €,, €15",
+        // The `$` followed by `..` no longer matches (digit required). The
+        // legitimate `$42.00` and `€15` still extract.
+        expected: [
+          { currency: "USD", amount: 42 },
+          { currency: "EUR", amount: 15 },
+        ],
+      },
+      {
+        name: "line wrap inside a price (currently treated as two prices)",
+        input: "TOTAL $1,2\n34.56",
+        // OCR line wraps split a number across lines. The regex matches the
+        // first fragment `$1,2` (= USD 12 after comma strip) and skips the
+        // orphaned `34.56` (no sigil). Pinned so a future "join lines"
+        // preprocessing pass has a baseline to compare against.
+        expected: [{ currency: "USD", amount: 12 }],
+      },
+      {
+        name: "thai baht: sigil matches but 'baht' word does not",
+        input: "Pad Thai 120 baht and water 30฿",
+        // Pinned limitation: the MONEY_RE includes `baht` in the trailing
+        // alternatives so `120 baht` *is* extracted as a raw match, but
+        // `parsePrice`'s codeAfter regex does NOT include `baht`, so the
+        // trimmed string parses as null and gets dropped. The `30฿` sigil
+        // form goes through the symbol-last branch and parses correctly.
+        // If parsePrice gains baht support, update this expectation to
+        // include THB 120.
+        expected: [{ currency: "THB", amount: 30 }],
+      },
+      {
+        name: "no prices at all (paragraph of OCR garbage)",
+        input: "PERFUME COUNTER WELCOME ENJOY YOUR FLIGHT",
+        expected: [],
+      },
+      {
+        name: "trailing currency code with space",
+        input: "Subtotal: 234.56 USD\nTax: 18.76 USD",
+        // Pinned limitation: leading-code form (`USD 234.56`) is recognized
+        // by parsePrice but NOT by detectPricesInText's MONEY_RE — the regex
+        // only generates trailing-code matches for letter-only codes. Use
+        // the trailing form here to exercise the path that actually fires
+        // end-to-end. If MONEY_RE gains a leading-code branch, add a
+        // separate fixture for the leading form.
+        expected: [
+          { currency: "USD", amount: 234.56 },
+          { currency: "USD", amount: 18.76 },
+        ],
+      },
+      {
+        name: "JPY/CNY ambiguous yen sigil defaults to JPY",
+        input: "Bento ¥850 Tea ¥200",
+        expected: [
+          { currency: "JPY", amount: 850 },
+          { currency: "JPY", amount: 200 },
+        ],
+      },
+      {
+        name: "negative-looking line with a stray hyphen (no false positive)",
+        input: "DISCOUNT -- not a price -- $-",
+        expected: [],
+      },
+    ];
+
+    for (const fx of fixtures) {
+      it(`extracts ${fx.expected.length} price(s) from "${fx.name}"`, () => {
+        const found = detectPricesInText(fx.input);
+        // Compare as multisets: order can shift if the regex is reordered,
+        // and dedup-by-raw-string can drop legitimate repeats. The fixtures
+        // are constructed so each expected entry has a distinct (currency,
+        // amount) pair within its input.
+        expect(found).toHaveLength(fx.expected.length);
+        for (const exp of fx.expected) {
+          expect(found).toContainEqual(expect.objectContaining(exp));
+        }
+      });
+    }
+  });
 });
 
 describe("convertPrice (with stubbed rates)", () => {

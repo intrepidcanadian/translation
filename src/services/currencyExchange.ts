@@ -224,6 +224,27 @@ export function __resetCacheForTests(): void {
 }
 
 /**
+ * Force a fresh fetch, bypassing both the 4-hour cache TTL and the
+ * 60s refetch-attempt throttle (#200). Wired to the "Refresh Rates"
+ * button in Settings → Translation Diagnostics so users can override
+ * the throttle when they suspect cached rates are stale (e.g. after
+ * a long flight crossing currency zones). Falls through to the same
+ * fallback paths as `getExchangeRates()` if the API call fails — i.e.
+ * stale cache > hardcoded fallback. Returns the resolved rates so the
+ * caller can refresh diagnostics state in one shot.
+ *
+ * Production code that just wants fresh rates should still call
+ * `getExchangeRates()` — the throttle exists to protect the upstream
+ * from heavy catalog scanning. This escape hatch is for explicit user
+ * intent only.
+ */
+export async function forceRefreshExchangeRates(): Promise<ExchangeRates> {
+  cachedRates = null;
+  lastFetchAttempt = 0;
+  return getExchangeRates();
+}
+
+/**
  * Detect source currency from a price string
  * Returns currency code and numeric amount
  */
@@ -383,12 +404,23 @@ export function detectPricesInText(text: string): Array<{ raw: string; currency:
   // or `M` individually, which silently broke MYR detection until #191 fixed
   // both this regex and `parsePrice`.
   //
-  // #199: amount sub-patterns require at least one *digit* so a stray sigil
+  // #199 v1: amount sub-patterns require at least one *digit* so a stray sigil
   // followed by punctuation only (e.g. `$,` or `$,,`) doesn't get matched
   // and hand a NaN-yielding fragment to parsePrice. The previous `[\d,]+`
   // matched `,` alone, which would still bottom out as a parsePrice null
   // but wasted a regex pass per false positive on noisy OCR input.
-  const MONEY_RE = /(?:HK\$|NT\$|S\$|A\$|US\$|RM|[$€£¥₹₩฿₫₱]|د\.إ)\s*\d[\d,]*(?:\.\d{1,2})?|\d[\d,]*(?:\.\d{1,2})?\s*(?:HK\$|NT\$|S\$|RM|[$€£¥₹₩฿₫₱]|dollars?|euros?|pounds?|yen|yuan|won|baht|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR)/gi;
+  //
+  // #199 v2: alphabetic prefixes (RM, HK$, NT$, S$, A$, US$) are anchored to
+  // a leading `\b` so a stray letter on the left can't drag them in — `ARM
+  // 100` no longer matches `RM 100` (false positive: parsed as MYR 100), and
+  // `WAS$5` no longer matches `S$5` (false positive: parsed as SGD 5). On the
+  // *trailing* code side, the letter-only currency codes are wrapped in
+  // `\b(...)\b` so `100 EUROPEAN COUNTRIES` no longer matches `100 EURO`
+  // (false positive: parsed as EUR 100 because the `euros?` alternation
+  // accepts `EURO`). Sigil-only branches stay un-anchored because `$/€/£`
+  // aren't word characters and `\b` between a digit and `$` would be a no-op
+  // anyway.
+  const MONEY_RE = /(?:\bHK\$|\bNT\$|\bS\$|\bA\$|\bUS\$|\bRM|[$€£¥₹₩฿₫₱]|د\.إ)\s*\d[\d,]*(?:\.\d{1,2})?|\d[\d,]*(?:\.\d{1,2})?\s*(?:\bHK\$|\bNT\$|\bS\$|[$€£¥₹₩฿₫₱]|\b(?:RM|dollars?|euros?|pounds?|yen|yuan|won|baht|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR)\b)/gi;
 
   const matches = text.match(MONEY_RE) || [];
   const results: Array<{ raw: string; currency: string; amount: number }> = [];

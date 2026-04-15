@@ -60,7 +60,15 @@ export type SpeechKey =
   // Settings" is distinguishable from "translate API returned 500" in the
   // Settings diagnostics dashboard — the recovery flow is completely
   // different (deep-link to Settings vs retry/switch provider).
-  | "speech.permissionDenied";
+  | "speech.permissionDenied"
+  // #197: defensive `Speech.stop()` rejected before mic acquire. The
+  // speechSession helper already logs via `logger.warn("Speech", ...)`
+  // so the rolling fail-rate dashboard picks up the warn at the tag
+  // level, but a dedicated counter measures "audio session stuck mid-
+  // TTS" frequency without forcing a tag drilldown. If this counter
+  // climbs in production crash reports the AVAudioSession recovery
+  // path needs hardening — currently we just log and continue.
+  | "speech.stopRejected";
 
 /**
  * Offline-queue reliability counters (#174). The offline translation queue
@@ -95,6 +103,7 @@ const counters: Record<TelemetryKey, number> = {
   "speech.translateFail": 0,
   "speech.noSpeech": 0,
   "speech.permissionDenied": 0,
+  "speech.stopRejected": 0,
   "offlineQueue.success": 0,
   "offlineQueue.failed": 0,
   "offlineQueue.deadLetter": 0,

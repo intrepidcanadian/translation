@@ -7,6 +7,7 @@ import {
   type ExpoSpeechRecognitionOptions,
 } from "expo-speech-recognition";
 import { logger } from "../services/logger";
+import { increment as telemetryIncrement } from "../services/telemetry";
 
 /**
  * Shared speech-recognition start path that hardens against the iOS
@@ -44,11 +45,21 @@ export function startSpeechSession(options: ExpoSpeechRecognitionOptions): void 
   try {
     const maybe = Speech.stop() as unknown;
     if (maybe && typeof (maybe as Promise<unknown>).then === "function") {
-      (maybe as Promise<unknown>).catch((err) =>
-        logger.warn("Speech", "Speech.stop() rejected before mic acquire", err)
-      );
+      (maybe as Promise<unknown>).catch((err) => {
+        // #197: dedicated counter alongside the existing logger.warn so the
+        // Settings → Translation Diagnostics dashboard can measure "audio
+        // session stuck mid-TTS" frequency without forcing a tag drilldown.
+        telemetryIncrement("speech.stopRejected");
+        logger.warn("Speech", "Speech.stop() rejected before mic acquire", err);
+      });
     }
   } catch (err) {
+    // Synchronous throw is a separate failure mode (typically "native
+    // module not linked") but we count it under the same bucket — the
+    // contract from the dashboard's perspective is "Speech.stop() didn't
+    // cleanly release the audio session before mic acquire". Distinguish
+    // via the recent-errors message text if needed.
+    telemetryIncrement("speech.stopRejected");
     logger.warn("Speech", "Speech.stop() threw before mic acquire", err);
   }
 

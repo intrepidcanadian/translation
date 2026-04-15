@@ -43,12 +43,21 @@ jest.mock("../services/logger", () => ({
   },
 }));
 
+// #197: speechSession increments `speech.stopRejected` on both the rejected-
+// promise and the synchronous-throw branches. Mock the telemetry module so the
+// test can assert the counter wiring without touching AsyncStorage.
+const mockTelemetryIncrement = jest.fn();
+jest.mock("../services/telemetry", () => ({
+  increment: (...args: unknown[]) => mockTelemetryIncrement(...args),
+}));
+
 import { startSpeechSession } from "../utils/speechSession";
 
 beforeEach(() => {
   mockSpeechStop.mockReset();
   mockStart.mockReset();
   mockLoggerWarn.mockReset();
+  mockTelemetryIncrement.mockReset();
 });
 
 describe("startSpeechSession", () => {
@@ -134,6 +143,9 @@ describe("startSpeechSession", () => {
       "Speech.stop() threw before mic acquire",
       expect.any(Error)
     );
+    // #197: synchronous-throw branch increments speech.stopRejected too —
+    // the dashboard treats both shapes as the same "stuck mid-TTS" signal.
+    expect(mockTelemetryIncrement).toHaveBeenCalledWith("speech.stopRejected");
   });
 
   it("swallows a rejected Speech.stop() promise instead of leaking unhandled rejection", async () => {
@@ -158,6 +170,8 @@ describe("startSpeechSession", () => {
       "Speech.stop() rejected before mic acquire",
       rejection
     );
+    // #197: rejected-promise branch fires the telemetry counter
+    expect(mockTelemetryIncrement).toHaveBeenCalledWith("speech.stopRejected");
   });
 
   it("handles Speech.stop() returning a non-thenable without crashing", () => {
@@ -171,5 +185,7 @@ describe("startSpeechSession", () => {
     expect(mockStart).toHaveBeenCalledTimes(1);
     // No logger.warn for the success path
     expect(mockLoggerWarn).not.toHaveBeenCalled();
+    // #197: success path must NOT bump the stopRejected counter
+    expect(mockTelemetryIncrement).not.toHaveBeenCalled();
   });
 });

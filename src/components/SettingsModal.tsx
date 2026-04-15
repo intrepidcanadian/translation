@@ -32,6 +32,11 @@ import {
   getOfflineQueueStats,
   type OfflineQueueStats,
 } from "../services/telemetry";
+import {
+  getRatesCacheState,
+  forceRefreshExchangeRates,
+  type RatesCacheState,
+} from "../services/currencyExchange";
 import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
 import { isLikelyMicMuted as isLikelyMicMutedPure } from "../utils/micMuted";
@@ -95,6 +100,57 @@ function computeSpeechStats(): SpeechStats {
  */
 function isLikelyMicMuted(stats: SpeechStats): boolean {
   return isLikelyMicMutedPure(stats.noSpeech, stats.total);
+}
+
+/**
+ * #205: human-readable formatter for the exchange-rate cache state line.
+ * Distinguishes the four states a reader cares about:
+ *   - no cache + just attempted (fall-through to FALLBACK_RATES)
+ *   - no cache + no attempts (cold start before first conversion)
+ *   - fresh cache (within 4h TTL)
+ *   - stale cache (past TTL but throttled / waiting for next attempt)
+ *
+ * Returns a compact one-liner so it slots into the existing telemetryBlock
+ * without breaking layout — long-form details live in the accessibilityLabel.
+ */
+function formatRelativeMs(ms: number | null): string {
+  if (ms === null) return "—";
+  const sec = Math.round(ms / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  return `${hr}h ago`;
+}
+
+function ratesStateLabel(s: RatesCacheState): string {
+  if (!s.hasCache) {
+    return s.lastAttemptAgeMs !== null
+      ? `No cache · last attempt ${formatRelativeMs(s.lastAttemptAgeMs)} (using fallback)`
+      : `No cache yet`;
+  }
+  if (s.isFresh) {
+    return `Fresh · ${formatRelativeMs(s.ageMs)}`;
+  }
+  if (s.willThrottleNextFetch) {
+    return `Stale · ${formatRelativeMs(s.ageMs)} · refresh throttled`;
+  }
+  return `Stale · ${formatRelativeMs(s.ageMs)} · will refetch`;
+}
+
+function ratesStateAccessibilityLabel(s: RatesCacheState): string {
+  if (!s.hasCache) {
+    return s.lastAttemptAgeMs !== null
+      ? `Exchange rates: no cache available, last fetch attempt was ${formatRelativeMs(s.lastAttemptAgeMs)}, currently using hardcoded fallback rates`
+      : `Exchange rates: no cache yet, will fetch on first conversion`;
+  }
+  if (s.isFresh) {
+    return `Exchange rates: cache is fresh, last refreshed ${formatRelativeMs(s.ageMs)}`;
+  }
+  if (s.willThrottleNextFetch) {
+    return `Exchange rates: cache is stale (${formatRelativeMs(s.ageMs)}), refetch is throttled until 60 seconds since last attempt. Tap Refresh Rates to override.`;
+  }
+  return `Exchange rates: cache is stale (${formatRelativeMs(s.ageMs)}), will refetch on next conversion`;
 }
 
 export type FontSizeOption = "small" | "medium" | "large" | "xlarge";
@@ -181,6 +237,12 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   // calibrate against the session OK/Fail line right above it.
   const OFFLINE_FAIL_WINDOW_MS = 60_000;
   const [offlineFailLast60s, setOfflineFailLast60s] = useState(0);
+  // #205: exchange-rate cache health snapshot. Sourced from the pure
+  // `getRatesCacheState()` accessor in `currencyExchange.ts` so the dashboard
+  // can distinguish "cache is fresh" from "cache is stale but throttled" from
+  // "no cache at all". Refreshes on modal open + manual Refresh.
+  const [ratesCacheState, setRatesCacheState] = useState<RatesCacheState | null>(null);
+  const [ratesRefreshing, setRatesRefreshing] = useState(false);
   // Collapsible debug sub-sections. Each defaults to collapsed; we auto-expand
   // an urgent section (open breaker, last crash) the first time the modal
   // renders so the user notices what needs attention.
@@ -240,6 +302,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     setOfflineQueueStats(getOfflineQueueStats());
     setSpeechFailLast60s(computeSpeechFailWindow());
     setOfflineFailLast60s(computeOfflineFailWindow());
+    setRatesCacheState(getRatesCacheState());
     if (snapshots.some((s) => s.open)) setDiagnosticsExpanded(true);
   }, [visible, computeSpeechFailWindow, computeOfflineFailWindow]);
 
@@ -251,7 +314,28 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     setOfflineQueueStats(getOfflineQueueStats());
     setSpeechFailLast60s(computeSpeechFailWindow());
     setOfflineFailLast60s(computeOfflineFailWindow());
+    setRatesCacheState(getRatesCacheState());
   }, [computeSpeechFailWindow, computeOfflineFailWindow]);
+
+  // #205: explicit user override for the 60s refetch throttle in
+  // currencyExchange.ts. Pure user-intent escape hatch — production code
+  // paths still call `getExchangeRates()` which respects the throttle
+  // (otherwise heavy catalog scanning during an outage would hammer the
+  // upstream). Failures fall through to the same fallback chain as a
+  // regular fetch so the button is safe to retry.
+  const handleRefreshRates = useCallback(async () => {
+    if (ratesRefreshing) return;
+    setRatesRefreshing(true);
+    try {
+      await forceRefreshExchangeRates();
+    } catch (err) {
+      logger.warn("Settings", "Manual exchange rate refresh failed", err);
+    } finally {
+      setRatesCacheState(getRatesCacheState());
+      setRatesRefreshing(false);
+      notifySuccess();
+    }
+  }, [ratesRefreshing]);
 
   const handleResetCircuits = useCallback(() => {
     resetCircuits();
@@ -455,6 +539,16 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
           diagnosticsLines.push(
             `  Offline queue (last 60s): ${offlineWarnRolling} warn${offlineWarnRolling === 1 ? "" : "s"}${sessionContext}`
           );
+        }
+        // #205: exchange-rate cache state — distinguishes "cache fresh"
+        // from "stale + throttled" from "no cache, falling through to
+        // hardcoded fallback". Especially useful for crash reports filed
+        // during heavy catalog scanning (e.g. crew flipping through duty-
+        // free brochures) where a stale FX cache could explain weird
+        // converted-price displays in the bug report.
+        const rates = getRatesCacheState();
+        if (rates.hasCache || rates.lastAttemptAgeMs !== null) {
+          diagnosticsLines.push(`  Exchange rates: ${ratesStateLabel(rates)}`);
         }
         // Errors-by-tag breakdown via logger.countBy (#119). Gives the person
         // reading the report a quick "which subsystem is on fire?" view
@@ -778,8 +872,11 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
               </Text>
             </View>
 
-            {/* Translation diagnostics — circuit breakers + cache stats */}
-            {(circuitSnapshots.length > 0 || (cacheStats && cacheStats.size > 0)) && (
+            {/* Translation diagnostics — circuit breakers + cache stats.
+                #205: also opens when there's exchange-rate cache state to
+                show, so a user troubleshooting stale prices can find the
+                Refresh Rates button without any other diagnostics traffic. */}
+            {(circuitSnapshots.length > 0 || (cacheStats && cacheStats.size > 0) || (ratesCacheState && (ratesCacheState.hasCache || ratesCacheState.lastAttemptAgeMs !== null))) && (
               <View style={styles.infoSection}>
                 <CollapsibleSection
                   title="Translation Diagnostics"
@@ -1000,6 +1097,32 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                       )}
                     </View>
                   )}
+                  {/* #205: exchange-rate cache health line. Renders when
+                      there's been any traffic or an existing cache, with
+                      distinct labels for fresh / stale / throttled / no-cache.
+                      Tinted dimText for healthy state, errorText when stale
+                      AND throttled (i.e. we want fresh rates but the throttle
+                      is blocking the next attempt — tap Refresh Rates to
+                      force a fetch). */}
+                  {ratesCacheState && (ratesCacheState.hasCache || ratesCacheState.lastAttemptAgeMs !== null) && (
+                    <View style={styles.telemetryBlock}>
+                      <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
+                        Exchange rates:
+                      </Text>
+                      <Text
+                        style={[
+                          styles.infoText,
+                          dynamicStyles.infoText,
+                          ratesCacheState.hasCache && !ratesCacheState.isFresh && ratesCacheState.willThrottleNextFetch
+                            ? { color: colors.errorText }
+                            : null,
+                        ]}
+                        accessibilityLabel={ratesStateAccessibilityLabel(ratesCacheState)}
+                      >
+                        {ratesStateLabel(ratesCacheState)}
+                      </Text>
+                    </View>
+                  )}
                   {/* #174: offline-queue reliability block. Silent when no
                       queue traffic has resolved this session, otherwise shows
                       OK / fail counts, fail-rate (red at >=25%), and a
@@ -1075,6 +1198,33 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                     >
                       <Text style={[styles.crashActionText, { color: colors.primary }]}>Refresh</Text>
                     </TouchableOpacity>
+                    {/* #205: explicit user override for the 60s refetch
+                        throttle. Only renders when the cache is stale or
+                        absent — refreshing a fresh cache is wasteful and
+                        the button would be misleading. Disabled while a
+                        manual refresh is in flight to prevent rapid taps
+                        from triggering parallel fetches. */}
+                    {ratesCacheState && (!ratesCacheState.hasCache || !ratesCacheState.isFresh) && (
+                      <TouchableOpacity
+                        style={[
+                          styles.crashActionButton,
+                          { backgroundColor: colors.cardBg, opacity: ratesRefreshing ? 0.5 : 1 },
+                        ]}
+                        onPress={handleRefreshRates}
+                        disabled={ratesRefreshing}
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          ratesRefreshing
+                            ? "Refreshing exchange rates"
+                            : "Force refresh exchange rates, bypassing the 60 second throttle"
+                        }
+                        accessibilityState={{ disabled: ratesRefreshing }}
+                      >
+                        <Text style={[styles.crashActionText, { color: colors.primary }]}>
+                          {ratesRefreshing ? "Refreshing…" : "Refresh Rates"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
                     {circuitSnapshots.some((s) => s.open || s.failures > 0) && (
                       <TouchableOpacity
                         style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
