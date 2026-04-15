@@ -36,6 +36,7 @@ import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
 import { isLikelyMicMuted as isLikelyMicMutedPure } from "../utils/micMuted";
 import CollapsibleSection from "./CollapsibleSection";
+import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 
 export type { TranslationProvider };
 
@@ -147,7 +148,10 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const colors = useMemo(() => getColors(settings.theme), [settings.theme]);
   const [appleAvailable, setAppleAvailable] = useState(false);
   const [lastCrash, setLastCrash] = useState<CrashReport | null>(null);
-  const [crashCopied, setCrashCopied] = useState(false);
+  // useAutoClearFlag<true>: null→falsy "Copy", true→truthy "Copied!" — the
+  // hook handles unmount cleanup so a modal dismiss mid-badge can't setState
+  // on a torn-down tree.
+  const [crashCopied, setCrashCopied] = useAutoClearFlag<true>(1500);
   const [circuitSnapshots, setCircuitSnapshots] = useState<CircuitSnapshot[]>([]);
   const [cacheStats, setCacheStats] = useState<TranslationCacheStats | null>(null);
   const [typeAheadStats, setTypeAheadStats] = useState<TypeAheadStats | null>(null);
@@ -430,7 +434,6 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
       await copyWithoutAutoClear(buildCrashReport());
       notifySuccess();
       setCrashCopied(true);
-      setTimeout(() => setCrashCopied(false), 1500);
     } catch (err) {
       logger.warn("Settings", "Copy crash report failed", err instanceof Error ? err.message : String(err));
     }

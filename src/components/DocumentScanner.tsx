@@ -27,6 +27,7 @@ import {
 } from "../services/scannerModes";
 import { saveNote } from "../services/notes";
 import { copyWithAutoClear } from "../services/clipboard";
+import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 import { notifySuccess, impactMedium } from "../services/haptics";
 import type { ThemeColors } from "../theme";
 import CameraPhase from "./scanner/CameraPhase";
@@ -94,7 +95,7 @@ function DocumentScanner({
   const [translatedText, setTranslatedText] = useState("");
   const [analysis, setAnalysis] = useState<DocumentAnalysis | null>(null);
   const [modeFields, setModeFields] = useState<ExtractedField[]>([]);
-  const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [copiedText, setCopiedText] = useAutoClearFlag<string>(1500);
   const [noteSaved, setNoteSaved] = useState(false);
 
   const mode = getScannerMode(selectedMode);
@@ -155,7 +156,6 @@ function DocumentScanner({
       await copyWithAutoClear(text);
       notifySuccess();
       setCopiedText(text);
-      setTimeout(() => setCopiedText(null), 1500);
     } catch (err) {
       logger.warn("Scanner", "Copy to clipboard failed", err instanceof Error ? err.message : String(err));
     }

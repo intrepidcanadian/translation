@@ -16,6 +16,7 @@ import { getScannerMode } from "../services/scannerModes";
 import { logger } from "../services/logger";
 import { copyWithAutoClear } from "../services/clipboard";
 import { notifySuccess, notifyWarning } from "../services/haptics";
+import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 import type { ThemeColors } from "../theme";
 
 interface NotesViewerProps {
@@ -37,7 +38,7 @@ export default function NotesViewer({
   const [selectedNote, setSelectedNote] = useState<SavedNote | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useAutoClearFlag<string>(1500);
 
   const reload = useCallback(async () => {
     const loaded = await loadNotes();
@@ -122,7 +123,6 @@ export default function NotesViewer({
       await copyWithAutoClear(text);
       notifySuccess();
       setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1500);
     } catch (err) {
       logger.warn("Notes", "Failed to copy to clipboard", err instanceof Error ? err.message : String(err));
     }

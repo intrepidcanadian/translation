@@ -54,7 +54,13 @@ export type SpeechKey =
   // `__DEV__`-gated and the signal vanishes. A dedicated counter lets the
   // dashboard distinguish "silent user / quiet environment" from "broken
   // mic" without relying on the error ring.
-  | "speech.noSpeech";
+  | "speech.noSpeech"
+  // #180: OS-level mic-permission denials surfaced via the recognition
+  // error event. Separate from translateFail so "user revoked the mic in
+  // Settings" is distinguishable from "translate API returned 500" in the
+  // Settings diagnostics dashboard — the recovery flow is completely
+  // different (deep-link to Settings vs retry/switch provider).
+  | "speech.permissionDenied";
 
 /**
  * Offline-queue reliability counters (#174). The offline translation queue
@@ -88,6 +94,7 @@ const counters: Record<TelemetryKey, number> = {
   "speech.translateSuccess": 0,
   "speech.translateFail": 0,
   "speech.noSpeech": 0,
+  "speech.permissionDenied": 0,
   "offlineQueue.success": 0,
   "offlineQueue.failed": 0,
   "offlineQueue.deadLetter": 0,

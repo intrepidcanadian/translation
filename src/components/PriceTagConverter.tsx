@@ -26,6 +26,7 @@ import TextRecognition, {
 import { copyWithAutoClear } from "../services/clipboard";
 import { impactMedium, impactLight, notifySuccess } from "../services/haptics";
 import { logger } from "../services/logger";
+import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 import {
   detectPricesInText,
   convertPrice,
@@ -78,7 +79,7 @@ export default function PriceTagConverter({
   const [detectedPrices, setDetectedPrices] = useState<DetectedPrice[]>([]);
   const [rawText, setRawText] = useState("");
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
-  const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [copiedText, setCopiedText] = useAutoClearFlag<string>(1500);
   const [ratesAge, setRatesAge] = useState<string>("");
 
   useEffect(() => {
@@ -169,7 +170,6 @@ export default function PriceTagConverter({
       await copyWithAutoClear(text);
       notifySuccess();
       setCopiedText(text);
-      setTimeout(() => setCopiedText(null), 1500);
     } catch (err) {
       logger.warn("Scanner", "Copy failed", err);
     }

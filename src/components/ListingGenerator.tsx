@@ -22,6 +22,7 @@ import { logger } from "../services/logger";
 import { Linking } from "react-native";
 import { copyWithAutoClear } from "../services/clipboard";
 import { impactMedium, notifySuccess, impactLight } from "../services/haptics";
+import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 import {
   generateListing,
   generateSmartListing,
@@ -82,7 +83,7 @@ function ListingGenerator({
   const [priceComps, setPriceComps] = useState<PriceCompResult | null>(null);
   const [isCheckingPrice, setIsCheckingPrice] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
-  const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [copiedField, setCopiedField] = useAutoClearFlag<string>(1500);
 
   useEffect(() => {
     if (visible && !hasPermission) requestPermission();
@@ -209,7 +210,6 @@ function ListingGenerator({
       await copyWithAutoClear(text);
       impactLight();
       setCopiedField(field);
-      setTimeout(() => setCopiedField(null), 1500);
     } catch (err) {
       logger.warn("Listing", "Copy to clipboard failed", err instanceof Error ? err.message : String(err));
     }

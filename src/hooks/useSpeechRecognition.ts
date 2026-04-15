@@ -281,6 +281,25 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     } else {
       logger.warn("Speech", `recognition error (${code})`);
     }
+    // #180: when the error code indicates a revoked/denied mic permission
+    // (the OS can strip it mid-session, or the user changed it in Settings
+    // between sessions), the plain error-banner text was a dead end — the
+    // user had to know iOS's deep Settings path to recover. Mirror the
+    // startListening permission-denied path and surface an Alert with a
+    // one-tap "Open Settings" recovery action so the user can re-enable
+    // the mic without leaving the recovery flow. Also bumps a telemetry
+    // counter so Settings diagnostics can expose permission churn.
+    if (code === "not-allowed") {
+      telemetryIncrement("speech.permissionDenied");
+      Alert.alert(
+        "Microphone Permission Required",
+        "Live Translator needs microphone access to translate speech. Please enable it in Settings.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Open Settings", onPress: () => Linking.openSettings() },
+        ]
+      );
+    }
     onShowError(errorMap[code] || `Speech error: ${code}`);
     setIsListening(false);
   });

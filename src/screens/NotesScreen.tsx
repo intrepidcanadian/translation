@@ -21,6 +21,7 @@ import { notifySuccess, notifyWarning } from "../services/haptics";
 import { useSettings } from "../contexts/SettingsContext";
 import { getColors, type ThemeColors } from "../theme";
 import { logger } from "../services/logger";
+import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 
 interface NoteCardProps {
   item: SavedNote;
@@ -93,7 +94,7 @@ export default function NotesScreen() {
   const [selectedNote, setSelectedNote] = useState<SavedNote | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
-  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useAutoClearFlag<string>(1500);
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
   // Debounce search to avoid filtering on every keystroke
@@ -183,7 +184,6 @@ export default function NotesScreen() {
       await copyWithAutoClear(text);
       notifySuccess();
       setCopiedId(id);
-      setTimeout(() => setCopiedId(null), 1500);
     } catch (err) {
       logger.warn("Notes", "Copy to clipboard failed", err instanceof Error ? err.message : String(err));
     }

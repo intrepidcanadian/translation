@@ -12,6 +12,7 @@ type LogTag =
   | "Speech"
   | "Storage"
   | "Network"
+  | "Offline"
   | "Camera"
   | "Product"
   | "Notes"

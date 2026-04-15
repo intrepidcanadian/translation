@@ -25,6 +25,7 @@ import TextRecognition, {
 } from "@react-native-ml-kit/text-recognition";
 import { copyWithAutoClear } from "../services/clipboard";
 import { impactMedium, impactLight, notifySuccess } from "../services/haptics";
+import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 import { logger } from "../services/logger";
 import { translateText, translateAppleBatch, type TranslationProvider } from "../services/translation";
 import {
@@ -99,7 +100,7 @@ export default function DutyFreeCatalogScanner({
   const [rawText, setRawText] = useState("");
   const [translatedText, setTranslatedText] = useState("");
   const [expandedProduct, setExpandedProduct] = useState<number | null>(null);
-  const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [copiedText, setCopiedText] = useAutoClearFlag<string>(1500);
   const [ratesAge, setRatesAge] = useState("");
   const [totalItems, setTotalItems] = useState(0);
 
@@ -232,7 +233,6 @@ export default function DutyFreeCatalogScanner({
       await copyWithAutoClear(text);
       notifySuccess();
       setCopiedText(text);
-      setTimeout(() => setCopiedText(null), 1500);
     } catch (err) {
       logger.warn("Scanner", "Copy failed", err);
     }

@@ -20,6 +20,7 @@ import {
 } from "react-native-vision-camera";
 import { copyWithAutoClear } from "../services/clipboard";
 import { impactMedium, notifySuccess } from "../services/haptics";
+import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 import {
   lookupBarcode,
   searchProductByText,
@@ -47,7 +48,9 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
   const [scannedCode, setScannedCode] = useState<string | null>(null);
   const [product, setProduct] = useState<ProductInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [copiedText, setCopiedText] = useState<string | null>(null);
+  // useAutoClearFlag cancels the pending 1.5s timer on unmount so navigating
+  // away from the scanner mid-copy can't setState on a torn-down component.
+  const [copiedText, setCopiedText] = useAutoClearFlag<string>(1500);
   const lastScannedRef = useRef<string>("");
 
   useEffect(() => {
@@ -115,7 +118,6 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
       await copyWithAutoClear(text);
       notifySuccess();
       setCopiedText(text);
-      setTimeout(() => setCopiedText(null), 1500);
     } catch (err) {
       logger.warn("Product", "Copy to clipboard failed", err instanceof Error ? err.message : String(err));
     }

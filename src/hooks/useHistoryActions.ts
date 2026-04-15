@@ -9,6 +9,7 @@ import type { TranslationProvider } from "../services/translation";
 import { logger } from "../services/logger";
 import { copyWithAutoClear } from "../services/clipboard";
 import { escapeHtml } from "../utils/htmlEscape";
+import { useAutoClearFlag } from "./useAutoClearFlag";
 import type { HistoryItem } from "../types";
 
 // Consolidated modal state to reduce independent re-renders
@@ -92,7 +93,7 @@ export function useHistoryActions({
   speechRate,
   showError,
 }: UseHistoryActionsOptions) {
-  const [copiedText, setCopiedText] = useState<string | null>(null);
+  const [copiedText, setCopiedText] = useAutoClearFlag<string>(1500);
   const [speakingText, setSpeakingText] = useState<string | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
@@ -124,7 +125,6 @@ export function useHistoryActions({
       await copyWithAutoClear(text);
       notifySuccess();
       setCopiedText(text);
-      setTimeout(() => setCopiedText(null), 1500);
     } catch (err) {
       logger.warn("History", "Copy to clipboard failed", err instanceof Error ? err.message : String(err));
     }

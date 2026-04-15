@@ -83,11 +83,11 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
             offlineQueueRef.current = data;
             setOfflineQueue(data);
           } catch (err) {
-            logger.warn("Storage", "Failed to parse offline queue JSON", err);
+            logger.warn("Offline", "Failed to parse offline queue JSON", err);
           }
         }
       })
-      .catch((err) => logger.warn("Storage", "Failed to load offline queue", err));
+      .catch((err) => logger.warn("Offline", "Failed to load offline queue", err));
   }, []);
 
   const addToOfflineQueue = useCallback((item: OfflineQueueItem) => {
@@ -106,7 +106,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
       const updated = [...filtered, item];
       offlineQueueRef.current = updated;
       AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(updated)).catch((err) =>
-        logger.warn("Storage", "Failed to persist offline queue", err)
+        logger.warn("Offline", "Failed to persist offline queue", err)
       );
       return updated;
     });
@@ -139,7 +139,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
       offlineQueueRef.current = remaining;
       setOfflineQueue(remaining);
       AsyncStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remaining)).catch((e) =>
-        logger.warn("Storage", "Failed to persist offline queue", e)
+        logger.warn("Offline", "Failed to persist offline queue", e)
       );
     };
 
@@ -166,7 +166,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
             try {
               cb(item.text, result.translatedText);
             } catch (cbErr) {
-              logger.warn("Network", "Offline queue listener threw", cbErr);
+              logger.warn("Offline", "Offline queue listener threw", cbErr);
             }
           });
           processed++;
@@ -182,7 +182,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
           remaining = remaining.filter((r) => r !== item);
           persistRemaining();
         } catch (err) {
-          logger.warn("Network", "Offline queue translation failed", err);
+          logger.warn("Offline", "Offline queue translation failed", err);
           consecutiveFailures++;
           // #174: every per-item failure increments the counter, including
           // intermediate retries. Dashboards show fail-rate over resolved
@@ -195,7 +195,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
           // blocking the whole queue forever.
           const attempts = (item.attempts ?? 0) + 1;
           if (attempts >= MAX_ATTEMPTS) {
-            logger.warn("Network", "Offline queue item dead-lettered after max attempts", {
+            logger.warn("Offline", "Offline queue item dead-lettered after max attempts", {
               text: item.text.slice(0, 40),
               attempts,
             });
@@ -223,7 +223,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
           notifySuccess();
         } catch (hapticErr) {
           // A haptic failure is cosmetic; never let it stick the queue flag.
-          logger.warn("Network", "notifySuccess failed after queue drain", hapticErr);
+          logger.warn("Offline", "notifySuccess failed after queue drain", hapticErr);
         }
       }
     } finally {
