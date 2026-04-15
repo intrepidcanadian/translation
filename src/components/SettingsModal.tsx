@@ -39,13 +39,13 @@ import {
   getRatesFreshnessGrade,
   forceRefreshExchangeRates,
   type RatesCacheState,
-  type RatesFreshnessGrade,
   type RefreshResult,
   type PesoRegion,
 } from "../services/currencyExchange";
 import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
 import { isLikelyMicMuted as isLikelyMicMutedPure } from "../utils/micMuted";
+import { freshnessGradeTag } from "../utils/ratesFreshnessDisplay";
 import CollapsibleSection from "./CollapsibleSection";
 import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 
@@ -194,30 +194,6 @@ function refreshOutcomeAccessibilityLabel(r: RefreshResult): string {
   return r.ageMs !== null
     ? `Exchange rate refresh failed. Falling back to cache from ${formatRelativeMs(r.ageMs)}.`
     : `Exchange rate refresh failed.`;
-}
-
-/**
- * Run 16: short human-readable tag for a `RatesFreshnessGrade`. The grade is
- * categorical (five buckets) so this is a pure lookup — no interpolation on
- * `ageMs` because the caller already has a separate label for that. Shown
- * in square brackets next to the freshness line in the dashboard and in the
- * crash report so support can tell at a glance which band the user was in
- * when they filed the bug. `null` return means "don't render a tag" — used
- * for the fresh grade so the dashboard stays uncluttered in the healthy case.
- */
-function freshnessGradeTag(g: RatesFreshnessGrade): string | null {
-  switch (g) {
-    case "fresh":
-      return null;
-    case "stale-ok":
-      return "stale";
-    case "stale-warn":
-      return "stale · consider refresh";
-    case "stale-critical":
-      return "critical · refresh now";
-    case "none":
-      return "no cache · using built-in";
-  }
 }
 
 function ratesStateAccessibilityLabel(s: RatesCacheState): string {

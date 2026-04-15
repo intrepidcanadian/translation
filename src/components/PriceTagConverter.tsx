@@ -39,6 +39,7 @@ import {
   type ConvertedPrice,
   type RatesFreshnessGrade,
 } from "../services/currencyExchange";
+import { gradeWarningText, isSoftWarning } from "../utils/ratesFreshnessDisplay";
 import { primaryAlpha, type ThemeColors } from "../theme";
 
 interface PriceTagConverterProps {
@@ -55,33 +56,6 @@ interface DetectedPrice {
   currency: string;
   amount: number;
   conversions: ConvertedPrice[];
-}
-
-/**
- * Run 17: render a human-readable warning message for a rates freshness grade
- * when the cache is anything worse than "fresh". `null` means "don't render"
- * so callers can skip the chip entirely on a fresh cache. Messages are kept
- * short (< 40 chars) so they fit the results-header chip without wrapping.
- *
- * Grade thresholds come from getRatesFreshnessGrade in currencyExchange.ts:
- *  - fresh         — no warning (age < CACHE_DURATION, standard success)
- *  - stale-ok      — soft informational (age 1–12h, prices probably fine)
- *  - stale-warn    — hard warning (age 12–24h, refresh recommended)
- *  - stale-critical — strongest warning (age > 24h, prices may be off by %)
- *  - none          — no cache at all or fallback payload served
- */
-function gradeWarningText(grade: RatesFreshnessGrade | null): string | null {
-  if (grade === null || grade === "fresh") return null;
-  if (grade === "stale-ok") return "Rates are a few hours old";
-  if (grade === "stale-warn") return "⚠️ Rates are stale — refresh in Settings";
-  if (grade === "stale-critical") return "⚠️ Rates over 24h old — refresh now";
-  if (grade === "none") return "⚠️ Using offline fallback rates";
-  return null;
-}
-
-/** Run 17: is this grade a "soft" informational warning vs a hard alert? */
-function isSoftWarning(grade: RatesFreshnessGrade | null): boolean {
-  return grade === "stale-ok";
 }
 
 function getMLKitScript(langCode: string): TextRecognitionScript {
