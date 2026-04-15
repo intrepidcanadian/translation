@@ -85,6 +85,9 @@ type _HasOfflineQueueDeadLetter = Expect<"offlineQueue.deadLetter" extends Telem
 //      diagnostics. A drop here means the dashboard can't render the block.
 type _HasRatesManualRefresh = Expect<"rates.manualRefresh" extends TelemetryKey ? true : false>;
 type _HasRatesManualRefreshFailed = Expect<"rates.manualRefreshFailed" extends TelemetryKey ? true : false>;
+// #220: payload-validation counter — distinguishes "API down" (caught by
+// network handler) from "API up but garbage" (rejected by isValidRatesPayload).
+type _HasRatesValidationFailed = Expect<"rates.validationFailed" extends TelemetryKey ? true : false>;
 
 // 5. Negative check: an unknown literal must NOT be assignable. TypeScript
 //    doesn't have a direct "not assignable" assert, so we invert Equals on a
@@ -111,5 +114,6 @@ export type __TelemetryKeyTypeAssertions = [
   _HasOfflineQueueDeadLetter,
   _HasRatesManualRefresh,
   _HasRatesManualRefreshFailed,
+  _HasRatesValidationFailed,
   _NotAssignable,
 ];

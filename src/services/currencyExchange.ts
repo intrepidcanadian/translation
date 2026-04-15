@@ -3,6 +3,8 @@
 // Falls back to hardcoded rates when offline
 
 import { logger } from "./logger";
+import { increment as incrementTelemetry } from "./telemetry";
+import { preprocessOCRPriceWraps } from "../utils/ocrPricePreprocess";
 
 export interface ExchangeRates {
   base: string;
@@ -37,6 +39,13 @@ export const CURRENCIES: Record<string, { symbol: string; flag: string; name: st
   MYR: { symbol: "RM", flag: "🇲🇾", name: "Malaysian Ringgit", decimals: 2 },
   PHP: { symbol: "₱", flag: "🇵🇭", name: "Philippine Peso", decimals: 2 },
   IDR: { symbol: "Rp", flag: "🇮🇩", name: "Indonesian Rupiah", decimals: 0 },
+  // #219: Mexican Peso. Common at duty-free counters in Cancun / Mexico City
+  // and a frequent OCR target for crew on Latin America routes. Symbol is
+  // `MX$` (or sometimes `Mex$`) so it can't share the bare `$` parsing path
+  // — has to be handled via the multi-char prefix list and the trailing
+  // letter-code path. `pesos?` word form folds Argentine/Chilean pesos into
+  // MXN by default, which is a known compromise documented in nameToCurrency.
+  MXN: { symbol: "MX$", flag: "🇲🇽", name: "Mexican Peso", decimals: 2 },
 };
 
 // Default display currencies for airline crew (most relevant markets)
@@ -62,6 +71,7 @@ const FALLBACK_RATES: Record<string, number> = {
   MYR: 4.72,
   PHP: 56.8,
   IDR: 15900,
+  MXN: 17.05,
 };
 
 // Module-level cache
@@ -188,6 +198,12 @@ export async function getExchangeRates(): Promise<ExchangeRates> {
         return cachedRates;
       }
       if (data) {
+        // #220: surface "API up but payload broken" as a distinct counter so
+        // diagnostics can tell it apart from network failures (which fall
+        // through the catch below). A non-zero value with a quiet manual-
+        // refresh failure counter means users are silently on stale rates
+        // because every refresh path is being rejected at validation.
+        incrementTelemetry("rates.validationFailed");
         logger.warn("Product", "Exchange rates response failed validation, using fallback");
       }
     }
@@ -331,13 +347,25 @@ export async function forceRefreshExchangeRates(): Promise<RefreshResult> {
  * Heuristic — deliberately conservative to avoid mis-parsing legitimate
  * thousands-separated inputs:
  *
- *   1. If the input contains a `.`, treat `.` as decimal and commas as
- *      thousands separators (current behavior). This matches US/UK/Asian
- *      formats where thousands separation is the dominant pattern.
- *   2. If the input has NO `.` and exactly one `,` followed by exactly 1 or
- *      2 digits at the end of the string, treat `,` as the decimal separator.
- *      This is the canonical European format (`4,50`, `3,2`).
- *   3. Otherwise, treat commas as thousands separators and strip them.
+ *   1a. (#218) If the input matches the strict European thousands shape
+ *       `^\d{1,3}(\.\d{3})+,\d{1,2}$` (e.g. `1.234,56` / `12.345.678,90`),
+ *       treat `.` as the thousands separator and `,` as decimal. The shape
+ *       is unambiguous because (a) every period must be followed by exactly
+ *       3 digits, which is the *only* way thousands grouping can look in any
+ *       locale, and (b) the trailing comma must be followed by 1–2 digits,
+ *       which is the canonical European decimal tail. Both constraints
+ *       together rule out US-style inputs like `1.234` (which would be a
+ *       non-grouped decimal in en-US) or `1.234,567` (3 trailing digits, so
+ *       not a decimal tail). This rule must be checked *before* rule 1 because
+ *       a `1.234,56` input contains a period and would otherwise be Rule 1'd
+ *       through `parseFloat("1234,56")` → NaN.
+ *   1.  If the input contains a `.`, treat `.` as decimal and commas as
+ *       thousands separators (current behavior). This matches US/UK/Asian
+ *       formats where thousands separation is the dominant pattern.
+ *   2.  If the input has NO `.` and exactly one `,` followed by exactly 1 or
+ *       2 digits at the end of the string, treat `,` as the decimal separator.
+ *       This is the canonical European format (`4,50`, `3,2`).
+ *   3.  Otherwise, treat commas as thousands separators and strip them.
  *
  * Rule 2's "1 or 2 digits" constraint is the important guard. A thousands
  * separator always produces groups of exactly 3 digits (`1,234` / `12,345`),
@@ -351,6 +379,15 @@ export function parseLocaleAmount(raw: string): number {
   if (!raw) return NaN;
   const s = raw.trim();
   if (!s) return NaN;
+  // Rule 1a (#218): strict European thousands form `1.234,56` — every period
+  // followed by exactly 3 digits, then a single trailing comma + 1–2 decimal
+  // digits. Must be checked before Rule 1 because the input contains a `.`
+  // and would otherwise be misinterpreted as `parseFloat("1234,56")` → NaN
+  // by Rule 1's comma-strip path.
+  if (/^\d{1,3}(\.\d{3})+,\d{1,2}$/.test(s)) {
+    // Strip thousands periods, swap decimal comma for a period.
+    return parseFloat(s.replace(/\./g, "").replace(",", "."));
+  }
   // Rule 1: period present → comma is thousands.
   if (s.includes(".")) {
     return parseFloat(s.replace(/,/g, ""));
@@ -385,12 +422,19 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   // regex and then handed the raw match to parsePrice() which silently
   // returned null — so MYR prices vanished from price-detection results
   // even though `symbolToCurrency("RM")` had a branch waiting for them.
-  const rmFirst = cleaned.match(/^RM\s*([\d,]+(?:[.,]\d{1,2})?)/);
+  // #218: amount sub-pattern widened from `[\d,]+(?:[.,]\d{1,2})?` to
+  // `\d(?:[\d.,]*\d)?` so European-thousands inputs like `1.234,56` survive
+  // capture intact. The old pattern only allowed commas inside the integer
+  // part and a 1–2 digit decimal tail, so `1.234,56` would have captured only
+  // `1.23` and dropped the `4,56` tail. The new shape requires a leading and
+  // trailing digit (no dangling separators) and lets parseLocaleAmount sort
+  // out the locale heuristic.
+  const rmFirst = cleaned.match(/^RM\s*(\d(?:[\d.,]*\d)?)/);
   if (rmFirst) {
     const num = parseLocaleAmount(rmFirst[1]);
     if (!isNaN(num)) return { currency: "MYR", amount: num };
   }
-  const rmLast = cleaned.match(/([\d,]+(?:[.,]\d{1,2})?)\s*RM\b/);
+  const rmLast = cleaned.match(/(\d(?:[\d.,]*\d)?)\s*RM\b/);
   if (rmLast) {
     const num = parseLocaleAmount(rmLast[1]);
     if (!isNaN(num)) return { currency: "MYR", amount: num };
@@ -401,7 +445,8 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   // locale-aware helper can see the full number (`4,50` → EUR 4.50). A
   // naive `.`-only class would have dropped the last two digits before
   // parseLocaleAmount got a chance to interpret them.
-  const symbolFirst = cleaned.match(/^([HKNTSAد.إ]*[$€£¥₹₩฿₫₱¢])\s*([\d,]+(?:[.,]\d{1,2})?)/);
+  // #218: amount sub-pattern widened — see the rmFirst comment above.
+  const symbolFirst = cleaned.match(/^([HKNTSAMXد.إ]*[$€£¥₹₩฿₫₱¢])\s*(\d(?:[\d.,]*\d)?)/);
   if (symbolFirst) {
     const sym = symbolFirst[1];
     const num = parseLocaleAmount(symbolFirst[2]);
@@ -411,7 +456,7 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   }
 
   // Symbol-last patterns: 100$, 100€
-  const symbolLast = cleaned.match(/([\d,]+(?:[.,]\d{1,2})?)\s*([HKNTSAد.إ]*[$€£¥₹₩฿₫₱¢])/);
+  const symbolLast = cleaned.match(/(\d(?:[\d.,]*\d)?)\s*([HKNTSAMXد.إ]*[$€£¥₹₩฿₫₱¢])/);
   if (symbolLast) {
     const num = parseLocaleAmount(symbolLast[1]);
     const sym = symbolLast[2];
@@ -427,7 +472,7 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   // Without this, `parsePrice("BAHT 120")` would have to fall through to the
   // codeAfter branch which only matches digit-then-word, so leading-word
   // forms silently returned null.
-  const codePattern = cleaned.match(/(?:^|\s)(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won|baht)\s*([\d,]+(?:[.,]\d{1,2})?)/i);
+  const codePattern = cleaned.match(/(?:^|\s)(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|MXN|dollars?|euros?|pounds?|yen|yuan|won|baht|pesos?)\s*(\d(?:[\d.,]*\d)?)/i);
   if (codePattern) {
     const num = parseLocaleAmount(codePattern[2]);
     if (!isNaN(num)) {
@@ -440,7 +485,7 @@ export function parsePrice(priceStr: string): { currency: string; amount: number
   // already had a THB branch. The OCR fuzz corpus pinned the bug as a
   // current-behavior fixture — flipping the corpus expectation to include
   // THB 120 is part of this fix.
-  const codeAfter = cleaned.match(/([\d,]+(?:[.,]\d{1,2})?)\s*(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won|baht)/i);
+  const codeAfter = cleaned.match(/(\d(?:[\d.,]*\d)?)\s*(USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|MXN|dollars?|euros?|pounds?|yen|yuan|won|baht|pesos?)/i);
   if (codeAfter) {
     const num = parseLocaleAmount(codeAfter[1]);
     const code = codeAfter[2].toUpperCase();
@@ -576,9 +621,20 @@ export function detectPricesInText(text: string): Array<{ raw: string; currency:
   // decides per-match whether the separator is a decimal (European) or a
   // thousands group (US/UK) based on digit grouping — see its docstring.
   // Without this change the regex only captured `€4`, truncating the price.
-  const MONEY_RE = /(?:\bHK\$|\bNT\$|\bS\$|\bA\$|\bUS\$|\bRM|[$€£¥₹₩฿₫₱]|د\.إ)\s*\d[\d,]*(?:[.,]\d{1,2})?|\b(?:USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|dollars?|euros?|pounds?|yen|yuan|won|baht)\b\s*\d[\d,]*(?:[.,]\d{1,2})?|\d[\d,]*(?:[.,]\d{1,2})?\s*(?:\bHK\$|\bNT\$|\bS\$|[$€£¥₹₩฿₫₱]|\b(?:RM|dollars?|euros?|pounds?|yen|yuan|won|baht|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR)\b)/gi;
+  // #218: amount sub-pattern widened from `\d[\d,]*(?:[.,]\d{1,2})?` to
+  // `\d(?:[\d.,]*\d)?` so European-thousands inputs like `1.234,56` survive
+  // capture intact. Both leading and trailing chars must be digits — that
+  // prevents trailing `,` or `.` from being captured as part of the price.
+  // parseLocaleAmount sorts out the locale heuristic for the captured tail.
+  // #219: MX$ joins the multi-char prefix list and `MXN` / `pesos?` join the
+  // letter-code alternations so Mexican Peso receipts extract end-to-end.
+  const MONEY_RE = /(?:\bHK\$|\bNT\$|\bMX\$|\bS\$|\bA\$|\bUS\$|\bRM|[$€£¥₹₩฿₫₱]|د\.إ)\s*\d(?:[\d.,]*\d)?|\b(?:USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|PHP|IDR|MXN|dollars?|euros?|pounds?|yen|yuan|won|baht|pesos?)\b\s*\d(?:[\d.,]*\d)?|\d(?:[\d.,]*\d)?\s*(?:\bHK\$|\bNT\$|\bMX\$|\bS\$|[$€£¥₹₩฿₫₱]|\b(?:RM|dollars?|euros?|pounds?|yen|yuan|won|baht|pesos?|USD|EUR|GBP|JPY|CNY|KRW|HKD|TWD|THB|SGD|AUD|INR|AED|VND|MYR|MXN)\b)/gi;
 
-  const matches = text.match(MONEY_RE) || [];
+  // #215: merge OCR line-wrap fragments before regex matching. Pure passthrough
+  // for clean text — only mutates inputs that match the unambiguous wrap shape
+  // documented in `preprocessOCRPriceWraps`. Wired here (not at every caller)
+  // so the preprocessor runs uniformly for camera, paste, and speech inputs.
+  const matches = preprocessOCRPriceWraps(text).match(MONEY_RE) || [];
   const results: Array<{ raw: string; currency: string; amount: number }> = [];
   const seen = new Set<string>();
 
@@ -599,9 +655,12 @@ export function detectPricesInText(text: string): Array<{ raw: string; currency:
 // --- Helpers ---
 
 function symbolToCurrency(symbol: string): string {
-  // Handle multi-char prefixes first
+  // Handle multi-char prefixes first. Order matters — `MX$` must precede the
+  // single-char `$` fallthrough below, and the `S$` / `A$` checks must come
+  // after `MX$` so a `MXS$` (impossible, but defensive) isn't mis-classified.
   if (symbol.includes("HK$") || symbol === "HK$") return "HKD";
   if (symbol.includes("NT$") || symbol === "NT$") return "TWD";
+  if (symbol.includes("MX$") || symbol === "MX$") return "MXN";
   if (symbol.includes("S$") || symbol === "S$") return "SGD";
   if (symbol.includes("A$") || symbol === "A$") return "AUD";
   if (symbol.includes("د.إ")) return "AED";
@@ -630,6 +689,13 @@ function nameToCurrency(name: string): string {
   if (upper === "YUAN") return "CNY";
   if (upper === "WON") return "KRW";
   if (upper === "BAHT") return "THB";
+  // #219: `peso`/`pesos` is ambiguous — could be MXN, ARS, CLP, COP, etc.
+  // Default to MXN because it's by far the highest-volume "peso" the app
+  // sees in practice (Cancun/Mexico City duty-free OCR). Users on Latin
+  // America routes who scan an Argentine receipt will get the wrong code,
+  // but the UI exposes the parsed currency so they can see the mismatch.
+  // A future per-region locale picker (#216) would fix this properly.
+  if (upper === "PESO" || upper === "PESOS") return "MXN";
   // If it's already a code, pass through
   if (CURRENCIES[upper]) return upper;
   return upper;

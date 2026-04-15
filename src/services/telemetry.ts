@@ -103,10 +103,18 @@ export type OfflineQueueKey =
  *     failure). Denominator for "manual refresh fail rate".
  *   - `rates.manualRefreshFailed`: manual refresh returned
  *     `RefreshResult.ok === false` (network error, validation failure, etc.).
+ *   - `rates.validationFailed` (#220): the API responded 200 but the payload
+ *     failed `isValidRatesPayload` (missing required code, wrong base, NaN
+ *     rate, etc.). Increments on *every* refresh path — manual or background
+ *     — so we can distinguish "API down" from "API is up but returning
+ *     garbage we have to reject". A non-zero counter with a flat
+ *     manualRefreshFailed implies the user is silently running on stale
+ *     cached rates while the API is misbehaving.
  */
 export type RatesKey =
   | "rates.manualRefresh"
-  | "rates.manualRefreshFailed";
+  | "rates.manualRefreshFailed"
+  | "rates.validationFailed";
 
 export type TelemetryKey = TypeAheadKey | SpeechKey | OfflineQueueKey | RatesKey;
 
@@ -126,6 +134,7 @@ const counters: Record<TelemetryKey, number> = {
   "offlineQueue.deadLetter": 0,
   "rates.manualRefresh": 0,
   "rates.manualRefreshFailed": 0,
+  "rates.validationFailed": 0,
 };
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;

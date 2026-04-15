@@ -660,6 +660,18 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
             `  Manual rate refresh: ${manualRefresh} attempt${manualRefresh === 1 ? "" : "s"}, ${manualRefreshFailed} failed (${pct}%)`
           );
         }
+        // #220: payload-validation rejections are tracked separately from
+        // manual-refresh failures because they fire on every refresh path
+        // (including silent background fetches), so a non-zero value here
+        // with a quiet manual counter means the user is silently running
+        // on stale cached rates because the upstream API is returning
+        // garbage that fails REQUIRED_RATE_CODES enforcement (#214).
+        const validationFailed = telemetrySnapshot["rates.validationFailed"];
+        if (validationFailed > 0) {
+          diagnosticsLines.push(
+            `  Rate payload rejected: ${validationFailed} time${validationFailed === 1 ? "" : "s"} (API returned invalid data)`
+          );
+        }
         // Errors-by-tag breakdown via logger.countBy (#119). Gives the person
         // reading the report a quick "which subsystem is on fire?" view
         // without having to scan every recent-errors line individually.
@@ -1274,6 +1286,31 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                             }
                           >
                             Manual refresh: {manual} · fail {manualFailed} ({failPct}%)
+                          </Text>
+                        );
+                      })()}
+                      {/* #220: payload-validation rejections. Distinct from
+                          manual-refresh failures because background refresh
+                          paths also increment this. A non-zero value here
+                          while the user appears to be on a healthy network
+                          means the upstream API is responding 200 with data
+                          that fails REQUIRED_RATE_CODES enforcement — and
+                          the user is silently running on cached/fallback
+                          rates. Always red because every increment is a
+                          confirmed silent failure. */}
+                      {typeAheadStats && (() => {
+                        const validationFailed = getTelemetrySnapshot()["rates.validationFailed"];
+                        if (validationFailed === 0) return null;
+                        return (
+                          <Text
+                            style={[
+                              styles.infoText,
+                              dynamicStyles.infoText,
+                              { color: colors.errorText },
+                            ]}
+                            accessibilityLabel={`Rate payload rejected: ${validationFailed} time${validationFailed === 1 ? "" : "s"}`}
+                          >
+                            Payload rejected: {validationFailed} (API returned invalid data)
                           </Text>
                         );
                       })()}

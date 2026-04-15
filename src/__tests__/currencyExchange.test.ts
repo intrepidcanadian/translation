@@ -15,6 +15,20 @@ jest.mock("../services/logger", () => ({
   logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
 
+// #220: currencyExchange now imports telemetry (for `rates.validationFailed`),
+// which transitively pulls in AsyncStorage. The Node env doesn't ship the
+// native module, so stub it here. Pure in-memory store — telemetry's
+// schedulePersist() debounce never observably fires in tests because we
+// never `await initTelemetry()`, but the import itself needs to succeed.
+jest.mock("@react-native-async-storage/async-storage", () => ({
+  __esModule: true,
+  default: {
+    getItem: jest.fn(async () => null),
+    setItem: jest.fn(async () => undefined),
+    removeItem: jest.fn(async () => undefined),
+  },
+}));
+
 import {
   parsePrice,
   parseLocaleAmount,
@@ -96,6 +110,27 @@ describe("parsePrice", () => {
 
   it("recognizes RM (Malaysian Ringgit) trailing suffix", () => {
     expect(parsePrice("100 RM")).toEqual({ currency: "MYR", amount: 100 });
+  });
+
+  // #219: Mexican Peso. The MX$ multi-char prefix joins the alternation list
+  // and `MXN`/`pesos?` join the letter-code branches. All four shapes — sigil,
+  // code prefix, code suffix, word form — must round-trip cleanly. The
+  // "peso" word form is currently routed to MXN as the most common
+  // duty-free use case; #216 will add a locale picker for users in PHP/CLP
+  // territory who want a different default.
+  it("parses MX$ as MXN", () => {
+    expect(parsePrice("MX$1,250.00")).toEqual({ currency: "MXN", amount: 1250 });
+    expect(parsePrice("MX$45")).toEqual({ currency: "MXN", amount: 45 });
+  });
+
+  it("parses MXN code prefix and suffix", () => {
+    expect(parsePrice("MXN 250")).toEqual({ currency: "MXN", amount: 250 });
+    expect(parsePrice("250 MXN")).toEqual({ currency: "MXN", amount: 250 });
+  });
+
+  it("parses 'pesos' word form as MXN", () => {
+    expect(parsePrice("250 pesos")).toEqual({ currency: "MXN", amount: 250 });
+    expect(parsePrice("1 peso")).toEqual({ currency: "MXN", amount: 1 });
   });
 
   it("parses USD code suffix", () => {
@@ -317,19 +352,49 @@ describe("detectPricesInText", () => {
         ],
       },
       {
-        name: "line wrap inside a price (currently treated as two prices)",
+        name: "line wrap inside a price (#215 preprocessor merges)",
         input: "TOTAL $1,2\n34.56",
-        // OCR line wraps split a number across lines. The regex matches the
-        // first fragment `$1,2` which parseLocaleAmount interprets as
-        // European-decimal (`1,2` has a single comma + 1 trailing digit),
-        // so it resolves to USD 1.2. The orphaned `34.56` has no sigil and
-        // is skipped. Still wrong (the real value is $1,234.56) but this
-        // is a line-wrap preprocessing problem, not a parser problem —
-        // pinned so a future "join lines" pass has a baseline to compare
-        // against. Regression fence: if #209's heuristic is later refined
-        // to require exactly 2 trailing digits, this fixture will flip
-        // back to USD 12 and should be re-pinned explicitly.
-        expected: [{ currency: "USD", amount: 1.2 }],
+        // #215: preprocessOCRPriceWraps now recognizes the wrap silhouette
+        // (currency prefix + 1–3 digits + comma + 1–2 digits at end of line,
+        // then 1–3 digits + `.\d{1,2}` at start of next line) and merges the
+        // two halves into `$1234.56` before MONEY_RE sees the input. The
+        // fixture flipped from the broken USD 1.2 baseline to the correct
+        // USD 1234.56 — a regression here means the preprocessor stopped
+        // matching the wrap shape (overly-conservative regex tightening) or
+        // the parser stopped accepting the merged form.
+        expected: [{ currency: "USD", amount: 1234.56 }],
+      },
+      {
+        name: "MXN trailing code (#219)",
+        input: "Tacos al Pastor 250 MXN\nAgua mineral 35 MXN",
+        // #219: Mexican peso letter code joins the trailing-code alternation
+        // and the symbolToCurrency map. Pins both the regex capture and the
+        // parsePrice path end-to-end.
+        expected: [
+          { currency: "MXN", amount: 250 },
+          { currency: "MXN", amount: 35 },
+        ],
+      },
+      {
+        name: "MXN MX$ prefix at duty-free (#219)",
+        input: "Tequila MX$1,250.00\nSombrero MX$450",
+        expected: [
+          { currency: "MXN", amount: 1250 },
+          { currency: "MXN", amount: 450 },
+        ],
+      },
+      {
+        name: "European thousands receipt (#218)",
+        input: "Schnitzel €1.234,56\nBier €12,50",
+        // #218: Rule 1a in parseLocaleAmount now recognizes the strict
+        // European-thousands shape `\d{1,3}(\.\d{3})+,\d{1,2}` and parses
+        // it as 1234.56 (period = thousands group, comma = decimal). The
+        // bare `€12,50` still goes through the existing #209 single-comma
+        // heuristic.
+        expected: [
+          { currency: "EUR", amount: 1234.56 },
+          { currency: "EUR", amount: 12.5 },
+        ],
       },
       {
         name: "thai baht: sigil and 'baht' word both extract (#208)",
@@ -819,6 +884,47 @@ describe("parseLocaleAmount (#209)", () => {
     });
   });
 
+  describe("Rule 1a — strict European thousands form (#218)", () => {
+    // The shape `\d{1,3}(\.\d{3})+,\d{1,2}` is unambiguous: a period followed
+    // by *exactly* 3 digits is a thousands group, and a single trailing comma
+    // with 1–2 decimal digits is the European decimal mark. Must be checked
+    // BEFORE Rule 1 (which would otherwise treat the comma as a thousands
+    // separator and mis-parse the value).
+
+    it("parses `1.234,56` as 1234.56", () => {
+      expect(parseLocaleAmount("1.234,56")).toBe(1234.56);
+    });
+
+    it("parses `12.345,67` as 12345.67", () => {
+      expect(parseLocaleAmount("12.345,67")).toBe(12345.67);
+    });
+
+    it("parses `12.345.678,90` as 12345678.9 (multi-group)", () => {
+      // The `+` quantifier on `(\.\d{3})` lets the rule match arbitrarily
+      // long thousands chains. Important for prices over 1M.
+      expect(parseLocaleAmount("12.345.678,90")).toBe(12345678.9);
+    });
+
+    it("parses `1.234,5` as 1234.5 (single decimal digit)", () => {
+      // The 1–2 decimal digit window matches the European convention where
+      // some receipts print only one decimal for round amounts.
+      expect(parseLocaleAmount("1.234,5")).toBe(1234.5);
+    });
+
+    it("does NOT match `1.234` (no decimal comma → falls through to Rule 1)", () => {
+      // Regression fence: `1.234` is a US decimal (1.234 dollars) and must
+      // be parsed as 1.234, not as 1234. Rule 1a requires the trailing comma
+      // so it correctly skips this input.
+      expect(parseLocaleAmount("1.234")).toBe(1.234);
+    });
+
+    it("does NOT match `1.23` (period followed by only 2 digits)", () => {
+      // The `\d{3}` quantifier rejects a non-3-digit group, so `1.23` falls
+      // through to Rule 1 (period present → parseFloat as US decimal).
+      expect(parseLocaleAmount("1.23")).toBe(1.23);
+    });
+  });
+
   describe("Rule 2 — single comma with 1–2 trailing digits is European decimal", () => {
     it("parses `4,50` as 4.5", () => {
       expect(parseLocaleAmount("4,50")).toBe(4.5);
@@ -997,6 +1103,82 @@ describe("isValidRatesPayload REQUIRED_RATE_CODES enforcement", () => {
     const mod = loadFreshModule();
     const rates = await mod.getExchangeRates();
     expect(rates.timestamp).toBe(0);
+  });
+
+  // #220: validation rejections increment a dedicated counter so diagnostics
+  // can distinguish "API down" (caught lower in the catch handler) from
+  // "API up but garbage" (rejected here). The counter is incremented on
+  // *every* refresh path, so a non-zero value with a quiet
+  // rates.manualRefreshFailed counter means background refreshes are
+  // silently being rejected and the user is staring at stale cached rates.
+  //
+  // Because `loadFreshModule` uses `jest.isolateModules`, currencyExchange
+  // re-requires telemetry inside the isolated registry — we have to read
+  // the counter from that *same* isolated instance, not the outer module,
+  // or the increment will be invisible. Pull both modules together.
+  function loadFreshModuleWithTelemetry(): {
+    currency: typeof import("../services/currencyExchange");
+    telemetry: typeof import("../services/telemetry");
+  } {
+    let currency: typeof import("../services/currencyExchange") | null = null;
+    let telemetry: typeof import("../services/telemetry") | null = null;
+    jest.isolateModules(() => {
+      jest.doMock("../services/logger", () => ({
+        logger: { warn: jest.fn(), error: jest.fn(), info: jest.fn(), debug: jest.fn() },
+      }));
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      currency = require("../services/currencyExchange");
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      telemetry = require("../services/telemetry");
+    });
+    if (!currency || !telemetry) throw new Error("module load failed");
+    return { currency, telemetry };
+  }
+
+  it("increments rates.validationFailed when the payload is rejected", async () => {
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        // Missing GBP — fails REQUIRED_RATE_CODES enforcement.
+        rates: { USD: 1, EUR: 0.9, JPY: 150, HKD: 7.8, CNY: 7.2 },
+      }),
+    }));
+    const { currency, telemetry } = loadFreshModuleWithTelemetry();
+    const before = telemetry.getAll()["rates.validationFailed"];
+    await currency.getExchangeRates();
+    const after = telemetry.getAll()["rates.validationFailed"];
+    expect(after).toBe(before + 1);
+  });
+
+  it("does NOT increment rates.validationFailed on a valid payload", async () => {
+    // @ts-expect-error mocking fetch
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        rates: { USD: 1, EUR: 0.9, GBP: 0.79, JPY: 150, HKD: 7.8 },
+      }),
+    }));
+    const { currency, telemetry } = loadFreshModuleWithTelemetry();
+    const before = telemetry.getAll()["rates.validationFailed"];
+    await currency.getExchangeRates();
+    const after = telemetry.getAll()["rates.validationFailed"];
+    expect(after).toBe(before);
+  });
+
+  it("does NOT increment rates.validationFailed on a network failure", async () => {
+    // Network errors fall through the outer catch — that's a different
+    // signal (handled by the existing logger.warn path) and should leave
+    // this counter alone. A non-zero validationFailed counter must
+    // exclusively mean "API responded with garbage".
+    global.fetch = jest.fn(async () => {
+      throw new Error("network down");
+    }) as unknown as typeof fetch;
+    const { currency, telemetry } = loadFreshModuleWithTelemetry();
+    const before = telemetry.getAll()["rates.validationFailed"];
+    await currency.getExchangeRates();
+    const after = telemetry.getAll()["rates.validationFailed"];
+    expect(after).toBe(before);
   });
 
   it("accepts a payload with all four REQUIRED_RATE_CODES plus at least one extra", async () => {
