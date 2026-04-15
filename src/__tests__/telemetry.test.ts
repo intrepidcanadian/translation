@@ -121,6 +121,80 @@ describe("telemetry counters", () => {
     // total = 10, local = 4 → 0.4
     expect(tm.getTypeAheadLocalRatio()).toBeCloseTo(0.4, 5);
   });
+
+  // #174: offline-queue counters. Keys are typed so a typo rejects at
+  // compile time; these tests pin the runtime behavior + the
+  // `getOfflineQueueStats` aggregate so the Settings diagnostics dashboard
+  // and crash report can rely on a stable shape.
+  describe("offline queue counters (#174)", () => {
+    it("getOfflineQueueStats starts at zero with failRate=0 and no false NaN", () => {
+      const tm = loadTelemetry();
+      const stats = tm.getOfflineQueueStats();
+      expect(stats.success).toBe(0);
+      expect(stats.failed).toBe(0);
+      expect(stats.deadLetter).toBe(0);
+      expect(stats.total).toBe(0);
+      // Critical: NaN here would blow up dashboards that multiply by 100 for %.
+      expect(stats.failRate).toBe(0);
+      expect(Number.isFinite(stats.failRate)).toBe(true);
+    });
+
+    it("increments success/failed/deadLetter and computes failRate over resolved attempts", () => {
+      const tm = loadTelemetry();
+      tm.increment("offlineQueue.success", 7);
+      tm.increment("offlineQueue.failed", 3);
+      tm.increment("offlineQueue.deadLetter", 1);
+      const stats = tm.getOfflineQueueStats();
+      expect(stats.success).toBe(7);
+      expect(stats.failed).toBe(3);
+      expect(stats.deadLetter).toBe(1);
+      expect(stats.total).toBe(10);
+      // Dead-letter is a subset of failed, NOT a separate bucket added to
+      // total — so the denominator stays at success + failed.
+      expect(stats.failRate).toBeCloseTo(0.3, 5);
+    });
+
+    it("offline-queue keys are NOT included in getTypeAheadTotal", () => {
+      // Regression fence — `getTypeAheadTotal` used to naively iterate
+      // counters, so adding a new key family could accidentally fold into
+      // it. Pin the isolation.
+      const tm = loadTelemetry();
+      tm.increment("offlineQueue.success", 50);
+      tm.increment("offlineQueue.failed", 50);
+      expect(tm.getTypeAheadTotal()).toBe(0);
+    });
+
+    it("reset zeroes the offline-queue counters alongside the others", () => {
+      const tm = loadTelemetry();
+      tm.increment("offlineQueue.success", 9);
+      tm.increment("offlineQueue.failed", 4);
+      tm.increment("offlineQueue.deadLetter", 2);
+      tm.reset();
+      const stats = tm.getOfflineQueueStats();
+      expect(stats.success).toBe(0);
+      expect(stats.failed).toBe(0);
+      expect(stats.deadLetter).toBe(0);
+      expect(stats.total).toBe(0);
+      expect(stats.failRate).toBe(0);
+    });
+
+    it("failRate stays 0 when only dead-letters are recorded without any failed counter bumps", () => {
+      // Defensive: a bug that increments deadLetter without also bumping
+      // failed would make the stats look healthy. The expected semantics
+      // are "every deadLetter also increments failed" (which the
+      // OfflineQueueContext enforces), but the stats getter itself must
+      // not invent a failRate from deadLetter alone — otherwise the
+      // dashboard would show 0% for an all-poison queue.
+      const tm = loadTelemetry();
+      tm.increment("offlineQueue.deadLetter", 3);
+      const stats = tm.getOfflineQueueStats();
+      expect(stats.total).toBe(0);
+      expect(stats.failRate).toBe(0);
+      // The dead-letter badge still renders (SettingsModal checks it
+      // independently) so the signal isn't lost.
+      expect(stats.deadLetter).toBe(3);
+    });
+  });
 });
 
 describe("telemetry hydration", () => {

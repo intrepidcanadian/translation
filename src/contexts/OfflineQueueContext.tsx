@@ -4,6 +4,7 @@ import { useNetInfo } from "@react-native-community/netinfo";
 import { notifySuccess } from "../services/haptics";
 import { translateText } from "../services/translation";
 import { logger } from "../services/logger";
+import { increment as telemetryIncrement } from "../services/telemetry";
 import { useSettings } from "./SettingsContext";
 
 const OFFLINE_QUEUE_KEY = "offline_translation_queue";
@@ -170,6 +171,11 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
           });
           processed++;
           consecutiveFailures = 0;
+          // #174: bump the offline-queue success counter so the Settings
+          // diagnostics dashboard and crash report can distinguish "offline
+          // queue healthy" from "offline queue quietly failing" independent
+          // of the broader Network warn bucket.
+          telemetryIncrement("offlineQueue.success");
           // Remove this item from remaining and persist. The reference comparison
           // is safe here because `remaining` was seeded from `queue` and items
           // are plain objects we never mutate.
@@ -178,6 +184,11 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
         } catch (err) {
           logger.warn("Network", "Offline queue translation failed", err);
           consecutiveFailures++;
+          // #174: every per-item failure increments the counter, including
+          // intermediate retries. Dashboards show fail-rate over resolved
+          // attempts so retries don't double-book — a succeed-after-2-retries
+          // item reads as 2 failed + 1 success, which is the honest picture.
+          telemetryIncrement("offlineQueue.failed");
           // Per-item backoff + dead-letter: count the failure, schedule the
           // next attempt, and drop the item entirely once it's been tried
           // MAX_ATTEMPTS times. Dead-lettering stops one poison phrase from
@@ -188,6 +199,11 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
               text: item.text.slice(0, 40),
               attempts,
             });
+            // #174: dead-letter is a strict subset of failed — a poison
+            // phrase that burned through all retries. Separating it lets
+            // the dashboard flag "N items permanently dropped" without
+            // conflating them with recoverable transient failures.
+            telemetryIncrement("offlineQueue.deadLetter");
             remaining = remaining.filter((r) => r !== item);
           } else {
             const nextAttemptAt = Date.now() + computeBackoff(attempts);

@@ -23,7 +23,12 @@
  * (increment/get/getAll) actually use needs to stay in sync with the
  * parts — a regression here silently orphans counters.
  */
-import type { TypeAheadKey, SpeechKey, TelemetryKey } from "../../services/telemetry";
+import type {
+  TypeAheadKey,
+  SpeechKey,
+  OfflineQueueKey,
+  TelemetryKey,
+} from "../../services/telemetry";
 
 // ---------- Helpers ---------------------------------------------------------
 
@@ -43,11 +48,20 @@ type _TypeAheadIsSubset = Expect<Equals<TypeAheadKey extends TelemetryKey ? true
 // 2. Every SpeechKey must be assignable to TelemetryKey.
 type _SpeechIsSubset = Expect<Equals<SpeechKey extends TelemetryKey ? true : false, true>>;
 
+// 2b. #174: OfflineQueueKey joined the union. Every member must remain
+//     assignable to TelemetryKey so increment/get/getAll accept the new
+//     keys without callers needing to cast.
+type _OfflineQueueIsSubset = Expect<
+  Equals<OfflineQueueKey extends TelemetryKey ? true : false, true>
+>;
+
 // 3. The aggregate must be exactly the union of the parts — no extras, no
 //    missing members. If a new namespace is added (e.g. OcrKey), this line
 //    starts failing and forces the maintainer to update TelemetryKey and
 //    this test in the same commit.
-type _AggregateIdentity = Expect<Equals<TelemetryKey, TypeAheadKey | SpeechKey>>;
+type _AggregateIdentity = Expect<
+  Equals<TelemetryKey, TypeAheadKey | SpeechKey | OfflineQueueKey>
+>;
 
 // 4. Spot-check that specific known literals remain in the aggregate. If
 //    someone accidentally drops `speech.noSpeech` from SpeechKey, this
@@ -55,6 +69,11 @@ type _AggregateIdentity = Expect<Equals<TelemetryKey, TypeAheadKey | SpeechKey>>
 type _HasTypeAheadGlossary = Expect<"typeAhead.glossary" extends TelemetryKey ? true : false>;
 type _HasSpeechNoSpeech = Expect<"speech.noSpeech" extends TelemetryKey ? true : false>;
 type _HasSpeechFail = Expect<"speech.translateFail" extends TelemetryKey ? true : false>;
+// 4b. #174: spot-check offline-queue literals so the diagnostics dashboard
+//      and OfflineQueueContext callsites stay pinned.
+type _HasOfflineQueueSuccess = Expect<"offlineQueue.success" extends TelemetryKey ? true : false>;
+type _HasOfflineQueueFailed = Expect<"offlineQueue.failed" extends TelemetryKey ? true : false>;
+type _HasOfflineQueueDeadLetter = Expect<"offlineQueue.deadLetter" extends TelemetryKey ? true : false>;
 
 // 5. Negative check: an unknown literal must NOT be assignable. TypeScript
 //    doesn't have a direct "not assignable" assert, so we invert Equals on a
@@ -70,9 +89,13 @@ type _NotAssignable = Expect<
 export type __TelemetryKeyTypeAssertions = [
   _TypeAheadIsSubset,
   _SpeechIsSubset,
+  _OfflineQueueIsSubset,
   _AggregateIdentity,
   _HasTypeAheadGlossary,
   _HasSpeechNoSpeech,
   _HasSpeechFail,
+  _HasOfflineQueueSuccess,
+  _HasOfflineQueueFailed,
+  _HasOfflineQueueDeadLetter,
   _NotAssignable,
 ];

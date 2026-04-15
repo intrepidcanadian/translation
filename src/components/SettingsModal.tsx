@@ -29,6 +29,8 @@ import {
   getAll as getTelemetrySnapshot,
   reset as resetTelemetry,
   prunedUnknownKeys,
+  getOfflineQueueStats,
+  type OfflineQueueStats,
 } from "../services/telemetry";
 import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
@@ -150,6 +152,9 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const [cacheStats, setCacheStats] = useState<TranslationCacheStats | null>(null);
   const [typeAheadStats, setTypeAheadStats] = useState<TypeAheadStats | null>(null);
   const [speechStats, setSpeechStats] = useState<SpeechStats | null>(null);
+  // #174: offline-queue reliability stats sourced from the telemetry module.
+  // Populated on modal open and refresh alongside the other diagnostics.
+  const [offlineQueueStats, setOfflineQueueStats] = useState<OfflineQueueStats | null>(null);
   // Rolling-window speech fail count (#141). Sourced from the logger error
   // ring via `logger.countByRolling` so it only reflects recent failures —
   // a stale breaker from hours ago stops dominating the signal. 60s window
@@ -200,6 +205,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     setCacheStats(getTranslationCacheStats());
     setTypeAheadStats(computeTypeAheadStats());
     setSpeechStats(computeSpeechStats());
+    setOfflineQueueStats(getOfflineQueueStats());
     setSpeechFailLast60s(computeSpeechFailWindow());
     if (snapshots.some((s) => s.open)) setDiagnosticsExpanded(true);
   }, [visible, computeSpeechFailWindow]);
@@ -209,6 +215,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     setCacheStats(getTranslationCacheStats());
     setTypeAheadStats(computeTypeAheadStats());
     setSpeechStats(computeSpeechStats());
+    setOfflineQueueStats(getOfflineQueueStats());
     setSpeechFailLast60s(computeSpeechFailWindow());
   }, [computeSpeechFailWindow]);
 
@@ -289,7 +296,14 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
       const circuits = getCircuitSnapshots();
       const cache = getTranslationCacheStats();
       const telemetry = computeTypeAheadStats();
-      if (circuits.some((c) => c.open || c.failures > 0) || cache.size > 0 || telemetry.total > 0) {
+      const queuePreview = getOfflineQueueStats();
+      if (
+        circuits.some((c) => c.open || c.failures > 0) ||
+        cache.size > 0 ||
+        telemetry.total > 0 ||
+        queuePreview.total > 0 ||
+        queuePreview.deadLetter > 0
+      ) {
         diagnosticsLines.push("\nTranslation diagnostics:");
         if (cache.size > 0) {
           diagnosticsLines.push(`  Cache: ${cache.size}/${cache.max}`);
@@ -363,6 +377,21 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
           diagnosticsLines.push(
             `  Speech translate (last 60s): ${speechFailRolling} fail${speechFailRolling === 1 ? "" : "s"}`
           );
+        }
+        // #174: offline-queue reliability — surface session-scoped queue
+        // health so a shared crash report reveals whether the crash might be
+        // related to a degraded offline drain path (dead-letters, high fail
+        // rate). Silent when there's no queue traffic so quiet sessions
+        // don't pad the report.
+        const queue = getOfflineQueueStats();
+        if (queue.total > 0 || queue.deadLetter > 0) {
+          const failPct = queue.total > 0 ? Math.round(queue.failRate * 100) : 0;
+          diagnosticsLines.push(
+            `  Offline queue: ok=${queue.success} fail=${queue.failed} (${failPct}% fail of ${queue.total})`
+          );
+          if (queue.deadLetter > 0) {
+            diagnosticsLines.push(`  Offline queue dead-lettered: ${queue.deadLetter}`);
+          }
         }
         // Errors-by-tag breakdown via logger.countBy (#119). Gives the person
         // reading the report a quick "which subsystem is on fire?" view
@@ -882,6 +911,46 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                           accessibilityLabel={`${speechFailLast60s} speech translation failures in the last 60 seconds`}
                         >
                           Last 60s: {speechFailLast60s} fail{speechFailLast60s === 1 ? "" : "s"}
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                  {/* #174: offline-queue reliability block. Silent when no
+                      queue traffic has resolved this session, otherwise shows
+                      OK / fail counts, fail-rate (red at >=25%), and a
+                      dead-letter line when items have been permanently
+                      dropped. Lets a user who wonders "did my typed-while-
+                      offline translations actually land" get a straight
+                      answer without reading logs. */}
+                  {offlineQueueStats && (offlineQueueStats.total > 0 || offlineQueueStats.deadLetter > 0) && (
+                    <View style={styles.telemetryBlock}>
+                      <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
+                        Offline queue (session):
+                      </Text>
+                      {offlineQueueStats.total > 0 && (
+                        <Text
+                          style={[
+                            styles.infoText,
+                            dynamicStyles.infoText,
+                            offlineQueueStats.failRate >= 0.25
+                              ? { color: colors.errorText }
+                              : null,
+                          ]}
+                          accessibilityLabel={`${offlineQueueStats.success} succeeded, ${offlineQueueStats.failed} failed out of ${offlineQueueStats.total} offline queue attempts`}
+                        >
+                          OK: {offlineQueueStats.success} · Fail: {offlineQueueStats.failed} ({Math.round(offlineQueueStats.failRate * 100)}% of {offlineQueueStats.total})
+                        </Text>
+                      )}
+                      {offlineQueueStats.deadLetter > 0 && (
+                        <Text
+                          style={[
+                            styles.infoText,
+                            dynamicStyles.infoText,
+                            { color: colors.errorText },
+                          ]}
+                          accessibilityLabel={`${offlineQueueStats.deadLetter} queue items permanently dropped after exhausting retries`}
+                        >
+                          ⚠ Dead-lettered: {offlineQueueStats.deadLetter}
                         </Text>
                       )}
                     </View>

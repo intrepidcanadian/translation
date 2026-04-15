@@ -56,7 +56,28 @@ export type SpeechKey =
   // mic" without relying on the error ring.
   | "speech.noSpeech";
 
-export type TelemetryKey = TypeAheadKey | SpeechKey;
+/**
+ * Offline-queue reliability counters (#174). The offline translation queue
+ * already logs `Network` warns on per-item success/failure/dead-letter, but
+ * debug-ring-gated logs vanish in production and the `Network` warn tag is a
+ * bucket shared with every other network path, so a reader couldn't tell
+ * "offline queue broken" apart from "general connectivity issues". Dedicated
+ * counters make the offline-queue health surface in the Settings diagnostics
+ * dashboard and crash report independently of network errors.
+ *
+ * Semantics:
+ *   - `offlineQueue.success`: a queued item translated successfully
+ *   - `offlineQueue.failed`: a per-item translate attempt failed (bumped on
+ *     every failure, not just terminal ones; a retried item can bump this
+ *     multiple times before eventually succeeding or being dead-lettered)
+ *   - `offlineQueue.deadLetter`: an item hit MAX_ATTEMPTS and was dropped
+ */
+export type OfflineQueueKey =
+  | "offlineQueue.success"
+  | "offlineQueue.failed"
+  | "offlineQueue.deadLetter";
+
+export type TelemetryKey = TypeAheadKey | SpeechKey | OfflineQueueKey;
 
 const counters: Record<TelemetryKey, number> = {
   "typeAhead.glossary": 0,
@@ -67,6 +88,9 @@ const counters: Record<TelemetryKey, number> = {
   "speech.translateSuccess": 0,
   "speech.translateFail": 0,
   "speech.noSpeech": 0,
+  "offlineQueue.success": 0,
+  "offlineQueue.failed": 0,
+  "offlineQueue.deadLetter": 0,
 };
 
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -279,6 +303,30 @@ export function getTypeAheadLocalRatio(): number {
   const total = getTypeAheadTotal();
   if (total === 0) return 0;
   return (counters["typeAhead.glossary"] + counters["typeAhead.offlineHit"]) / total;
+}
+
+/**
+ * Offline-queue aggregate stats for the diagnostics dashboard and crash
+ * report. `total` counts every attempt that resolved (success + failed);
+ * dead-lettered items are a subset of `failed` that also hit the retry cap.
+ * Returns 0s when there's no traffic so dashboards can short-circuit.
+ */
+export interface OfflineQueueStats {
+  success: number;
+  failed: number;
+  deadLetter: number;
+  total: number;
+  /** Fail rate over resolved attempts (0..1), 0 when there's no traffic. */
+  failRate: number;
+}
+
+export function getOfflineQueueStats(): OfflineQueueStats {
+  const success = counters["offlineQueue.success"];
+  const failed = counters["offlineQueue.failed"];
+  const deadLetter = counters["offlineQueue.deadLetter"];
+  const total = success + failed;
+  const failRate = total === 0 ? 0 : failed / total;
+  return { success, failed, deadLetter, total, failRate };
 }
 
 /**
