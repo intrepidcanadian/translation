@@ -17,6 +17,7 @@ import ProductScanner from "../components/ProductScanner";
 import ListingGenerator from "../components/ListingGenerator";
 import PriceTagConverter from "../components/PriceTagConverter";
 import DutyFreeCatalogScanner from "../components/DutyFreeCatalogScanner";
+import GlassBackdrop from "../components/GlassBackdrop";
 import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
 import { getColors } from "../theme";
@@ -70,14 +71,20 @@ export default function ScanScreen({ route }: Props) {
           const isActive = item.key === selectedMode;
           return (
             <TouchableOpacity
-              style={[styles.modePill, { backgroundColor: isActive ? colors.primary : colors.cardBg, borderColor: isActive ? colors.primary : colors.border }]}
+              style={[
+                styles.modePill,
+                {
+                  backgroundColor: isActive ? colors.primary : colors.glassBg,
+                  borderColor: isActive ? colors.primary : colors.glassBorder,
+                },
+              ]}
               onPress={() => handleModeSelect(item.key)}
               accessibilityRole="button"
               accessibilityLabel={`${item.label} scanner mode`}
               accessibilityState={{ selected: isActive }}
             >
               <Text style={styles.modePillIcon}>{item.icon}</Text>
-              <Text style={[styles.modePillLabel, { color: isActive ? colors.destructiveText : colors.mutedText }]}>{item.label}</Text>
+              <Text style={[styles.modePillLabel, { color: isActive ? colors.destructiveText : colors.primaryText }]}>{item.label}</Text>
             </TouchableOpacity>
           );
         }}
@@ -93,7 +100,12 @@ export default function ScanScreen({ route }: Props) {
         return (
           <CameraTranslator
             visible={true}
-            onClose={() => setSelectedMode("document")}
+            // No-op: CameraTranslator no longer has its own X button,
+            // because the mode pill strip above is the canonical way to
+            // switch scanner modes. Previously this jumped to "document"
+            // mode, which made the X button feel like it was opening a
+            // different section instead of closing.
+            onClose={() => {}}
             sourceLangCode={sourceLangCode}
             targetLangCode={targetLang.code}
             translationProvider={settings.translationProvider}
@@ -170,6 +182,10 @@ export default function ScanScreen({ route }: Props) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
+      {/* Aurora behind everything — shows through the glass mode pills
+          and harmonizes with the floating glass tab bar so this screen
+          shares the same visual language as Translate. */}
+      <GlassBackdrop />
       <SafeAreaView style={styles.flex}>
         {renderModeStrip()}
         {renderContent()}

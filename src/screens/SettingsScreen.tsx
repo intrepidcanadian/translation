@@ -17,6 +17,7 @@ import FlightPrepModal from "../components/FlightPrepModal";
 import VisualCardsModal from "../components/VisualCardsModal";
 import CultureBriefingModal from "../components/CultureBriefingModal";
 import PassengerPreferenceCard from "../components/PassengerPreferenceCard";
+import GlassBackdrop from "../components/GlassBackdrop";
 import { useSettings } from "../contexts/SettingsContext";
 import { useLanguage } from "../contexts/LanguageContext";
 import { useGlossary } from "../contexts/GlossaryContext";
@@ -73,8 +74,10 @@ export default function SettingsScreen() {
   ], [glossary.length, history.length, setShowOnboarding]);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.safeBg }]}>
-      <View style={[styles.header, { borderBottomColor: colors.border }]}>
+    <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
+      <GlassBackdrop />
+      <SafeAreaView style={styles.container}>
+      <View style={[styles.header, { borderBottomColor: colors.glassBorder }]}>
         <Text style={[styles.title, { color: colors.titleText }]}>Settings</Text>
       </View>
 
@@ -82,7 +85,7 @@ export default function SettingsScreen() {
         {menuItems.map((item, i) => (
           <TouchableOpacity
             key={i}
-            style={[styles.menuRow, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
+            style={[styles.menuRow, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
             onPress={item.onPress}
             accessibilityRole="button"
             accessibilityLabel={item.label}
@@ -184,7 +187,8 @@ export default function SettingsScreen() {
         colors={colors}
         initialLang={targetLang.code === "autodetect" ? undefined : targetLang.code}
       />
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 

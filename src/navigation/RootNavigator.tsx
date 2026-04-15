@@ -1,6 +1,7 @@
 import React from "react";
-import { Text, Platform } from "react-native";
+import { Platform } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
+import { Ionicons } from "@expo/vector-icons";
 import { useSettings } from "../contexts/SettingsContext";
 import { getColors } from "../theme";
 import type { RootTabParamList } from "./types";
@@ -44,13 +45,29 @@ export default function RootNavigator() {
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
+        // Glass tab bar: translucent fill + hairline top border tinted to
+        // glassBorder so it harmonizes with the screen-level glass surfaces
+        // and the GlassBackdrop aurora bleeding through. `position:
+        // absolute` lets content underneath show through the translucency
+        // (otherwise the Tab.Navigator reserves opaque space and you get a
+        // hard color seam regardless of the alpha). We add equivalent
+        // bottom padding to each screen via SafeAreaView so content isn't
+        // hidden under the floating bar.
         tabBarStyle: {
-          backgroundColor: colors.safeBg,
-          borderTopColor: colors.border,
+          position: "absolute",
+          backgroundColor: colors.glassBgStrong,
+          borderTopColor: colors.glassBorder,
           borderTopWidth: 1,
           paddingBottom: Platform.OS === "ios" ? 20 : 8,
           paddingTop: 8,
           height: Platform.OS === "ios" ? 85 : 65,
+          // Soft elevation so the bar reads as a floating surface, not a
+          // panel welded to the bottom edge.
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.12,
+          shadowRadius: 12,
+          elevation: 8,
         },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.mutedText,
@@ -65,7 +82,9 @@ export default function RootNavigator() {
         component={TranslateScreenSafe}
         options={{
           tabBarLabel: "Translate",
-          tabBarIcon: () => <Text style={{ fontSize: 22 }}>🎙️</Text>,
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "mic" : "mic-outline"} size={24} color={color} />
+          ),
         }}
       />
       <Tab.Screen
@@ -73,7 +92,9 @@ export default function RootNavigator() {
         component={ScanScreenSafe}
         options={{
           tabBarLabel: "Scan",
-          tabBarIcon: () => <Text style={{ fontSize: 22 }}>📷</Text>,
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "scan" : "scan-outline"} size={24} color={color} />
+          ),
         }}
       />
       <Tab.Screen
@@ -81,7 +102,9 @@ export default function RootNavigator() {
         component={NotesScreenSafe}
         options={{
           tabBarLabel: "Notes",
-          tabBarIcon: () => <Text style={{ fontSize: 22 }}>🗒️</Text>,
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "document-text" : "document-text-outline"} size={24} color={color} />
+          ),
         }}
       />
       <Tab.Screen
@@ -89,7 +112,9 @@ export default function RootNavigator() {
         component={SettingsScreenSafe}
         options={{
           tabBarLabel: "Settings",
-          tabBarIcon: () => <Text style={{ fontSize: 22 }}>⚙</Text>,
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons name={focused ? "settings" : "settings-outline"} size={24} color={color} />
+          ),
         }}
       />
     </Tab.Navigator>

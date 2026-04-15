@@ -3,10 +3,12 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   Animated,
   Platform,
 } from "react-native";
+import GlassBackdrop from "./GlassBackdrop";
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 import * as Speech from "expo-speech";
 import { startSpeechSession } from "../utils/speechSession";
@@ -44,6 +46,13 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
   const [translatedPreview, setTranslatedPreview] = useState("");
   const [lastA, setLastA] = useState<TranslationResult | null>(null);
   const [lastB, setLastB] = useState<TranslationResult | null>(null);
+  // Auto turn-taking: after one speaker finishes, the other speaker's
+  // mic is queued to take over once TTS playback completes. We surface
+  // this as `nextSpeaker` so we can give the receiving half a soft
+  // pulse — telling the other person "you're up next" — without
+  // actually starting the mic until the synthesizer is done (otherwise
+  // the playback would leak into the recognizer).
+  const [nextSpeaker, setNextSpeaker] = useState<"A" | "B" | null>(null);
 
   const activeSpeakerRef = useRef<"A" | "B">("A");
   const finalTextRef = useRef("");
@@ -52,6 +61,13 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
   const abortControllerRef = useRef<AbortController | null>(null);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const confidenceRef = useRef<number | undefined>(undefined);
+  // visibleRef mirrors the prop so deferred callbacks (TTS onDone,
+  // setTimeout) can bail out cleanly when the user closes the modal
+  // mid-utterance — accessing a stale `visible` from closure would
+  // restart the mic on a hidden component.
+  const visibleRef = useRef(visible);
+  useEffect(() => { visibleRef.current = visible; }, [visible]);
+  const autoSwitchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Pulse animation
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -118,6 +134,11 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
   // Speech recognition events
   useSpeechRecognitionEvent("start", () => setIsListening(true));
 
+  // Forward-declared ref to startListeningAs so the `end` handler can
+  // schedule the auto turn-taking handoff before the function itself is
+  // defined below. Assigned in the effect just after startListeningAs.
+  const startListeningAsRef = useRef<((s: "A" | "B") => void) | null>(null);
+
   useSpeechRecognitionEvent("end", () => {
     setIsListening(false);
     if (silenceTimerRef.current) {
@@ -156,10 +177,38 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
       maybeRequestReview();
       updateStreak();
 
-      // Auto-TTS: speak the translation so the other person hears it
+      // Auto turn-taking: queue the OTHER speaker for the next turn.
+      // This is the killer feature for face-to-face — it means neither
+      // person has to physically reach for the device between
+      // utterances. We surface the queued speaker via `nextSpeaker` so
+      // the UI can show a "your turn" cue, then actually start the mic
+      // when TTS playback ends (or after a 600ms beat if TTS is off),
+      // ensuring the synthesizer audio doesn't leak into recognition.
+      const handoffTo: "A" | "B" = speaker === "A" ? "B" : "A";
+      setNextSpeaker(handoffTo);
+
+      const ttsLang = speaker === "B" ? sourceLang.speechCode : targetLang.speechCode;
+      const handoff = () => {
+        // Bail if the modal closed or the user manually grabbed a mic
+        // in the interim (which would set activeSpeaker to something
+        // other than null and we'd respect their explicit choice).
+        if (!visibleRef.current) return;
+        startListeningAsRef.current?.(handoffTo);
+      };
+
       if (settings.autoPlayTTS) {
-        const ttsLang = speaker === "B" ? sourceLang.speechCode : targetLang.speechCode;
-        Speech.speak(translated, { language: ttsLang, rate: settings.speechRate });
+        Speech.speak(translated, {
+          language: ttsLang,
+          rate: settings.speechRate,
+          onDone: handoff,
+          // onStopped fires if Speech.stop() is called (e.g. by
+          // startSpeechSession in the next mic acquire). Don't double-
+          // handoff in that case — the explicit start path is already
+          // running.
+          onError: handoff,
+        });
+      } else {
+        autoSwitchTimerRef.current = setTimeout(handoff, 600);
       }
     }
 
@@ -198,7 +247,15 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
     setIsListening(false);
   });
 
-  const startListeningAs = async (speaker: "A" | "B") => {
+  const startListeningAs = useCallback(async (speaker: "A" | "B") => {
+    // Clear any pending auto-handoff timer — if the user manually taps
+    // a mic mid-handoff, we honor their choice and drop the queued one.
+    if (autoSwitchTimerRef.current) {
+      clearTimeout(autoSwitchTimerRef.current);
+      autoSwitchTimerRef.current = null;
+    }
+    setNextSpeaker(null);
+
     if (isListening) {
       ExpoSpeechRecognitionModule.stop();
       // Small delay to let stop complete before starting new
@@ -223,23 +280,67 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
       maxAlternatives: 1,
       requiresOnDeviceRecognition: settings.offlineSpeech,
     });
-  };
+  }, [isListening, sourceLang.speechCode, targetLang.speechCode, settings.offlineSpeech]);
+
+  // Wire the forward-declared ref the `end` handler reads from.
+  useEffect(() => {
+    startListeningAsRef.current = startListeningAs;
+  }, [startListeningAs]);
 
   const stopListening = () => {
     impactLight();
+    // User explicitly stopped — abandon the auto-handoff for this turn.
+    if (autoSwitchTimerRef.current) {
+      clearTimeout(autoSwitchTimerRef.current);
+      autoSwitchTimerRef.current = null;
+    }
+    setNextSpeaker(null);
     ExpoSpeechRecognitionModule.stop();
   };
 
-  // Cleanup on close
+  // Replay the last translation on a given side. Used by the small
+  // ↻ button next to each displayed translation so the listener can
+  // re-hear the auto-TTS without forcing the other person to repeat.
+  const replayHalf = useCallback((speaker: "A" | "B") => {
+    const result = speaker === "A" ? lastB : lastA; // each half shows the OTHER side's translation
+    if (!result) return;
+    impactLight();
+    // Stop any in-flight TTS first so back-to-back replay taps don't
+    // queue up overlapping playback.
+    try { Speech.stop(); } catch { /* no-op */ }
+    const ttsLang = speaker === "A" ? targetLang.speechCode : sourceLang.speechCode;
+    Speech.speak(result.translated, { language: ttsLang, rate: settings.speechRate });
+  }, [lastA, lastB, sourceLang.speechCode, targetLang.speechCode, settings.speechRate]);
+
+  // Cleanup on close. Also clears the pending auto-handoff timer and
+  // stops any in-flight TTS so closing the modal mid-utterance doesn't
+  // leave the synthesizer talking to itself or queue a mic acquisition
+  // on an unmounted component.
   useEffect(() => {
     if (!visible) {
       if (isListening) ExpoSpeechRecognitionModule.stop();
+      if (autoSwitchTimerRef.current) {
+        clearTimeout(autoSwitchTimerRef.current);
+        autoSwitchTimerRef.current = null;
+      }
+      try { Speech.stop(); } catch { /* no-op */ }
+      setNextSpeaker(null);
       setLiveText("");
       setTranslatedPreview("");
       finalTextRef.current = "";
       translatedRef.current = "";
     }
   }, [visible]);
+
+  // Unmount safety net — if the component is torn down while a timer
+  // or TTS is still pending, the deferred handoff would otherwise fire
+  // against an unmounted tree.
+  useEffect(() => {
+    return () => {
+      if (autoSwitchTimerRef.current) clearTimeout(autoSwitchTimerRef.current);
+      try { Speech.stop(); } catch { /* no-op */ }
+    };
+  }, []);
 
   if (!visible) return null;
 
@@ -250,10 +351,60 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
     const otherResult = isB ? lastA : lastB;
     const isSpeaking = isListening && activeSpeaker === speaker;
     const otherSpeaking = isListening && activeSpeaker !== speaker;
+    // "Your turn" highlight: the auto-handoff queued THIS speaker but
+    // we haven't started the mic yet (still waiting for TTS to finish).
+    const isQueued = nextSpeaker === speaker && !isSpeaking;
+
+    // Tap-anywhere-on-half: in a hands-free face-to-face context the
+    // 56px mic button is a tiny target, especially when the device is
+    // flat on a table. Wrapping the half in Pressable lets either
+    // person slap their entire side to grab the mic. We disable the
+    // press when the other speaker is mid-utterance so we don't yank
+    // the session away from them.
+    const handleHalfPress = () => {
+      if (isSpeaking) {
+        stopListening();
+      } else if (!otherSpeaking) {
+        startListeningAs(speaker);
+      }
+    };
 
     return (
-      <View style={[styles.half, { backgroundColor: isB ? colors.translatedBubbleBg : colors.bubbleBg }]}>
-        <Text style={[styles.langLabel, { color: colors.primary }]}>{langName}</Text>
+      <Pressable
+        onPress={handleHalfPress}
+        disabled={otherSpeaking}
+        style={({ pressed }) => [
+          styles.half,
+          {
+            backgroundColor: colors.glassBgStrong,
+            borderColor: isQueued ? colors.primary : colors.glassBorder,
+            borderWidth: isQueued ? 2 : 1,
+            opacity: pressed && !otherSpeaking ? 0.92 : 1,
+          },
+        ]}
+        accessibilityRole="button"
+        accessibilityLabel={isSpeaking ? `Stop speaking ${langName}` : `Speak ${langName}`}
+        accessibilityHint="Tap anywhere on this half to start or stop speaking"
+      >
+        <View style={styles.halfHeaderRow}>
+          <Text style={[styles.langLabel, { color: colors.primary }]}>{langName}</Text>
+          {otherResult ? (
+            <TouchableOpacity
+              onPress={(e) => {
+                // Stop the press from bubbling up to the half's
+                // Pressable, which would otherwise grab the mic.
+                e.stopPropagation();
+                replayHalf(speaker);
+              }}
+              style={[styles.replayBtn, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
+              accessibilityRole="button"
+              accessibilityLabel="Replay last translation"
+              hitSlop={10}
+            >
+              <Text style={[styles.replayIcon, { color: colors.primary }]}>↻</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
 
         {/* Show other person's last translation (large, readable) */}
         <View style={styles.translationArea}>
@@ -275,7 +426,7 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
 
         {/* Live preview when this person is speaking */}
         {isSpeaking && liveText ? (
-          <View style={[styles.livePreview, { backgroundColor: colors.cardBg }]}>
+          <View style={[styles.livePreview, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder, borderWidth: 1 }]}>
             <Text style={[styles.liveText, { color: colors.secondaryText }]} numberOfLines={2}>
               {liveText}
             </Text>
@@ -301,42 +452,44 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
               ]}
             />
           )}
-          <TouchableOpacity
+          <View
             style={[
               styles.micBtn,
               { backgroundColor: colors.primary },
               isSpeaking && { backgroundColor: colors.destructiveBg },
             ]}
-            onPress={isSpeaking ? stopListening : () => startListeningAs(speaker)}
-            disabled={otherSpeaking}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityLabel={isSpeaking ? `Stop speaking ${langName}` : `Speak ${langName}`}
+            pointerEvents="none"
           >
             <Text style={styles.micIcon}>{isSpeaking ? "⏹" : "🎙️"}</Text>
-          </TouchableOpacity>
-          {isSpeaking && (
+          </View>
+          {isSpeaking ? (
             <Text style={[styles.listeningLabel, { color: colors.destructiveBg }]}>Listening...</Text>
+          ) : isQueued ? (
+            <Text style={[styles.listeningLabel, { color: colors.primary }]}>Your turn — tap to speak</Text>
+          ) : (
+            <Text style={[styles.listeningLabel, { color: colors.mutedText }]}>Tap anywhere to speak</Text>
           )}
         </View>
-      </View>
+      </Pressable>
     );
   };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.modalBg }]}>
+      <GlassBackdrop />
       {/* Speaker A: top half, normal orientation */}
       {renderHalf("A")}
 
       {/* Divider with close button */}
-      <View style={[styles.divider, { backgroundColor: colors.borderLight }]}>
+      <View style={styles.divider}>
         <TouchableOpacity
-          style={[styles.closeBtn, { backgroundColor: colors.cardBg }]}
+          style={[styles.closeBtn, { backgroundColor: colors.glassBgStrong, borderColor: colors.glassBorder }]}
           onPress={onClose}
           accessibilityRole="button"
           accessibilityLabel="Close split screen"
+          hitSlop={12}
         >
-          <Text style={[styles.closeText, { color: colors.primaryText }]}>X</Text>
+          <Text style={[styles.closeText, { color: colors.primaryText }]}>✕</Text>
         </TouchableOpacity>
       </View>
 
@@ -362,6 +515,13 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     borderRadius: 16,
     marginHorizontal: 8,
+    borderWidth: 1,
+  },
+  halfHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
   langLabel: {
     fontSize: 13,
@@ -369,6 +529,18 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
     textAlign: "center",
+  },
+  replayBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  replayIcon: {
+    fontSize: 16,
+    fontWeight: "700",
   },
   translationArea: {
     flex: 1,
@@ -448,6 +620,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
+    borderWidth: 1,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",

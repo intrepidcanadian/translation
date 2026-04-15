@@ -327,13 +327,15 @@ export default function CameraTranslator({
 
       {/* Top Controls Bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity
-          style={styles.topButton}
-          onPress={isCaptured ? handleRetake : onClose}
-          accessibilityLabel={isCaptured ? "Retake photo" : "Close camera translator"}
-        >
-          <Text style={styles.topButtonText}>{isCaptured ? "←" : "X"}</Text>
-        </TouchableOpacity>
+        {/* X button removed. This component is rendered inside the Scan
+            tab, which already exposes ALL scanner modes (Live, Document,
+            Receipt, Medicine, Menu, Business Card, Textbook, Dual,
+            Duty-Free, Price, Product, Sell) via the always-visible mode
+            pill strip at the top of ScanScreen. The previous X was an
+            overloaded navigation hack — `onClose` jumped to Document
+            mode, which read as "close" but actually opened a different
+            scanner. With the container no longer covering the strip, the
+            user navigates with pills directly and X is redundant. */}
 
         <View style={styles.langIndicator}>
           <Text style={styles.langText}>
@@ -343,16 +345,43 @@ export default function CameraTranslator({
 
         {!isCaptured && (
           <>
-            <TouchableOpacity
-              style={[styles.topButton, overlayMode === "replace" && styles.topButtonActive]}
-              onPress={() => {
-                setOverlayMode((m) => m === "bubble" ? "replace" : "bubble");
-                blockOpacities.clear();
-              }}
-              accessibilityLabel={`Switch to ${overlayMode === "bubble" ? "AR replace" : "bubble"} overlay`}
-            >
-              <Text style={styles.topButtonText}>{overlayMode === "replace" ? "AR" : "💬"}</Text>
-            </TouchableOpacity>
+            {/* Segmented overlay-mode toggle. The previous single button
+                cycled between "AR" and "💬" with no indication of what
+                each meant or which was active — users couldn't tell if the
+                visible label was the current mode or the next mode. This
+                pill shows BOTH options at once, with the active one
+                highlighted, so the action ("tap to switch to the other")
+                is unambiguous. */}
+            <View style={styles.overlayToggle}>
+              <TouchableOpacity
+                style={[styles.overlayToggleSegment, overlayMode === "replace" && styles.overlayToggleSegmentActive]}
+                onPress={() => {
+                  if (overlayMode !== "replace") {
+                    setOverlayMode("replace");
+                    blockOpacities.clear();
+                  }
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: overlayMode === "replace" }}
+                accessibilityLabel="AR overlay: replace original text in place"
+              >
+                <Text style={[styles.overlayToggleText, overlayMode === "replace" && styles.overlayToggleTextActive]}>AR</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.overlayToggleSegment, overlayMode === "bubble" && styles.overlayToggleSegmentActive]}
+                onPress={() => {
+                  if (overlayMode !== "bubble") {
+                    setOverlayMode("bubble");
+                    blockOpacities.clear();
+                  }
+                }}
+                accessibilityRole="button"
+                accessibilityState={{ selected: overlayMode === "bubble" }}
+                accessibilityLabel="Bubble overlay: show translations in floating bubbles"
+              >
+                <Text style={[styles.overlayToggleText, overlayMode === "bubble" && styles.overlayToggleTextActive]}>Bubble</Text>
+              </TouchableOpacity>
+            </View>
 
             <TouchableOpacity
               style={styles.captureButton}
@@ -374,13 +403,27 @@ export default function CameraTranslator({
         )}
 
         {isCaptured && (
-          <TouchableOpacity
-            style={styles.topButton}
-            onPress={handleShareCapture}
-            accessibilityLabel="Share translated photo"
-          >
-            <Text style={styles.topButtonText}>↑</Text>
-          </TouchableOpacity>
+          <>
+            {/* Explicit Retake button — replaces the old overloaded X
+                behavior. Labeled with both an icon and text so its purpose
+                is unmistakable, since "go back to live camera" is the
+                common follow-up after reviewing a captured translation. */}
+            <TouchableOpacity
+              style={styles.retakeButton}
+              onPress={handleRetake}
+              accessibilityRole="button"
+              accessibilityLabel="Retake photo and return to live camera"
+            >
+              <Text style={styles.retakeButtonText}>↻ Retake</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.topButton}
+              onPress={handleShareCapture}
+              accessibilityLabel="Share translated photo"
+            >
+              <Text style={styles.topButtonText}>↑</Text>
+            </TouchableOpacity>
+          </>
         )}
       </View>
 
@@ -426,10 +469,18 @@ export default function CameraTranslator({
 }
 
 const styles = StyleSheet.create({
+  // Was previously `...StyleSheet.absoluteFillObject` with zIndex 999, which
+  // covered the entire ScanScreen and HID the mode-pill strip above it —
+  // forcing the X button to double as a navigation control. Now we use
+  // flex: 1 so the camera fills only the space below the mode strip,
+  // leaving the pills permanently visible as the canonical way to switch
+  // scanner modes (Live ↔ Document ↔ Receipt ↔ Medicine ↔ Menu, etc.).
+  // Children inside still use `position: "absolute"` for overlays (top
+  // bar, bottom bar, OCR block annotations); those resolve relative to
+  // this View regardless of flex vs. absolute on the parent.
   container: {
-    ...StyleSheet.absoluteFillObject,
+    flex: 1,
     backgroundColor: "#000",
-    zIndex: 999,
   },
   errorContainer: {
     flex: 1,
@@ -479,7 +530,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingTop: Platform.OS === "ios" ? 54 : 40,
+    // No more notch padding — the parent ScanScreen's mode strip already
+    // sits above this view inside the SafeAreaView, so the camera's top
+    // edge is already below the status bar / dynamic island.
+    paddingTop: 12,
     paddingHorizontal: 16,
     paddingBottom: 12,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -499,6 +553,53 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 20,
     fontWeight: "700",
+  },
+  // Segmented overlay-mode toggle (replaces the old single AR/💬 button)
+  overlayToggle: {
+    flexDirection: "row",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: 14,
+    padding: 3,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.25)",
+  },
+  overlayToggleSegment: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 11,
+    minWidth: 48,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  overlayToggleSegmentActive: {
+    backgroundColor: "rgba(108,99,255,0.85)",
+  },
+  overlayToggleText: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  overlayToggleTextActive: {
+    color: "#fff",
+  },
+  // Explicit Retake button (replaces the old X-doubling-as-back behavior)
+  retakeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    height: 44,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255,255,255,0.3)",
+  },
+  retakeButtonText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 0.3,
   },
   captureButton: {
     width: 52,

@@ -22,6 +22,7 @@ import { useSettings } from "../contexts/SettingsContext";
 import { getColors, type ThemeColors } from "../theme";
 import { logger } from "../services/logger";
 import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
+import GlassBackdrop from "./../components/GlassBackdrop";
 
 interface NoteCardProps {
   item: SavedNote;
@@ -307,8 +308,10 @@ export default function NotesScreen() {
 
   // ---- Notes list view ----
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.safeBg }]}>
-      <View style={[styles.screenHeader, { borderBottomColor: colors.border }]}>
+    <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
+      <GlassBackdrop />
+      <SafeAreaView style={styles.container}>
+      <View style={[styles.screenHeader, { borderBottomColor: colors.glassBorder }]}>
         <Text style={[styles.screenTitle, { color: colors.titleText }]}>Saved Notes</Text>
         <TouchableOpacity onPress={handleClearAll}>
           <Text style={[styles.headerAction, { color: notes.length > 0 ? colors.destructiveBg : colors.dimText }]}>Clear</Text>
@@ -348,7 +351,8 @@ export default function NotesScreen() {
         }
         renderItem={renderNoteItem}
       />
-    </SafeAreaView>
+      </SafeAreaView>
+    </View>
   );
 }
 

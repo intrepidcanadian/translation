@@ -101,7 +101,24 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "16ccc06f-0909-4236-85e9-29eb445bdc45"
+        "projectId": "16ccc06f-0909-4236-85e9-29eb445bdc45",
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "TranslateWidgetExtension",
+                  "bundleIdentifier": "com.tonylau.livetranslator.TranslateWidgetExtension",
+                  "entitlements": {
+                    "com.apple.security.application-groups": [
+                      "group.com.tonylau.livetranslator"
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        }
       }
     },
     "owner": "intrepid_cym"

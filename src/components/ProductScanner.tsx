@@ -18,6 +18,7 @@ import {
   useCameraPermission,
   useCodeScanner,
 } from "react-native-vision-camera";
+import { Camera as OCRCamera } from "react-native-vision-camera-ocr-plus";
 import { copyWithAutoClear } from "../services/clipboard";
 import { impactMedium, notifySuccess } from "../services/haptics";
 import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
@@ -26,8 +27,8 @@ import {
   searchProductByText,
   getMarketplaceLinks,
   type ProductInfo,
-  type ProductSearchResult,
 } from "../services/productLookup";
+import GlassBackdrop from "./GlassBackdrop";
 import type { ThemeColors } from "../theme";
 
 interface ProductScannerProps {
@@ -36,7 +37,14 @@ interface ProductScannerProps {
   colors: ThemeColors;
 }
 
-type Phase = "scanning" | "loading" | "results" | "not_found";
+type Phase = "scanning" | "loading" | "results" | "not_found" | "ocr";
+
+// Shape returned by react-native-vision-camera-ocr-plus's frame callback.
+// Mirrors the parsing in src/hooks/useLiveOCR.ts so we don't depend on
+// that hook's translation pipeline (we just want the raw text here).
+interface OCRLine { text?: string }
+interface OCRBlock { text?: string; lines?: OCRLine[] }
+interface OCRFrameData { result?: { blocks?: OCRBlock[] }; blocks?: OCRBlock[] }
 
 function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
   const device = useCameraDevice("back");
@@ -52,6 +60,11 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
   // away from the scanner mid-copy can't setState on a torn-down component.
   const [copiedText, setCopiedText] = useAutoClearFlag<string>(1500);
   const lastScannedRef = useRef<string>("");
+  // Live OCR text accumulated from the frame processor in `ocr` phase.
+  // We keep the most recent non-empty frame; the user picks the moment
+  // to actually search by tapping the Search button (rather than auto-
+  // firing on every frame, which would spam the API).
+  const [ocrText, setOcrText] = useState<string>("");
 
   useEffect(() => {
     if (visible && !hasPermission) {
@@ -67,7 +80,71 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
     setScannedCode(null);
     setProduct(null);
     setError(null);
+    setOcrText("");
     lastScannedRef.current = "";
+  }, []);
+
+  // Frame processor callback for OCRCamera. Mirrors the parser in
+  // useLiveOCR but only extracts a flat text string — we don't need
+  // bounding boxes here since we're not overlaying live translations,
+  // just feeding text into a product search.
+  const handleOCRFrame = useCallback((data: unknown) => {
+    const ocrData = data as OCRFrameData | null;
+    const blocks: OCRBlock[] = ocrData?.result?.blocks || ocrData?.blocks || [];
+    if (!blocks.length) return;
+    const lines: string[] = [];
+    for (const block of blocks) {
+      if (block.lines?.length) {
+        for (const line of block.lines) {
+          const t = line.text?.trim();
+          if (t) lines.push(t);
+        }
+      } else if (block.text?.trim()) {
+        lines.push(block.text.trim());
+      }
+    }
+    if (!lines.length) return;
+    // Cap to first ~8 lines so a busy label (ingredients, fine print)
+    // doesn't drown out the brand/name we actually want to search on.
+    const joined = lines.slice(0, 8).join(" ");
+    setOcrText((prev) => (prev === joined ? prev : joined));
+  }, []);
+
+  const handleTextSearch = useCallback(async () => {
+    const query = ocrText.trim();
+    if (!query) return;
+    impactMedium();
+    setPhase("loading");
+    setError(null);
+    setScannedCode(query);
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const result = await searchProductByText(query, controller.signal);
+      if (controller.signal.aborted) return;
+      if (result.found && result.product) {
+        setProduct(result.product);
+        setPhase("results");
+        notifySuccess();
+      } else {
+        setPhase("not_found");
+      }
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      setError(err instanceof Error ? err.message : "Search failed");
+      setPhase("not_found");
+    }
+  }, [ocrText]);
+
+  const enterOCRPhase = useCallback(() => {
+    impactMedium();
+    abortRef.current?.abort();
+    setOcrText("");
+    setError(null);
+    setPhase("ocr");
   }, []);
 
   const handleBarcodeLookup = useCallback(async (code: string) => {
@@ -147,7 +224,7 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
 
   if (!device) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.containerBg }]}>
+      <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
         <Text style={[styles.errorText, { color: colors.errorText }]}>No camera device found</Text>
         <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.cardBg }]}>
           <Text style={{ color: colors.primaryText }}>Close</Text>
@@ -158,7 +235,7 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
 
   if (!hasPermission) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.containerBg }]}>
+      <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
         <Text style={[styles.permText, { color: colors.primaryText }]}>Camera permission required</Text>
         <TouchableOpacity onPress={requestPermission} style={[styles.permBtn, { backgroundColor: colors.primary }]}>
           <Text style={{ color: colors.destructiveText, fontWeight: "700" }}>Grant Permission</Text>
@@ -188,13 +265,85 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
               <View style={[styles.scanCorner, styles.scanCornerBR, { borderColor: colors.primary }]} />
             </View>
             <Text style={styles.scanHint}>Point camera at a barcode or QR code</Text>
+            {/* Fallback for products without a barcode (loose produce,
+                imported items, things where the barcode is damaged or
+                hidden). Switches to the OCR phase which uses the device
+                vision OCR to read brand/name text off packaging and
+                feeds it into searchProductByText. */}
+            <TouchableOpacity
+              onPress={enterOCRPhase}
+              style={[styles.fallbackBtn, { backgroundColor: colors.primary }]}
+              accessibilityRole="button"
+              accessibilityLabel="Identify product by text on packaging"
+            >
+              <Text style={[styles.fallbackBtnText, { color: colors.destructiveText }]}>
+                No barcode? Identify by text →
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* OCR (text-based identification) phase */}
+      {phase === "ocr" && (
+        <View style={styles.cameraContainer}>
+          <OCRCamera
+            style={StyleSheet.absoluteFill}
+            device={device}
+            isActive={visible && phase === "ocr"}
+            mode="recognize"
+            options={{ language: "latin" }}
+            callback={handleOCRFrame}
+          />
+          <View style={styles.scanOverlay}>
+            <View style={styles.scanFrame}>
+              <View style={[styles.scanCorner, styles.scanCornerTL, { borderColor: colors.primary }]} />
+              <View style={[styles.scanCorner, styles.scanCornerTR, { borderColor: colors.primary }]} />
+              <View style={[styles.scanCorner, styles.scanCornerBL, { borderColor: colors.primary }]} />
+              <View style={[styles.scanCorner, styles.scanCornerBR, { borderColor: colors.primary }]} />
+            </View>
+            <Text style={styles.scanHint}>
+              Point at the brand or product name on the packaging
+            </Text>
+          </View>
+          {/* Live OCR preview + Search button at the bottom */}
+          <View style={styles.ocrBottomBar}>
+            <View style={[styles.ocrPreview, { backgroundColor: "rgba(0,0,0,0.65)" }]}>
+              <Text style={styles.ocrPreviewLabel}>Detected text</Text>
+              <Text style={styles.ocrPreviewText} numberOfLines={2}>
+                {ocrText || "Looking for text…"}
+              </Text>
+            </View>
+            <View style={styles.ocrActionsRow}>
+              <TouchableOpacity
+                onPress={resetScan}
+                style={[styles.actionBtn, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder, borderWidth: 1 }]}
+                accessibilityLabel="Back to barcode scanning"
+              >
+                <Text style={[styles.actionBtnText, { color: colors.primary }]}>Back to Barcode</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={handleTextSearch}
+                disabled={!ocrText.trim()}
+                style={[
+                  styles.actionBtn,
+                  { backgroundColor: ocrText.trim() ? colors.primary : colors.cardBg },
+                ]}
+                accessibilityLabel="Search for this product"
+              >
+                <Text style={[styles.actionBtnText, { color: ocrText.trim() ? colors.destructiveText : colors.mutedText }]}>
+                  Search
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       )}
 
       {/* Loading state */}
       {phase === "loading" && (
-        <View style={[styles.resultContainer, { backgroundColor: colors.containerBg }]}>
+        <View style={[styles.resultContainer, { backgroundColor: colors.safeBg }]}>
+          <GlassBackdrop />
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.primaryText }]}>
             Looking up {scannedCode}...
@@ -204,7 +353,8 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
 
       {/* Not found */}
       {phase === "not_found" && (
-        <View style={[styles.resultContainer, { backgroundColor: colors.containerBg }]}>
+        <View style={[styles.resultContainer, { backgroundColor: colors.safeBg }]}>
+          <GlassBackdrop />
           <Text style={styles.notFoundIcon}>🔍</Text>
           <Text style={[styles.notFoundTitle, { color: colors.primaryText }]}>Product Not Found</Text>
           <Text style={[styles.notFoundCode, { color: colors.mutedText }]}>
@@ -218,7 +368,7 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
             {getMarketplaceLinks(scannedCode || "").map((link) => (
               <TouchableOpacity
                 key={link.name}
-                style={[styles.linkPill, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
+                style={[styles.linkPill, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
                 onPress={() => Linking.openURL(link.url)}
                 accessibilityLabel={`Search on ${link.name}`}
               >
@@ -228,17 +378,28 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
             ))}
           </View>
 
-          <TouchableOpacity onPress={resetScan} style={[styles.actionBtn, { backgroundColor: colors.primary }]}>
-            <Text style={[styles.actionBtnText, { color: colors.destructiveText }]}>Scan Again</Text>
-          </TouchableOpacity>
+          <View style={styles.actionsRow}>
+            <TouchableOpacity
+              onPress={enterOCRPhase}
+              style={[styles.actionBtn, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder, borderWidth: 1 }]}
+              accessibilityLabel="Identify by text on packaging"
+            >
+              <Text style={[styles.actionBtnText, { color: colors.primary }]}>Identify by Text</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={resetScan} style={[styles.actionBtn, { backgroundColor: colors.primary }]}>
+              <Text style={[styles.actionBtnText, { color: colors.destructiveText }]}>Scan Again</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
       {/* Product results */}
       {phase === "results" && product && (
-        <ScrollView style={[styles.resultContainer, { backgroundColor: colors.containerBg }]} contentContainerStyle={styles.resultContent}>
+        <View style={[styles.resultContainer, { backgroundColor: colors.safeBg, padding: 0 }]}>
+          <GlassBackdrop />
+          <ScrollView style={styles.flex} contentContainerStyle={[styles.resultContent, { paddingHorizontal: 20 }]}>
           {/* Product header */}
-          <View style={[styles.productHeader, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+          <View style={[styles.productHeader, { backgroundColor: colors.glassBgStrong, borderColor: colors.glassBorder }]}>
             {product.imageUrl && (
               <Image source={{ uri: product.imageUrl }} style={styles.productImage} resizeMode="contain" />
             )}
@@ -267,7 +428,7 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
               {product.prices.map((price, i) => (
                 <TouchableOpacity
                   key={`${price.source}-${i}`}
-                  style={[styles.priceRow, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
+                  style={[styles.priceRow, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
                   onPress={() => price.url && Linking.openURL(price.url)}
                   disabled={!price.url}
                 >
@@ -304,7 +465,7 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
               {getMarketplaceLinks(product.name).map((link) => (
                 <TouchableOpacity
                   key={link.name}
-                  style={[styles.linkPill, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
+                  style={[styles.linkPill, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
                   onPress={() => Linking.openURL(link.url)}
                   accessibilityLabel={`Search on ${link.name}`}
                 >
@@ -317,14 +478,15 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
 
           {/* Actions */}
           <View style={styles.actionsRow}>
-            <TouchableOpacity onPress={shareProduct} style={[styles.actionBtn, { backgroundColor: colors.cardBg, borderColor: colors.border, borderWidth: 1 }]}>
+            <TouchableOpacity onPress={shareProduct} style={[styles.actionBtn, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder, borderWidth: 1 }]}>
               <Text style={[styles.actionBtnText, { color: colors.primary }]}>Share</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={resetScan} style={[styles.actionBtn, { backgroundColor: colors.primary }]}>
               <Text style={[styles.actionBtnText, { color: colors.destructiveText }]}>Scan Again</Text>
             </TouchableOpacity>
           </View>
-        </ScrollView>
+          </ScrollView>
+        </View>
       )}
 
       {/* Back button (always visible) */}
@@ -332,6 +494,7 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
         style={[styles.backBtn, { backgroundColor: colors.cardBg + "CC" }]}
         onPress={phase === "scanning" ? onClose : resetScan}
         accessibilityLabel={phase === "scanning" ? "Close product scanner" : "Back to scanning"}
+        hitSlop={10}
       >
         <Text style={[styles.backBtnText, { color: colors.primaryText }]}>
           {phase === "scanning" ? "✕" : "←"}
@@ -345,6 +508,7 @@ export default React.memo(ProductScanner);
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  flex: { flex: 1 },
   cameraContainer: { flex: 1 },
   scanOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -452,4 +616,40 @@ const styles = StyleSheet.create({
   },
   backBtnText: { fontSize: 18, fontWeight: "700" },
   closeBtn: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, marginTop: 16 },
+  fallbackBtn: {
+    marginTop: 32,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 24,
+  },
+  fallbackBtnText: { fontSize: 14, fontWeight: "700" },
+  ocrBottomBar: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    bottom: Platform.OS === "ios" ? 40 : 24,
+    gap: 10,
+  },
+  ocrPreview: {
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  ocrPreviewLabel: {
+    color: "#bbb",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  ocrPreviewText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "600",
+  },
+  ocrActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
 });

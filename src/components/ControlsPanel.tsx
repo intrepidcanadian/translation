@@ -235,7 +235,10 @@ function ControlsPanel({
         <View>
           <View style={styles.textInputRow}>
             <TextInput
-              style={[styles.textInput, { backgroundColor: colors.bubbleBg, color: colors.primaryText, borderColor: colors.border, maxHeight: 120 }]}
+              // Glassmorphic input: translucent fill + glass border so it
+              // floats over the screen's GlassBackdrop aurora consistently
+              // with the swap/save buttons up top.
+              style={[styles.textInput, styles.glassSurface, { backgroundColor: colors.glassBg, color: colors.primaryText, borderColor: colors.glassBorder, maxHeight: 120 }]}
               placeholder="Or type to translate..."
               placeholderTextColor={colors.placeholderText}
               value={typedText}
@@ -267,7 +270,7 @@ function ControlsPanel({
           )}
           {typedPreview ? (
             <TouchableOpacity
-              style={[styles.typedPreview, { backgroundColor: colors.translatedBubbleBg, borderLeftColor: colors.primary }]}
+              style={[styles.typedPreview, styles.glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder, borderLeftColor: colors.primary, borderLeftWidth: 3 }]}
               onPress={() => onCopyToClipboard(typedPreview)}
               accessibilityLiveRegion="polite"
               accessibilityLabel={`Preview: ${typedPreview}. Tap to copy.`}
@@ -320,7 +323,18 @@ const styles = StyleSheet.create({
   charCountRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16, marginTop: 4 },
   charCountText: { fontSize: 11, fontWeight: "600" },
   wordCountText: { fontSize: 11, fontWeight: "600" },
-  typedPreview: { marginTop: 8, borderRadius: 12, padding: 10, borderLeftWidth: 3 },
+  typedPreview: { marginTop: 8, borderRadius: 12, padding: 10 },
+  // Mirror of TranslateScreen.glassSurface — see that file for the full
+  // rationale. Defined locally so ControlsPanel doesn't reach across the
+  // module boundary just for one shared style.
+  glassSurface: {
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    elevation: 3,
+  },
   typedPreviewText: { fontSize: 14, lineHeight: 20, fontWeight: "500" },
   copiedBadge: { color: "#4ade80", fontSize: 12, fontWeight: "700", marginTop: 6 },
 });
