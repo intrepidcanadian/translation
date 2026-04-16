@@ -29,6 +29,7 @@ import {
   freshnessGradeTag,
   gradeWarningText,
   isSoftWarning,
+  ratesLineForCrashReport,
 } from "../utils/ratesFreshnessDisplay";
 import type { RatesFreshnessGrade } from "../services/currencyExchange";
 
@@ -216,5 +217,45 @@ describe("SettingsModal + PriceTagConverter distinction", () => {
     // The single grade where both surfaces agree to render nothing.
     expect(freshnessGradeTag("fresh")).toBeNull();
     expect(gradeWarningText("fresh")).toBeNull();
+  });
+});
+
+describe("ratesLineForCrashReport", () => {
+  it("renders the plain label with no suffix for fresh grade", () => {
+    // fresh → freshnessGradeTag returns null → no bracketed suffix
+    expect(ratesLineForCrashReport("Fresh · 2m ago", "fresh")).toBe(
+      "Exchange rates: Fresh · 2m ago"
+    );
+  });
+
+  it("appends the grade tag in square brackets for stale-ok", () => {
+    expect(ratesLineForCrashReport("Stale · 3h ago · will refetch", "stale-ok")).toBe(
+      "Exchange rates: Stale · 3h ago · will refetch [stale]"
+    );
+  });
+
+  it("appends the grade tag for stale-warn", () => {
+    expect(ratesLineForCrashReport("Stale · 14h ago · will refetch", "stale-warn")).toBe(
+      "Exchange rates: Stale · 14h ago · will refetch [stale · consider refresh]"
+    );
+  });
+
+  it("appends the grade tag for stale-critical", () => {
+    expect(ratesLineForCrashReport("Stale · 26h ago", "stale-critical")).toBe(
+      "Exchange rates: Stale · 26h ago [critical · refresh now]"
+    );
+  });
+
+  it("appends the grade tag for none (fallback rates)", () => {
+    expect(ratesLineForCrashReport("No cache yet", "none")).toBe(
+      "Exchange rates: No cache yet [no cache · using built-in]"
+    );
+  });
+
+  it("always starts with 'Exchange rates: ' prefix (consumed by buildCrashReport indentation)", () => {
+    for (const g of ALL_GRADES) {
+      const line = ratesLineForCrashReport("test", g);
+      expect(line.startsWith("Exchange rates: ")).toBe(true);
+    }
   });
 });

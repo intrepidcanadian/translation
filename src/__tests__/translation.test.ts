@@ -381,6 +381,82 @@ describe("word alternatives cache", () => {
     // "hogar" should still be present
     expect(alts.find((a) => a.translation === "hogar")).toBeDefined();
   });
+
+  it("produces numeric quality scores even when API returns string quality values", async () => {
+    // MyMemory can return quality as a string percentage — the parser must
+    // coerce defensively so a malformed response caches 0 instead of NaN.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          responseStatus: 200,
+          responseData: { translatedText: "casa", match: 0.95 },
+          matches: [
+            { translation: "hogar", quality: "75", "created-by": "Community" },
+            { translation: "vivienda", quality: "", "created-by": "Community" },
+            { translation: "domicilio", quality: "invalid", "created-by": "Community" },
+          ],
+        }),
+    });
+
+    const alts = await getWordAlternatives("house", "en", "es");
+    // Every quality value must be a finite number, never NaN
+    for (const alt of alts) {
+      expect(Number.isFinite(alt.quality)).toBe(true);
+    }
+    // "75" string should coerce to 75 (percentage ≤ 1 check: 75 > 1, so treated as percentage)
+    const hogar = alts.find((a) => a.translation === "hogar");
+    expect(hogar?.quality).toBe(75);
+    // empty string and "invalid" should fall back to 0
+    const vivienda = alts.find((a) => a.translation === "vivienda");
+    expect(vivienda?.quality).toBe(0);
+    const domicilio = alts.find((a) => a.translation === "domicilio");
+    expect(domicilio?.quality).toBe(0);
+  });
+
+  it("handles match.quality as 0-1 float and scales to percentage", async () => {
+    // When quality is a float ≤ 1, it's a match score that should be
+    // multiplied by 100 to get a percentage.
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          responseStatus: 200,
+          responseData: { translatedText: "casa", match: 0.95 },
+          matches: [
+            { translation: "hogar", quality: 0.85, "created-by": "Community" },
+          ],
+        }),
+    });
+
+    const alts = await getWordAlternatives("house", "en", "es");
+    const hogar = alts.find((a) => a.translation === "hogar");
+    expect(hogar?.quality).toBe(85);
+  });
+
+  it("falls back to match.match when quality is null/undefined", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          responseStatus: 200,
+          responseData: { translatedText: "casa", match: 0.95 },
+          matches: [
+            { translation: "hogar", quality: null, match: 0.7, "created-by": "Community" },
+            { translation: "vivienda", match: 0.6, "created-by": "Community" },
+          ],
+        }),
+    });
+
+    const alts = await getWordAlternatives("house", "en", "es");
+    const hogar = alts.find((a) => a.translation === "hogar");
+    expect(hogar?.quality).toBe(70);
+    const vivienda = alts.find((a) => a.translation === "vivienda");
+    expect(vivienda?.quality).toBe(60);
+  });
 });
 
 /**

@@ -197,7 +197,7 @@ export function useHistoryActions({
     try {
       const result = await translateText(item.original, item.sourceLangCode, item.targetLangCode, { signal: controller.signal, provider: translationProvider });
       setHistory((prev) =>
-        prev.map((h, i) => i === index ? { ...h, translated: result.translatedText, status: "ok" as const, sourceLangCode: undefined, targetLangCode: undefined } : h)
+        prev.map((h, i) => i === index ? { ...h, translated: result.translatedText, status: "ok" as const } : h)
       );
       notifySuccess();
     } catch (err) {

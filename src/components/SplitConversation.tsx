@@ -20,6 +20,7 @@ import { useGlossary } from "../contexts/GlossaryContext";
 import { useTranslationData } from "../contexts/TranslationDataContext";
 import { useStreak } from "../contexts/StreakContext";
 import { useTheme } from "../contexts/ThemeContext";
+import { logger } from "../services/logger";
 import { newHistoryId } from "../types";
 
 interface SplitConversationProps {
@@ -307,7 +308,7 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
     impactLight();
     // Stop any in-flight TTS first so back-to-back replay taps don't
     // queue up overlapping playback.
-    try { Speech.stop(); } catch { /* no-op */ }
+    try { Speech.stop(); } catch (err) { logger.warn("Speech", "Speech.stop() failed in replayHalf", err); }
     const ttsLang = speaker === "A" ? targetLang.speechCode : sourceLang.speechCode;
     Speech.speak(result.translated, { language: ttsLang, rate: settings.speechRate });
   }, [lastA, lastB, sourceLang.speechCode, targetLang.speechCode, settings.speechRate]);
@@ -323,7 +324,7 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
         clearTimeout(autoSwitchTimerRef.current);
         autoSwitchTimerRef.current = null;
       }
-      try { Speech.stop(); } catch { /* no-op */ }
+      try { Speech.stop(); } catch (err) { logger.warn("Speech", "Speech.stop() failed on visibility change", err); }
       setNextSpeaker(null);
       setLiveText("");
       setTranslatedPreview("");
@@ -338,7 +339,7 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
   useEffect(() => {
     return () => {
       if (autoSwitchTimerRef.current) clearTimeout(autoSwitchTimerRef.current);
-      try { Speech.stop(); } catch { /* no-op */ }
+      try { Speech.stop(); } catch (err) { logger.warn("Speech", "Speech.stop() failed on unmount", err); }
     };
   }, []);
 

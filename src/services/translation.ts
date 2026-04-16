@@ -616,9 +616,20 @@ export async function getWordAlternatives(
       const text = (match.translation || "").trim();
       if (!text || seen.has(text.toLowerCase())) continue;
       seen.add(text.toLowerCase());
+      // match.quality comes as a percentage (0-100) from community matches,
+      // match.match comes as a 0-1 float from primary matches. The API can
+      // return strings, null, or unexpected types — coerce defensively so a
+      // malformed response caches 0 instead of NaN.
+      const rawQuality = Number(match.quality);
+      const rawMatch = Number(match.match);
+      const quality = !isNaN(rawQuality) && rawQuality > 0
+        ? Math.round(rawQuality * (rawQuality <= 1 ? 100 : 1))
+        : !isNaN(rawMatch) && rawMatch > 0
+          ? Math.round(rawMatch * 100)
+          : 0;
       alternatives.push({
         translation: text,
-        quality: Math.round((match.quality || match.match || 0) * (match.quality ? 1 : 100)),
+        quality,
         source: match["created-by"] || "Community",
       });
       if (alternatives.length >= 8) break;

@@ -23,7 +23,7 @@ import {
   getRatesCacheState,
   getRatesFreshnessGrade,
 } from "../services/currencyExchange";
-import { freshnessGradeTag } from "./ratesFreshnessDisplay";
+import { ratesLineForCrashReport } from "./ratesFreshnessDisplay";
 import { isLikelyMicMuted as isLikelyMicMutedPure } from "./micMuted";
 import type { CrashReport } from "../types/crashReport";
 
@@ -208,9 +208,7 @@ export function buildCrashReport(
       const rates = getRatesCacheState();
       if (rates.hasCache || rates.lastAttemptAgeMs !== null) {
         const grade = getRatesFreshnessGrade(rates);
-        const gradeTag = freshnessGradeTag(grade);
-        const gradeSuffix = gradeTag ? ` [${gradeTag}]` : "";
-        diagnosticsLines.push(`  Exchange rates: ${ratesStateLabel(rates)}${gradeSuffix}`);
+        diagnosticsLines.push(`  ${ratesLineForCrashReport(ratesStateLabel(rates), grade)}`);
       }
       const ratesServed = getRatesServedStats();
       if (ratesServed.staleServed > 0) {
