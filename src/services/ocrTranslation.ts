@@ -2,6 +2,7 @@ import { Platform } from "react-native";
 import { translateText, translateAppleBatch, type TranslateOptions, type TranslationProvider } from "./translation";
 import { logger } from "./logger";
 import { makeStableBlockId } from "../utils/rectMapping";
+import { mapWithConcurrency } from "../utils/mapWithConcurrency";
 
 interface OCRLine {
   text: string;
@@ -21,27 +22,6 @@ interface TranslatedBlock {
 // aggressively). 5 gives us a ~5× latency win over the old sequential loop
 // while staying under typical per-second caps.
 const TRANSLATION_CONCURRENCY = 5;
-
-/** Run `fn` over every item in `items` with at most `limit` concurrent
- * in-flight calls, preserving input order in the result array. */
-async function mapWithConcurrency<T, R>(
-  items: readonly T[],
-  limit: number,
-  fn: (item: T, index: number) => Promise<R>
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-  const workerCount = Math.min(limit, items.length);
-  const workers = Array.from({ length: workerCount }, async () => {
-    while (true) {
-      const idx = next++;
-      if (idx >= items.length) return;
-      results[idx] = await fn(items[idx], idx);
-    }
-  });
-  await Promise.all(workers);
-  return results;
-}
 
 const MAX_CACHE_SIZE = 2000;
 
@@ -204,3 +184,23 @@ export async function translateCapturedLines(
 // the live path used to drift before the coordinate fix. It's been removed;
 // both paths now import `mapImageRectToScreen` from `utils/rectMapping.ts`
 // so there's only one correct mapper in the codebase. (#2)
+
+// ---- Test hooks ----
+// Mirrors the `__resetCacheForTests` pattern in translation.ts /
+// currencyExchange.ts — gives test suites deterministic cache state
+// without module reloads.
+
+/** Read-only snapshot of OCR translation cache state for test assertions. */
+export function __getOCRCacheStats(): { size: number; maxSize: number } {
+  return { size: ocrTranslationCache.size, maxSize: MAX_CACHE_SIZE };
+}
+
+/** Directly set a cache entry (for testing LRU eviction without a translate round-trip). */
+export function __seedOCRCache(src: string, tgt: string, text: string, translated: string): void {
+  cacheSet(getCacheKey(src, tgt, text), translated);
+}
+
+/** Read a cache entry (for testing LRU promotion). */
+export function __readOCRCache(src: string, tgt: string, text: string): string | undefined {
+  return cacheGet(getCacheKey(src, tgt, text));
+}

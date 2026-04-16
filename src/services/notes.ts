@@ -54,7 +54,7 @@ function getNoteFile(id: string): File {
 
 // ---- Markdown serialization ----
 
-function noteToMarkdown(note: SavedNote): string {
+export function noteToMarkdown(note: SavedNote): string {
   const lines: string[] = [];
 
   lines.push("---");
@@ -91,7 +91,7 @@ function noteToMarkdown(note: SavedNote): string {
   return lines.join("\n");
 }
 
-function markdownToNote(content: string, filename: string): SavedNote | null {
+export function markdownToNote(content: string, filename: string): SavedNote | null {
   try {
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---\n/);
     if (!fmMatch) return null;
@@ -99,7 +99,8 @@ function markdownToNote(content: string, filename: string): SavedNote | null {
     const fm = fmMatch[1];
     const get = (key: string): string => {
       const m = fm.match(new RegExp(`^${key}:\\s*"?(.*?)"?$`, "m"));
-      return m ? m[1] : "";
+      // Unescape \" that noteToMarkdown writes for titles with quotes
+      return m ? m[1].replace(/\\"/g, '"') : "";
     };
 
     const id = get("id") || filename.replace(".md", "");
@@ -158,8 +159,20 @@ async function loadIndex(): Promise<NoteIndex[]> {
     const file = getIndexFile();
     if (file.exists) {
       const content = await file.text();
-      indexCache = JSON.parse(content);
-      return indexCache!;
+      const parsed = JSON.parse(content);
+      if (!Array.isArray(parsed)) {
+        logger.warn("Notes", "Index JSON is not an array, rebuilding");
+        return rebuildIndex();
+      }
+      // Filter out malformed entries so one bad row doesn't nuke the index
+      indexCache = parsed.filter(
+        (e: unknown): e is NoteIndex =>
+          e != null &&
+          typeof e === "object" &&
+          typeof (e as NoteIndex).id === "string" &&
+          typeof (e as NoteIndex).timestamp === "number"
+      );
+      return indexCache;
     }
   } catch (err) { logger.warn("Notes", "Failed to load notes index", err); }
   return rebuildIndex();

@@ -224,9 +224,9 @@ export function generateInsights(
   };
 }
 
-// --- Private helpers ---
+// --- Extraction helpers (exported for unit testing) ---
 
-function extractBrandsFromText(text: string): string[] {
+export function extractBrandsFromText(text: string): string[] {
   const lower = text.toLowerCase();
   const found: string[] = [];
   for (const [key, canonical] of Object.entries(KNOWN_BRANDS_MAP)) {
@@ -238,7 +238,7 @@ function extractBrandsFromText(text: string): string[] {
   return [...new Set(found)].slice(0, 3);
 }
 
-function extractSpecsFromText(text: string, result: ProductEntities): void {
+export function extractSpecsFromText(text: string, result: ProductEntities): void {
   for (const { label, pattern } of SPEC_PATTERNS) {
     // Reset lastIndex for global patterns
     pattern.lastIndex = 0;
@@ -255,7 +255,7 @@ function extractSpecsFromText(text: string, result: ProductEntities): void {
   }
 }
 
-function extractPricesFromText(text: string, result: ProductEntities): void {
+export function extractPricesFromText(text: string, result: ProductEntities): void {
   MONEY_PATTERN.lastIndex = 0;
   let match;
   while ((match = MONEY_PATTERN.exec(text)) !== null) {
@@ -266,7 +266,7 @@ function extractPricesFromText(text: string, result: ProductEntities): void {
   }
 }
 
-function detectCategoryFromEntities(text: string, entities: ProductEntities): string {
+export function detectCategoryFromEntities(text: string, entities: ProductEntities): string {
   const lower = text.toLowerCase();
   const allText = [lower, ...entities.specs.map((s) => s.toLowerCase())].join(" ");
 

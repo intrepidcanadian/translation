@@ -33,8 +33,24 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
       .then((val) => {
         if (val) {
           try {
-            const raw = JSON.parse(val) as Record<string, unknown>[];
-            const data = raw.map(migrateHistoryItem);
+            const raw = JSON.parse(val);
+            if (!Array.isArray(raw)) {
+              logger.warn("Storage", "History JSON is not an array, discarding");
+              return;
+            }
+            // Migrate items individually so one malformed entry doesn't
+            // wipe the entire history — same resilience pattern as
+            // GlossaryContext's per-entry validator.
+            const data: HistoryItem[] = [];
+            for (const item of raw) {
+              try {
+                if (item != null && typeof item === "object") {
+                  data.push(migrateHistoryItem(item as Record<string, unknown>));
+                }
+              } catch (itemErr) {
+                logger.warn("Storage", "Skipping malformed history item", itemErr);
+              }
+            }
             allHistoryRef.current = data;
             const startIdx = Math.max(0, data.length - HISTORY_PAGE_SIZE);
             setHistory(data.slice(startIdx));
