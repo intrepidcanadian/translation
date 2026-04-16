@@ -98,8 +98,22 @@ function LanguagePairsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     AsyncStorage.multiGet([RECENT_LANGS_KEY, LANG_PAIRS_KEY])
       .then((results) => {
-        if (results[0][1]) setRecentLangCodes(JSON.parse(results[0][1]));
-        if (results[1][1]) setSavedPairs(JSON.parse(results[1][1]));
+        if (results[0][1]) {
+          try {
+            const parsed = JSON.parse(results[0][1]);
+            if (Array.isArray(parsed)) setRecentLangCodes(parsed);
+          } catch (err) {
+            logger.warn("Settings", "Corrupted recent languages data, using defaults", err);
+          }
+        }
+        if (results[1][1]) {
+          try {
+            const parsed = JSON.parse(results[1][1]);
+            if (Array.isArray(parsed)) setSavedPairs(parsed);
+          } catch (err) {
+            logger.warn("Settings", "Corrupted saved pairs data, using defaults", err);
+          }
+        }
       })
       .catch((err) => logger.warn("Settings", "Failed to load language data", err));
   }, []);
@@ -108,7 +122,8 @@ function LanguagePairsProvider({ children }: { children: React.ReactNode }) {
     if (code === "autodetect") return;
     setRecentLangCodes((prev) => {
       const updated = [code, ...prev.filter((c) => c !== code)].slice(0, 5);
-      AsyncStorage.setItem(RECENT_LANGS_KEY, JSON.stringify(updated));
+      AsyncStorage.setItem(RECENT_LANGS_KEY, JSON.stringify(updated))
+        .catch((err) => logger.warn("Settings", "Failed to persist recent languages", err));
       return updated;
     });
   }, []);
@@ -119,7 +134,8 @@ function LanguagePairsProvider({ children }: { children: React.ReactNode }) {
     setSavedPairs((prev) => {
       if (prev.some((p) => p.sourceCode === sourceCode && p.targetCode === targetCode)) return prev;
       const updated = [...prev, { sourceCode, targetCode }].slice(0, 8);
-      AsyncStorage.setItem(LANG_PAIRS_KEY, JSON.stringify(updated));
+      AsyncStorage.setItem(LANG_PAIRS_KEY, JSON.stringify(updated))
+        .catch((err) => logger.warn("Settings", "Failed to persist saved pairs", err));
       return updated;
     });
   }, []);
@@ -128,7 +144,8 @@ function LanguagePairsProvider({ children }: { children: React.ReactNode }) {
     impactLight();
     setSavedPairs((prev) => {
       const updated = prev.filter((p) => !(p.sourceCode === sourceCode && p.targetCode === targetCode));
-      AsyncStorage.setItem(LANG_PAIRS_KEY, JSON.stringify(updated));
+      AsyncStorage.setItem(LANG_PAIRS_KEY, JSON.stringify(updated))
+        .catch((err) => logger.warn("Settings", "Failed to persist saved pairs", err));
       return updated;
     });
   }, []);

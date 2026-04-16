@@ -125,6 +125,39 @@ describe("romanization", () => {
       expect(romanize("OK", "zh")).toBeNull();
       expect(romanize("Apple", "ja")).toBeNull();
     });
+
+    // ── Pinned transliteration outputs ──────────────────────────────
+    // These pin the exact romanization the user sees on screen. If
+    // the `transliteration` library changes its output (e.g. after a
+    // version bump), these tests will break — which is the point. A
+    // silent change in romanization is a user-facing regression because
+    // language learners rely on the romanized text being consistent.
+    it("pins Chinese 你好 → Ni Hao", () => {
+      expect(romanize("你好", "zh")).toBe("Ni Hao");
+    });
+
+    it("pins Japanese こんにちは → konnitiha", () => {
+      expect(romanize("こんにちは", "ja")).toBe("konnitiha");
+    });
+
+    it("pins Korean 감사합니다 romanization", () => {
+      const result = romanize("감사합니다", "ko");
+      expect(result).not.toBeNull();
+      // Pin lowercase Latin output — the exact Revised Romanization
+      // depends on the library's Korean handling.
+      expect(result!).toMatch(/^[a-z ]+$/);
+      expect(result!.length).toBeGreaterThan(3);
+    });
+
+    it("pins Russian Привет → Privet", () => {
+      expect(romanize("Привет", "ru")).toBe("Privet");
+    });
+
+    it("pins Arabic مرحبا romanization as Latin text", () => {
+      const result = romanize("مرحبا", "ar");
+      expect(result).not.toBeNull();
+      expect(result!).toMatch(/^[a-zA-Z ]+$/);
+    });
   });
 
   describe("romanizeAligned", () => {

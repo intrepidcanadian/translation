@@ -121,14 +121,22 @@ export async function lookupBarcode(barcode: string, signal?: AbortSignal): Prom
         const item = data.items[0];
         const prices: ProductInfo["prices"] = [];
         if (item.offers?.length) {
-          for (const offer of item.offers.slice(0, 5)) {
-            if (offer.price) {
-              prices.push({
-                source: offer.merchant || offer.domain || "Store",
-                price: `$${offer.price}`,
-                url: offer.link,
-              });
-            }
+          const seen = new Set<string>();
+          for (const offer of item.offers) {
+            if (!offer.price) continue;
+            const num = parseFloat(offer.price);
+            if (!Number.isFinite(num) || num <= 0) continue;
+            const source = offer.merchant || offer.domain || "Store";
+            // Dedup by source+price so the same retailer doesn't show twice
+            const dedup = `${source}|${num.toFixed(2)}`;
+            if (seen.has(dedup)) continue;
+            seen.add(dedup);
+            prices.push({
+              source,
+              price: `$${num.toFixed(2)}`,
+              url: offer.link,
+            });
+            if (prices.length >= 5) break;
           }
         }
 
@@ -259,7 +267,11 @@ export async function fetchPriceComps(
         // Find lowest offer price
         if (item.offers?.length) {
           const prices = item.offers
-            .filter((o) => o.price && parseFloat(o.price) > 0)
+            .filter((o) => {
+              if (!o.price) return false;
+              const n = parseFloat(o.price);
+              return Number.isFinite(n) && n > 0;
+            })
             .map((o) => ({ source: o.merchant || o.domain || "Retailer", price: parseFloat(o.price!) }))
             .sort((a, b) => a.price - b.price);
           if (prices.length > 0) {
