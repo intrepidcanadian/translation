@@ -235,6 +235,16 @@ const CATEGORIZED_PHRASES: Record<PhraseCategory, OfflinePhrase[]> = {
 // Flat list for backward compatibility with offlineTranslate
 const ALL_PHRASES: OfflinePhrase[] = Object.values(CATEGORIZED_PHRASES).flat();
 
+// Reverse index: phrase reference → category. Built at module load for O(1)
+// category resolution in getPhraseOfTheDay instead of iterating 9 category
+// arrays on every screen load.
+const PHRASE_CATEGORY: Map<OfflinePhrase, PhraseCategory> = new Map();
+for (const [cat, phrases] of Object.entries(CATEGORIZED_PHRASES)) {
+  for (const phrase of phrases) {
+    PHRASE_CATEGORY.set(phrase, cat as PhraseCategory);
+  }
+}
+
 // Precomputed normalized lookup index: Map<`${lang}|${normalized}`, OfflinePhrase>
 // Built once at module load so offlineTranslate becomes O(1) instead of
 // iterating every phrase + re-normalizing every language value on each call.
@@ -275,14 +285,8 @@ export function getPhraseOfTheDay(targetLang: string): { phrase: OfflinePhrase; 
   const index = dayIndex % ALL_PHRASES.length;
   const phrase = ALL_PHRASES[index];
 
-  // Find which category this phrase belongs to
-  let category: PhraseCategory = "basic";
-  for (const [cat, phrases] of Object.entries(CATEGORIZED_PHRASES)) {
-    if (phrases.includes(phrase)) {
-      category = cat as PhraseCategory;
-      break;
-    }
-  }
+  // O(1) category lookup via precomputed reverse index
+  const category: PhraseCategory = PHRASE_CATEGORY.get(phrase) ?? "basic";
 
   return { phrase, category };
 }

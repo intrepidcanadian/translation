@@ -30,7 +30,14 @@ interface MyMemoryResponse {
 const MYMEMORY_API = "https://api.mymemory.translated.net/get";
 
 const CACHE_MAX_SIZE = 200;
+// Byte-length ceiling prevents a few large document translations from
+// consuming excessive memory while 200 short phrases barely register.
+// 512 KB is generous for text-only values — a typical short translation is
+// ~50 bytes, so 200 entries ≈ 10 KB; the ceiling only triggers when large
+// OCR/document blocks are cached.
+const CACHE_MAX_BYTES = 512 * 1024; // 512 KB
 const translationCache = new Map<string, string>();
+let cacheByteSize = 0;
 
 // Circuit breaker: stops calling a failing provider after consecutive failures
 const CIRCUIT_BREAKER_THRESHOLD = 3;
@@ -389,12 +396,21 @@ export async function translateText(
     }
   }
 
-  // Store in cache, evicting oldest entries if at capacity
-  if (translationCache.size >= CACHE_MAX_SIZE) {
+  // Store in cache, evicting oldest entries when at capacity (entry count)
+  // or when cumulative byte size exceeds the memory ceiling. The byte check
+  // catches the "200 short phrases are fine but 50 OCR documents are not" case.
+  const valueBytes = result.translatedText.length * 2; // rough JS string bytes (UTF-16)
+  while (
+    translationCache.size > 0 &&
+    (translationCache.size >= CACHE_MAX_SIZE || cacheByteSize + valueBytes > CACHE_MAX_BYTES)
+  ) {
     const firstKey = translationCache.keys().next().value!;
+    const evicted = translationCache.get(firstKey);
+    cacheByteSize -= evicted ? evicted.length * 2 : 0;
     translationCache.delete(firstKey);
   }
   translationCache.set(cacheKey, result.translatedText);
+  cacheByteSize += valueBytes;
 
   return result;
 }
@@ -411,6 +427,8 @@ export function clearTranslationCache(provider?: TranslationProvider): number {
   if (!provider) {
     const count = translationCache.size;
     translationCache.clear();
+    cacheByteSize = 0;
+    wordAltCache.clear();
     // Wipe hit/miss counters alongside a full clear so the dashboard's hit
     // rate reflects only post-clear traffic. Per-provider clears keep
     // counters intact — they're session totals and partial cache flushes
@@ -426,6 +444,8 @@ export function clearTranslationCache(provider?: TranslationProvider): number {
   let removed = 0;
   for (const key of translationCache.keys()) {
     if (key.startsWith(prefix)) {
+      const value = translationCache.get(key);
+      cacheByteSize -= value ? value.length * 2 : 0;
       translationCache.delete(key);
       removed++;
     }
@@ -449,6 +469,9 @@ export interface CircuitSnapshot {
 export interface TranslationCacheStats {
   size: number;
   max: number;
+  /** Approximate bytes consumed by cached translation values (UTF-16). */
+  bytes: number;
+  maxBytes: number;
   byProvider: Record<string, number>;
   /** Total cache hits since process start (or last resetCacheCounters). */
   hits: number;
@@ -505,6 +528,8 @@ export function getTranslationCacheStats(): TranslationCacheStats {
   return {
     size: translationCache.size,
     max: CACHE_MAX_SIZE,
+    bytes: cacheByteSize,
+    maxBytes: CACHE_MAX_BYTES,
     byProvider,
     hits: cacheHitCount,
     misses: cacheMissCount,
@@ -524,9 +549,21 @@ export interface WordAlternative {
   source: string; // e.g. "MyMemory"
 }
 
+// Session-scoped word-alternatives cache. Prevents redundant MyMemory /get
+// calls when a user taps "show alternatives" on the same word multiple times,
+// or when the same word appears in different history items. Keyed on
+// `${sourceLang}|${targetLang}|${normalizedWord}`. LRU eviction at 100 entries.
+const WORD_ALT_CACHE_MAX = 100;
+const wordAltCache = new Map<string, WordAlternative[]>();
+
+function getWordAltCacheKey(word: string, sourceLang: string, targetLang: string): string {
+  return `${sourceLang}|${targetLang}|${word.trim().toLowerCase()}`;
+}
+
 /**
  * Get alternative translations for a word/phrase using MyMemory's matches array.
  * Returns multiple translation options ranked by quality.
+ * Results are session-cached so repeated lookups for the same word are instant.
  */
 export async function getWordAlternatives(
   word: string,
@@ -535,6 +572,15 @@ export async function getWordAlternatives(
   signal?: AbortSignal
 ): Promise<WordAlternative[]> {
   if (!word.trim()) return [];
+
+  const altCacheKey = getWordAltCacheKey(word, sourceLang, targetLang);
+  const cachedAlts = wordAltCache.get(altCacheKey);
+  if (cachedAlts) {
+    // LRU: move to end of iteration order
+    wordAltCache.delete(altCacheKey);
+    wordAltCache.set(altCacheKey, cachedAlts);
+    return cachedAlts;
+  }
 
   const langPair = `${sourceLang}|${targetLang}`;
   const url = `${MYMEMORY_API}?q=${encodeURIComponent(word.trim())}&langpair=${encodeURIComponent(langPair)}`;
@@ -579,7 +625,24 @@ export async function getWordAlternatives(
     }
   }
 
+  // Cache the result with LRU eviction
+  if (wordAltCache.size >= WORD_ALT_CACHE_MAX) {
+    const firstKey = wordAltCache.keys().next().value;
+    if (firstKey !== undefined) wordAltCache.delete(firstKey);
+  }
+  wordAltCache.set(altCacheKey, alternatives);
+
   return alternatives;
+}
+
+/** Clear the word-alternatives cache. Called alongside clearTranslationCache. */
+export function clearWordAltCache(): void {
+  wordAltCache.clear();
+}
+
+/** Current word-alternatives cache size for diagnostics. */
+export function getWordAltCacheStats(): { size: number; max: number } {
+  return { size: wordAltCache.size, max: WORD_ALT_CACHE_MAX };
 }
 
 export interface Language {

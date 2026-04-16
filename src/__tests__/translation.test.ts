@@ -3,6 +3,9 @@ import {
   clearTranslationCache,
   getTranslationCacheStats,
   resetCacheCounters,
+  getWordAlternatives,
+  clearWordAltCache,
+  getWordAltCacheStats,
 } from "../services/translation";
 
 // Mock fetch for MyMemory API tests
@@ -39,6 +42,7 @@ function mockMyMemoryResponse(translatedText: string, match = 0.95) {
 
 beforeEach(() => {
   clearTranslationCache();
+  clearWordAltCache();
   mockFetch.mockReset();
 });
 
@@ -236,5 +240,142 @@ describe("translation cache hit/miss counters (#117)", () => {
     expect(stats.hits).toBe(0);
     expect(stats.misses).toBe(0);
     expect(stats.size).toBe(0);
+  });
+
+  it("reports byte size alongside entry count", async () => {
+    mockFetch.mockResolvedValueOnce(mockMyMemoryResponse("La casa es grande"));
+    await translateText("The house is big", "en", "es", { provider: "mymemory" });
+
+    const stats = getTranslationCacheStats();
+    expect(stats.bytes).toBeGreaterThan(0);
+    // "La casa es grande" is 17 chars × 2 bytes/char (UTF-16) = 34 bytes
+    expect(stats.bytes).toBe("La casa es grande".length * 2);
+    expect(stats.maxBytes).toBeGreaterThan(0);
+  });
+
+  it("resets byte size on full clearTranslationCache", async () => {
+    mockFetch.mockResolvedValueOnce(mockMyMemoryResponse("Hola mundo"));
+    await translateText("Hello world xyz123", "en", "es", { provider: "mymemory" });
+    expect(getTranslationCacheStats().bytes).toBeGreaterThan(0);
+
+    clearTranslationCache();
+    expect(getTranslationCacheStats().bytes).toBe(0);
+  });
+});
+
+describe("word alternatives cache", () => {
+  function mockWordAltResponse(primary: string, matches: Array<{ translation: string; quality?: number }>) {
+    return {
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          responseStatus: 200,
+          responseData: { translatedText: primary, match: 0.95 },
+          matches: matches.map((m) => ({
+            translation: m.translation,
+            quality: m.quality ?? 80,
+            "created-by": "Community",
+          })),
+        }),
+    };
+  }
+
+  it("caches word alternatives and serves from cache on second call", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockWordAltResponse("casa", [{ translation: "hogar" }, { translation: "vivienda" }])
+    );
+
+    const first = await getWordAlternatives("house", "en", "es");
+    expect(first.length).toBeGreaterThanOrEqual(1);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // Second call — should come from cache, no new fetch
+    const second = await getWordAlternatives("house", "en", "es");
+    expect(second).toEqual(first);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("cache key is case-insensitive", async () => {
+    mockFetch.mockResolvedValueOnce(
+      mockWordAltResponse("casa", [])
+    );
+
+    await getWordAlternatives("House", "en", "es");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    // Different case, same word — should hit cache
+    await getWordAlternatives("HOUSE", "en", "es");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+
+    await getWordAlternatives("house", "en", "es");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("different language pairs use different cache keys", async () => {
+    mockFetch
+      .mockResolvedValueOnce(mockWordAltResponse("casa", []))
+      .mockResolvedValueOnce(mockWordAltResponse("maison", []));
+
+    await getWordAlternatives("house", "en", "es");
+    await getWordAlternatives("house", "en", "fr");
+
+    // Both should have triggered separate fetches
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns empty array for empty input without fetching", async () => {
+    const result = await getWordAlternatives("", "en", "es");
+    expect(result).toEqual([]);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("clearWordAltCache empties the cache", async () => {
+    mockFetch
+      .mockResolvedValueOnce(mockWordAltResponse("casa", []))
+      .mockResolvedValueOnce(mockWordAltResponse("casa", []));
+
+    await getWordAlternatives("house", "en", "es");
+    expect(getWordAltCacheStats().size).toBe(1);
+
+    clearWordAltCache();
+    expect(getWordAltCacheStats().size).toBe(0);
+
+    // After clearing, a new fetch should be made
+    await getWordAlternatives("house", "en", "es");
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("full clearTranslationCache also clears word alt cache", async () => {
+    mockFetch.mockResolvedValueOnce(mockWordAltResponse("casa", []));
+    await getWordAlternatives("house", "en", "es");
+    expect(getWordAltCacheStats().size).toBe(1);
+
+    clearTranslationCache();
+    expect(getWordAltCacheStats().size).toBe(0);
+  });
+
+  it("deduplicates alternative translations by lowercase", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          responseStatus: 200,
+          responseData: { translatedText: "Casa", match: 0.95 },
+          matches: [
+            { translation: "casa", quality: 80 },
+            { translation: "CASA", quality: 70 },
+            { translation: "hogar", quality: 60 },
+          ],
+        }),
+    });
+
+    const alts = await getWordAlternatives("house", "en", "es");
+    // "Casa", "casa", "CASA" should be deduped to one entry
+    const casaEntries = alts.filter((a) => a.translation.toLowerCase() === "casa");
+    expect(casaEntries.length).toBe(1);
+    // "hogar" should still be present
+    expect(alts.find((a) => a.translation === "hogar")).toBeDefined();
   });
 });
