@@ -443,6 +443,8 @@ function ListingGenerator({
             placeholder="Listing title"
             placeholderTextColor={colors.placeholderText}
             maxLength={120}
+            accessibilityLabel="Listing title"
+            accessibilityHint="Enter a title for the marketplace listing"
           />
 
           {/* Description */}
@@ -455,6 +457,8 @@ function ListingGenerator({
             placeholderTextColor={colors.placeholderText}
             multiline
             textAlignVertical="top"
+            accessibilityLabel="Listing description"
+            accessibilityHint="Enter a description for the marketplace listing"
           />
 
           {/* Tags */}
@@ -490,6 +494,8 @@ function ListingGenerator({
                 placeholderTextColor={colors.placeholderText}
                 keyboardType="decimal-pad"
                 maxLength={10}
+                accessibilityLabel="Listing price"
+                accessibilityHint="Enter the asking price for this item"
               />
             </View>
             <TouchableOpacity

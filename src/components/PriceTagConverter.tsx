@@ -57,7 +57,7 @@ interface DetectedPrice {
   conversions: ConvertedPrice[];
 }
 
-export default function PriceTagConverter({
+function PriceTagConverter({
   visible,
   onClose,
   colors,
@@ -418,6 +418,8 @@ export default function PriceTagConverter({
     </ScrollView>
   );
 }
+
+export default React.memo(PriceTagConverter);
 
 const styles = StyleSheet.create({
   container: { ...StyleSheet.absoluteFillObject, backgroundColor: "#000", zIndex: 999 },

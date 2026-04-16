@@ -230,6 +230,13 @@ export default function DualStreamView({
   // pending restart could fire `startSpeechRecognition()` after the component
   // has torn down, causing a state-update-after-unmount warning. (#219)
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Stable ref tracking isMicActive so setTimeout closures inside the "end"
+  // and "error" speech event handlers read the current value, not a stale
+  // capture from when the handler was registered. Without this, toggling the
+  // mic off during the 300ms/1000ms restart delay would be ignored because
+  // the closure still saw the old `true` value.
+  const isMicActiveRef = useRef(false);
+  useEffect(() => { isMicActiveRef.current = isMicActive; }, [isMicActive]);
 
   // Subtitle history — keep last 3 lines for context
   const [subtitleHistory, setSubtitleHistory] = useState<
@@ -474,11 +481,13 @@ export default function DualStreamView({
     speechFinalRef.current = "";
     lastSpeechTranslatedRef.current = "";
 
-    // If mic is still "active" (user toggled it on), auto-restart
-    if (isMicActive && isMountedRef.current) {
+    // If mic is still "active" (user toggled it on), auto-restart.
+    // Uses isMicActiveRef so the setTimeout closure reads the current
+    // value — not a stale capture from handler registration time.
+    if (isMicActiveRef.current && isMountedRef.current) {
       restartTimerRef.current = setTimeout(() => {
         restartTimerRef.current = null;
-        if (isMicActive && isMountedRef.current) {
+        if (isMicActiveRef.current && isMountedRef.current) {
           startSpeechRecognition();
         }
       }, 300);

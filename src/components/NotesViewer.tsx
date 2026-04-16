@@ -372,6 +372,15 @@ export default function NotesViewer({
             onChangeText={setSearch}
             returnKeyType="search"
           />
+          {debouncedSearch.length > 0 && (
+            <Text
+              style={[styles.searchCount, { color: colors.dimText }]}
+              accessibilityLiveRegion="polite"
+              accessibilityLabel={`${filtered.length} ${filtered.length === 1 ? "result" : "results"}`}
+            >
+              {filtered.length}
+            </Text>
+          )}
           {search.length > 0 && (
             <TouchableOpacity onPress={() => setSearch("")} accessibilityRole="button" accessibilityLabel="Clear search" accessibilityHint="Clear the search field">
               <Text style={[styles.clearSearch, { color: colors.dimText }]}>X</Text>
@@ -437,6 +446,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     paddingVertical: 10,
   },
+  searchCount: { fontSize: 12, fontWeight: "700", marginLeft: 6, minWidth: 20, textAlign: "center" },
   clearSearch: {
     fontSize: 16,
     fontWeight: "700",

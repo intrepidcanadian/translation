@@ -645,17 +645,30 @@ function findBestProductName(lines: string[], insights: SmartListingInsights): s
   return insights.suggestedBrand || "Catalog Item";
 }
 
-const KNOWN_BRANDS = [
+// Single-word brands: O(1) word-level lookup via Set
+const SINGLE_WORD_BRANDS = new Set([
   "apple", "samsung", "sony", "lg", "nike", "adidas", "canon", "nikon", "bose", "jbl",
-  "dyson", "shiseido", "sk-ii", "lancôme", "estée", "chanel", "dior", "hermès",
-  "louis vuitton", "gucci", "prada", "coach", "michael kors", "tiffany", "swarovski",
-  "rolex", "omega", "seiko", "casio", "jo malone", "tom ford", "burberry", "cartier",
-  "bulgari", "mont blanc", "ysl", "givenchy", "armani", "versace", "dolce",
+  "dyson", "shiseido", "chanel", "dior", "gucci", "prada", "coach", "tiffany", "swarovski",
+  "rolex", "omega", "seiko", "casio", "burberry", "cartier", "bulgari", "ysl", "givenchy",
+  "armani", "versace", "dolce",
+]);
+// Multi-word brands: kept as array for substring matching
+const MULTI_WORD_BRANDS = [
+  "sk-ii", "lancôme", "estée", "hermès", "louis vuitton", "michael kors",
+  "jo malone", "tom ford", "mont blanc",
 ] as const;
 
 function extractBrandFromLine(line: string): string | null {
   const lower = line.toLowerCase();
-  for (const brand of KNOWN_BRANDS) {
+  // O(words) check against Set for single-word brands
+  const words = lower.split(/\s+/);
+  for (const word of words) {
+    if (SINGLE_WORD_BRANDS.has(word)) {
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    }
+  }
+  // O(9) linear scan for multi-word / hyphenated brands
+  for (const brand of MULTI_WORD_BRANDS) {
     if (lower.includes(brand)) {
       return brand.charAt(0).toUpperCase() + brand.slice(1);
     }
