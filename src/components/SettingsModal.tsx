@@ -31,14 +31,11 @@ import {
   getAll as getTelemetrySnapshot,
   increment as incrementTelemetry,
   reset as resetTelemetry,
-  prunedUnknownKeys,
   getOfflineQueueStats,
-  getRatesServedStats,
   type OfflineQueueStats,
 } from "../services/telemetry";
 import {
   getRatesCacheState,
-  getRatesFreshnessGrade,
   forceRefreshExchangeRates,
   type RatesCacheState,
   type RefreshResult,
@@ -47,8 +44,10 @@ import {
 import { notifySuccess } from "../services/haptics";
 import { migrateCrashReport, type CrashReport } from "../types/crashReport";
 import { isLikelyMicMuted as isLikelyMicMutedPure } from "../utils/micMuted";
-import { freshnessGradeTag } from "../utils/ratesFreshnessDisplay";
 import CollapsibleSection from "./CollapsibleSection";
+import DiagnosticsPanel from "./DiagnosticsPanel";
+import DebugPanel from "./DebugPanel";
+import { buildCrashReport } from "../utils/buildCrashReport";
 import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 
 export type { TranslationProvider };
@@ -501,242 +500,9 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
       .catch((err) => logger.warn("Settings", "Failed to load crash report", err));
   }, [visible]);
 
-  const buildCrashReport = useCallback(() => {
+  const buildReport = useCallback(() => {
     if (!lastCrash) return "";
-    const recentErrors = logger.getRecentErrors();
-    // Prefer the version stamped on the crash record (captured at crash time);
-    // fall back to the live Platform info if the crash was saved before we
-    // started recording it.
-    const platformLine = lastCrash.platform ?? `${Platform.OS} ${Platform.Version}`;
-    const versionLine = lastCrash.appVersion
-      ? `Version: ${lastCrash.appVersion}${lastCrash.buildNumber ? ` (${lastCrash.buildNumber})` : ""}`
-      : "";
-    // Diagnostics block is opt-in via settings.shareDiagnosticsInCrashReports
-    // (#120). Default on — innocuous metadata — but users who'd rather not
-    // send telemetry alongside crash stacks can flip the toggle in Settings.
-    const diagnosticsLines: string[] = [];
-    if (settings.shareDiagnosticsInCrashReports) {
-      // Snapshot live translation diagnostics so shared reports reveal which
-      // provider was down at crash-share time. Circuit state is in-memory
-      // only, so this is the only place it survives into the shared bundle.
-      // Skips entirely when nothing interesting is happening to keep the
-      // report clean.
-      const circuits = getCircuitSnapshots();
-      const cache = getTranslationCacheStats();
-      const telemetry = computeTypeAheadStats();
-      const queuePreview = getOfflineQueueStats();
-      if (
-        circuits.some((c) => c.open || c.failures > 0) ||
-        cache.size > 0 ||
-        telemetry.total > 0 ||
-        queuePreview.total > 0 ||
-        queuePreview.deadLetter > 0
-      ) {
-        diagnosticsLines.push("\nTranslation diagnostics:");
-        if (cache.size > 0) {
-          diagnosticsLines.push(`  Cache: ${cache.size}/${cache.max}`);
-        }
-        const cacheTotal = cache.hits + cache.misses;
-        if (cacheTotal > 0) {
-          diagnosticsLines.push(
-            `  Cache hit rate: ${Math.round((cache.hits / cacheTotal) * 100)}% (${cache.hits}/${cacheTotal})`
-          );
-        }
-        for (const c of circuits) {
-          if (c.open || c.failures > 0) {
-            diagnosticsLines.push(
-              `  ${c.provider}: ${c.open ? `OPEN (${Math.ceil(c.msUntilReset / 1000)}s)` : "closed"} · failures ${c.failures}`
-            );
-          }
-        }
-        if (telemetry.total > 0) {
-          diagnosticsLines.push(
-            `  Type-ahead: glossary=${telemetry.glossary} offHit=${telemetry.offlineHit} offMiss=${telemetry.offlineMiss} net=${telemetry.network}`
-          );
-        }
-        // Surface telemetry prune events (#143/#147). Signals a client
-        // downgrade — the persisted blob contained keys this build doesn't
-        // recognize, so the hydrator dropped them. We list the actual key
-        // names (#147) so the crash reader can tell "expected cleanup" from
-        // "major rollback": 2 forward-compat keys is routine, 10+ is alarming.
-        const prunedKeys = prunedUnknownKeys();
-        if (prunedKeys.length > 0) {
-          // Cap the rendered list so a pathological blob can't bloat the
-          // crash report; still include the count so the reader knows the
-          // full scope.
-          const MAX_RENDERED = 8;
-          const shown = prunedKeys.slice(0, MAX_RENDERED).join(", ");
-          const suffix = prunedKeys.length > MAX_RENDERED
-            ? ` (+${prunedKeys.length - MAX_RENDERED} more)`
-            : "";
-          diagnosticsLines.push(
-            `  Telemetry: pruned ${prunedKeys.length} unknown key(s) — ${shown}${suffix}`
-          );
-        }
-        const speech = computeSpeechStats();
-        if (speech.total > 0) {
-          const failPct = Math.round((speech.fail / speech.total) * 100);
-          diagnosticsLines.push(
-            `  Speech translate: ok=${speech.success} fail=${speech.fail} (${failPct}% fail)`
-          );
-        }
-        // #152: routine no-speech recognition errors are counted separately
-        // from translate failures so a silent-environment user and a
-        // broken-mic user don't look the same in the crash report.
-        if (speech.noSpeech > 0) {
-          diagnosticsLines.push(`  Speech recognition: ${speech.noSpeech} no-speech event(s)`);
-        }
-        // #181: dedicated permission-denied line so a crash reader can tell
-        // a "user revoked the mic mid-session" incident from a translate
-        // failure burst. The recovery flow is completely different (deep-
-        // link to Settings vs. provider switch / retry) and the diagnostic
-        // reader needs to know which one to recommend.
-        if (speech.permissionDenied > 0) {
-          diagnosticsLines.push(
-            `  Speech permission denied: ${speech.permissionDenied} event(s)`
-          );
-        }
-        // #156: when the session has only no-speech events and no successful
-        // translations, strongly suggest a muted mic / quiet environment so
-        // the crash reader can escalate past "just a flaky session".
-        if (isLikelyMicMuted(speech)) {
-          diagnosticsLines.push(`  ⚠ Mic may be muted or environment too quiet (no successful recognitions)`);
-        }
-        // Rolling 60s speech fail count (#141) via logger.countByRolling —
-        // gives the person reading the report a "right now" signal that the
-        // session total can't: a 500-fail session number is ambiguous without
-        // knowing if it stopped an hour ago or is actively burning.
-        const speechFailRolling = logger.countByRolling(
-          { tags: ["Speech"], levels: ["warn", "error"] },
-          () => "speech",
-          60_000
-        ).speech ?? 0;
-        if (speechFailRolling > 0) {
-          diagnosticsLines.push(
-            `  Speech translate (last 60s): ${speechFailRolling} fail${speechFailRolling === 1 ? "" : "s"}`
-          );
-        }
-        // #174: offline-queue reliability — surface session-scoped queue
-        // health so a shared crash report reveals whether the crash might be
-        // related to a degraded offline drain path (dead-letters, high fail
-        // rate). Silent when there's no queue traffic so quiet sessions
-        // don't pad the report.
-        const queue = getOfflineQueueStats();
-        if (queue.total > 0 || queue.deadLetter > 0) {
-          const failPct = queue.total > 0 ? Math.round(queue.failRate * 100) : 0;
-          diagnosticsLines.push(
-            `  Offline queue: ok=${queue.success} fail=${queue.failed} (${failPct}% fail of ${queue.total})`
-          );
-          if (queue.deadLetter > 0) {
-            diagnosticsLines.push(`  Offline queue dead-lettered: ${queue.deadLetter}`);
-          }
-        }
-        // #187: rolling 60s Offline-tag warn count, paired with the speech
-        // rolling fail line above. Crash readers see "session: 200 fail" and
-        // can't tell if the burn happened five minutes ago or right now —
-        // the rolling window resolves that without forcing a tag drilldown.
-        const offlineWarnRolling = logger.countByRolling(
-          { tags: ["Offline"], levels: ["warn", "error"] },
-          () => "offline",
-          60_000
-        ).offline ?? 0;
-        if (offlineWarnRolling > 0) {
-          // Append session-OK denominator (#191) so the absolute count has a
-          // calibration anchor — "3 warns / session OK 47" reads very
-          // differently from "3 warns / session OK 0".
-          const sessionContext =
-            queue.success > 0 ? ` (session OK ${queue.success})` : "";
-          diagnosticsLines.push(
-            `  Offline queue (last 60s): ${offlineWarnRolling} warn${offlineWarnRolling === 1 ? "" : "s"}${sessionContext}`
-          );
-        }
-        // #205: exchange-rate cache state — distinguishes "cache fresh"
-        // from "stale + throttled" from "no cache, falling through to
-        // hardcoded fallback". Especially useful for crash reports filed
-        // during heavy catalog scanning (e.g. crew flipping through duty-
-        // free brochures) where a stale FX cache could explain weird
-        // converted-price displays in the bug report.
-        const rates = getRatesCacheState();
-        if (rates.hasCache || rates.lastAttemptAgeMs !== null) {
-          // Run 16: append the categorical freshness grade when it's worse
-          // than "fresh" so support can tell at a glance how bad the
-          // staleness was when the crash was filed. The label itself
-          // already has ageMs, but the grade gives a quick "is this a
-          // mild 5h stale or a full-day critical stale?" answer.
-          const grade = getRatesFreshnessGrade(rates);
-          const gradeTag = freshnessGradeTag(grade);
-          const gradeSuffix = gradeTag ? ` [${gradeTag}]` : "";
-          diagnosticsLines.push(`  Exchange rates: ${ratesStateLabel(rates)}${gradeSuffix}`);
-        }
-        // Run 16: silent-staleness counters. A non-zero staleServed +
-        // fallbackServed count means conversions ran against non-
-        // authoritative data during the session — the number that
-        // dashboards care about most. Split into two lines because the
-        // two conditions have very different severity (fallbackServed is
-        // much worse: the user saw hardcoded rates, not yesterday's API
-        // rates).
-        const ratesServed = getRatesServedStats();
-        if (ratesServed.staleServed > 0) {
-          diagnosticsLines.push(
-            `  Rates served stale: ${ratesServed.staleServed} time${ratesServed.staleServed === 1 ? "" : "s"} (cache past TTL)`
-          );
-        }
-        if (ratesServed.fallbackServed > 0) {
-          diagnosticsLines.push(
-            `  Rates served from built-in fallback: ${ratesServed.fallbackServed} time${ratesServed.fallbackServed === 1 ? "" : "s"} (no cache available)`
-          );
-        }
-        // #213: manual refresh counters — how often the user hit the
-        // "Refresh Rates" override and how often it failed. A spike here
-        // usually correlates with an upstream outage and explains why the
-        // user is staring at stale rates in the crash report. Silent when
-        // there are no attempts so a quiet session doesn't pad the report.
-        const telemetrySnapshot = getTelemetrySnapshot();
-        const manualRefresh = telemetrySnapshot["rates.manualRefresh"];
-        const manualRefreshFailed = telemetrySnapshot["rates.manualRefreshFailed"];
-        if (manualRefresh > 0) {
-          const pct =
-            manualRefresh > 0 ? Math.round((manualRefreshFailed / manualRefresh) * 100) : 0;
-          diagnosticsLines.push(
-            `  Manual rate refresh: ${manualRefresh} attempt${manualRefresh === 1 ? "" : "s"}, ${manualRefreshFailed} failed (${pct}%)`
-          );
-        }
-        // #220: payload-validation rejections are tracked separately from
-        // manual-refresh failures because they fire on every refresh path
-        // (including silent background fetches), so a non-zero value here
-        // with a quiet manual counter means the user is silently running
-        // on stale cached rates because the upstream API is returning
-        // garbage that fails REQUIRED_RATE_CODES enforcement (#214).
-        const validationFailed = telemetrySnapshot["rates.validationFailed"];
-        if (validationFailed > 0) {
-          diagnosticsLines.push(
-            `  Rate payload rejected: ${validationFailed} time${validationFailed === 1 ? "" : "s"} (API returned invalid data)`
-          );
-        }
-        // Errors-by-tag breakdown via logger.countBy (#119). Gives the person
-        // reading the report a quick "which subsystem is on fire?" view
-        // without having to scan every recent-errors line individually.
-        const errorsByTag = logger.countBy({ levels: ["warn", "error"] }, (e) => e.tag);
-        const tagEntries = Object.entries(errorsByTag).filter(([, n]) => n > 0);
-        if (tagEntries.length > 0) {
-          tagEntries.sort((a, b) => b[1] - a[1]);
-          diagnosticsLines.push(`  Errors by tag: ${tagEntries.map(([t, n]) => `${t}=${n}`).join(", ")}`);
-        }
-      }
-    } else {
-      diagnosticsLines.push("\n(Diagnostics redacted — user opted out)");
-    }
-    return [
-      `Live Translator crash report`,
-      versionLine,
-      `Platform: ${platformLine}`,
-      `Crash: ${lastCrash.message}`,
-      `Time: ${new Date(lastCrash.timestamp).toLocaleString()}`,
-      lastCrash.stack ? `Stack: ${lastCrash.stack}` : "",
-      ...diagnosticsLines,
-      recentErrors.length > 0 ? `\nRecent errors (${recentErrors.length}):` : "",
-      ...recentErrors.slice(-10).map((e) => `  [${e.tag}] ${e.message}`),
-    ].filter(Boolean).join("\n");
+    return buildCrashReport(lastCrash, settings.shareDiagnosticsInCrashReports);
   }, [lastCrash, settings.shareDiagnosticsInCrashReports]);
 
   const copyCrashReport = useCallback(async () => {
@@ -747,25 +513,25 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
       // from `copyWithAutoClear` would be hostile here. `copyWithoutAutoClear`
       // also cancels any pending user-content auto-clear timer so the report
       // isn't wiped mid-paste by a prior translation copy.
-      await copyWithoutAutoClear(buildCrashReport());
+      await copyWithoutAutoClear(buildReport());
       notifySuccess();
       setCrashCopied(true);
     } catch (err) {
       logger.warn("Settings", "Copy crash report failed", err instanceof Error ? err.message : String(err));
     }
-  }, [lastCrash, buildCrashReport]);
+  }, [lastCrash, buildReport]);
 
   const shareCrashReport = useCallback(async () => {
     if (!lastCrash) return;
     try {
       await Share.share({
-        message: buildCrashReport(),
+        message: buildReport(),
         title: "Live Translator crash report",
       });
     } catch (err) {
       logger.warn("Settings", "Share crash report failed", err instanceof Error ? err.message : String(err));
     }
-  }, [lastCrash, buildCrashReport]);
+  }, [lastCrash, buildReport]);
 
   const clearCrashReport = useCallback(async () => {
     try {
@@ -1057,575 +823,50 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
               </Text>
             </View>
 
-            {/* Translation diagnostics — circuit breakers + cache stats.
-                #205: also opens when there's exchange-rate cache state to
-                show, so a user troubleshooting stale prices can find the
-                Refresh Rates button without any other diagnostics traffic. */}
+            {/* Translation diagnostics — extracted to DiagnosticsPanel (#224) */}
             {(circuitSnapshots.length > 0 || (cacheStats && cacheStats.size > 0) || (ratesCacheState && (ratesCacheState.hasCache || ratesCacheState.lastAttemptAgeMs !== null))) && (
-              <View style={styles.infoSection}>
-                <CollapsibleSection
-                  title="Translation Diagnostics"
-                  expanded={diagnosticsExpanded}
-                  onToggle={toggleDiagnostics}
-                  urgent={circuitSnapshots.some((s) => s.open)}
-                  colors={colors}
-                >
-                  {cacheStats && (
-                    <>
-                      <Text style={[styles.infoText, dynamicStyles.infoText]}>
-                        Cache: {cacheStats.size}/{cacheStats.max}{cacheStats.bytes > 0 ? ` · ${Math.round(cacheStats.bytes / 1024)}KB / ${Math.round(cacheStats.maxBytes / 1024)}KB` : ""}
-                      </Text>
-                      {(cacheStats.hits + cacheStats.misses) > 0 && (
-                        <Text style={[styles.infoText, dynamicStyles.infoText]}>
-                          Hit rate: {Math.round((cacheStats.hits / (cacheStats.hits + cacheStats.misses)) * 100)}% ({cacheStats.hits}/{cacheStats.hits + cacheStats.misses})
-                        </Text>
-                      )}
-                      {Object.entries(cacheStats.byProvider).map(([provider, count]) => (
-                        <View key={provider} style={styles.cacheProviderRow}>
-                          <Text style={[styles.infoText, dynamicStyles.infoText, styles.cacheProviderLabel]}>
-                            {provider}: {count}
-                          </Text>
-                          <TouchableOpacity
-                            style={[styles.cacheProviderClear, { backgroundColor: colors.cardBg }]}
-                            onPress={() => handleClearProviderCache(provider)}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Clear ${provider} cache entries`}
-                            accessibilityHint={`Removes ${count} cached ${provider} translations`}
-                          >
-                            <Text style={[styles.cacheProviderClearText, { color: colors.dimText }]}>Clear</Text>
-                          </TouchableOpacity>
-                        </View>
-                      ))}
-                    </>
-                  )}
-                  {circuitSnapshots.map((s) => (
-                    <Text
-                      key={s.provider}
-                      style={[
-                        styles.infoText,
-                        dynamicStyles.infoText,
-                        s.open ? { color: colors.errorText } : null,
-                      ]}
-                    >
-                      {s.provider}: {s.open ? `open (${Math.ceil(s.msUntilReset / 1000)}s)` : "closed"} · failures {s.failures}
-                    </Text>
-                  ))}
-                  {/* Telemetry prune notice (#143/#147) — visible when the
-                      last `initTelemetry()` dropped unknown keys from the
-                      persisted blob. Typically indicates a client downgrade
-                      from a newer build; surfacing it lets us catch rollouts
-                      that accidentally removed a counter key. #147 lists the
-                      actual key names so the user can tell routine cleanup
-                      from a major rollback. */}
-                  {(() => {
-                    const pruned = prunedUnknownKeys();
-                    if (pruned.length === 0) return null;
-                    const MAX_RENDERED = 3;
-                    const hasMore = pruned.length > MAX_RENDERED;
-                    const visible = prunedKeysExpanded ? pruned : pruned.slice(0, MAX_RENDERED);
-                    const shown = visible.join(", ");
-                    const suffix = hasMore && !prunedKeysExpanded
-                      ? ` +${pruned.length - MAX_RENDERED} more`
-                      : "";
-                    const label = `Telemetry pruned ${pruned.length} unknown key${pruned.length === 1 ? "" : "s"} — client may have been downgraded`;
-                    return (
-                      <View style={{ marginTop: 4 }}>
-                        <Text
-                          style={[
-                            styles.infoText,
-                            dynamicStyles.infoText,
-                            { color: colors.dimText },
-                          ]}
-                          accessibilityLabel={label}
-                        >
-                          {`⚠ Telemetry pruned ${pruned.length}: ${shown}${suffix}`}
-                        </Text>
-                        {hasMore && (
-                          <TouchableOpacity
-                            onPress={togglePrunedKeys}
-                            accessibilityRole="button"
-                            accessibilityLabel={
-                              prunedKeysExpanded
-                                ? "Collapse pruned telemetry keys list"
-                                : `Show all ${pruned.length} pruned telemetry keys`
-                            }
-                            accessibilityState={{ expanded: prunedKeysExpanded }}
-                          >
-                            <Text
-                              style={[
-                                styles.infoText,
-                                dynamicStyles.infoText,
-                                { color: colors.primary, marginTop: 2 },
-                              ]}
-                            >
-                              {prunedKeysExpanded ? "Collapse" : `Show all ${pruned.length}`}
-                            </Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    );
-                  })()}
-                  {/* Type-ahead telemetry — glossary/offline/network hit breakdown so
-                      we can measure how often the offline short-circuit saves API
-                      quota vs. hitting the network. Session-scoped (cleared when the
-                      process dies). Sourced from the prod-safe telemetry module so
-                      the numbers are meaningful in release builds too (#118). */}
-                  {typeAheadStats && (
-                    <View style={styles.telemetryBlock}>
-                      <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
-                        Type-ahead (session):
-                      </Text>
-                      <Text style={[styles.infoText, dynamicStyles.infoText]}>
-                        Glossary: {typeAheadStats.glossary} · Offline hit: {typeAheadStats.offlineHit} · Offline miss: {typeAheadStats.offlineMiss} · Network: {typeAheadStats.network}
-                      </Text>
-                      {typeAheadStats.total > 0 && (
-                        <Text style={[styles.infoText, dynamicStyles.infoText]}>
-                          Local short-circuit: {Math.round(((typeAheadStats.glossary + typeAheadStats.offlineHit) / typeAheadStats.total) * 100)}% of {typeAheadStats.total}
-                        </Text>
-                      )}
-                    </View>
-                  )}
-                  {/* Speech translation reliability — counts DualStream speech
-                      translate successes/failures so systematically-failing mic
-                      paths are visible in diagnostics + crash reports even
-                      though speech errors are silent to the user (#132). */}
-                  {speechStats && (speechStats.total > 0 || speechStats.noSpeech > 0 || speechStats.permissionDenied > 0) && (
-                    <View style={styles.telemetryBlock}>
-                      <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
-                        Speech translate (session):
-                      </Text>
-                      {speechStats.total > 0 && (
-                        <Text
-                          style={[
-                            styles.infoText,
-                            dynamicStyles.infoText,
-                            speechStats.fail > 0 && speechStats.fail / speechStats.total >= 0.25
-                              ? { color: colors.errorText }
-                              : null,
-                          ]}
-                        >
-                          OK: {speechStats.success} · Fail: {speechStats.fail} ({Math.round((speechStats.fail / speechStats.total) * 100)}% fail of {speechStats.total})
-                        </Text>
-                      )}
-                      {/* #152: `no-speech` is a recognition-level event
-                          (silent mic, quiet environment), not a translate
-                          failure. Surfaced as a separate line so a user who
-                          speaks fluently but never gets recognized doesn't
-                          hide behind an otherwise-healthy translate rate. */}
-                      {speechStats.noSpeech > 0 && (
-                        <Text
-                          style={[styles.infoText, dynamicStyles.infoText]}
-                          accessibilityLabel={`${speechStats.noSpeech} no-speech events this session`}
-                        >
-                          No-speech events: {speechStats.noSpeech}
-                        </Text>
-                      )}
-                      {/* #181: OS-level mic-permission denials. Counter is
-                          incremented by `useSpeechRecognition`'s `not-allowed`
-                          branch (#180). Surfaced as its own line — and tinted
-                          errorText — because the recovery flow is "Open
-                          Settings", not "retry / switch provider", so it
-                          deserves to stand out from translate failures and
-                          no-speech bursts. The errorsByTag block already
-                          captures the same event at the tag level via the
-                          `Speech` warn, but a dedicated counter line gives
-                          the dashboard a numeric signal without forcing the
-                          user to mentally reverse-engineer the tag total. */}
-                      {speechStats.permissionDenied > 0 && (
-                        <Text
-                          style={[
-                            styles.infoText,
-                            dynamicStyles.infoText,
-                            { color: colors.errorText },
-                          ]}
-                          accessibilityLabel={`${speechStats.permissionDenied} microphone permission denial event${speechStats.permissionDenied === 1 ? "" : "s"} this session`}
-                        >
-                          Permission denied: {speechStats.permissionDenied}
-                        </Text>
-                      )}
-                      {/* #156: mic-muted / quiet-environment hint. Only fires
-                          when `noSpeech` has accumulated past the threshold
-                          AND no successful recognitions have landed, so a
-                          genuinely silent room doesn't nag users who just
-                          haven't spoken yet. Rendered with errorText color +
-                          accessibilityLiveRegion so VoiceOver users hear the
-                          hint when refreshing diagnostics. */}
-                      {speechStats && isLikelyMicMuted(speechStats) && (
-                        <Text
-                          style={[
-                            styles.infoText,
-                            dynamicStyles.infoText,
-                            { color: colors.errorText },
-                          ]}
-                          accessibilityLiveRegion="polite"
-                          accessibilityLabel="Microphone may be muted or environment too quiet. No successful recognitions this session."
-                        >
-                          ⚠ Mic may be muted or environment too quiet
-                        </Text>
-                      )}
-                      {/* Rolling 60s fail count (#141) — answers "is it on
-                          fire right now" without having to squint at the
-                          session total. Session counter keeps growing even
-                          after the outage clears, so a 60s rolling window is
-                          the honest "current health" signal. */}
-                      {speechFailLast60s > 0 && (
-                        <Text
-                          style={[
-                            styles.infoText,
-                            dynamicStyles.infoText,
-                            { color: colors.errorText },
-                          ]}
-                          accessibilityLabel={`${speechFailLast60s} speech translation failures in the last 60 seconds`}
-                        >
-                          Last 60s: {speechFailLast60s} fail{speechFailLast60s === 1 ? "" : "s"}
-                        </Text>
-                      )}
-                    </View>
-                  )}
-                  {/* #205: exchange-rate cache health line. Renders when
-                      there's been any traffic or an existing cache, with
-                      distinct labels for fresh / stale / throttled / no-cache.
-                      Tinted dimText for healthy state, errorText when stale
-                      AND throttled (i.e. we want fresh rates but the throttle
-                      is blocking the next attempt — tap Refresh Rates to
-                      force a fetch). */}
-                  {ratesCacheState && (ratesCacheState.hasCache || ratesCacheState.lastAttemptAgeMs !== null) && (
-                    <View style={styles.telemetryBlock}>
-                      <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
-                        Exchange rates:
-                      </Text>
-                      <Text
-                        style={[
-                          styles.infoText,
-                          dynamicStyles.infoText,
-                          ratesCacheState.hasCache && !ratesCacheState.isFresh && ratesCacheState.willThrottleNextFetch
-                            ? { color: colors.errorText }
-                            : null,
-                        ]}
-                        accessibilityLabel={ratesStateAccessibilityLabel(ratesCacheState)}
-                      >
-                        {ratesStateLabel(ratesCacheState)}
-                      </Text>
-                      {/* #207: transient outcome line for the most recent
-                          Refresh Rates tap. Auto-clears after 10s (#214) via
-                          the useAutoClearFlag hook so the steady-state cache
-                          label stays the source of truth. accessibilityLiveRegion
-                          announces the result to VoiceOver users immediately. */}
-                      {refreshOutcome && (
-                        <Text
-                          style={[
-                            styles.infoText,
-                            dynamicStyles.infoText,
-                            { color: refreshOutcome.ok ? colors.primary : colors.errorText },
-                          ]}
-                          accessibilityLiveRegion="polite"
-                          accessibilityLabel={refreshOutcomeAccessibilityLabel(refreshOutcome)}
-                        >
-                          {refreshOutcomeLabel(refreshOutcome)}
-                        </Text>
-                      )}
-                      {/* #213: manual refresh counter — cumulative across the
-                          session so a user who hit Refresh Rates multiple
-                          times can see how often each attempt is working.
-                          Red-tinted when the fail rate is >=25% (mirrors the
-                          speech/offline fail-rate conventions). */}
-                      {typeAheadStats /* reuse render gate — stats block is present */ && (() => {
-                        const manual = getTelemetrySnapshot()["rates.manualRefresh"];
-                        const manualFailed = getTelemetrySnapshot()["rates.manualRefreshFailed"];
-                        if (manual === 0) return null;
-                        const failPct = Math.round((manualFailed / manual) * 100);
-                        const overThreshold = manual > 0 && manualFailed / manual >= 0.25;
-                        return (
-                          <Text
-                            style={[
-                              styles.infoText,
-                              dynamicStyles.infoText,
-                              overThreshold ? { color: colors.errorText } : null,
-                            ]}
-                            accessibilityLabel={
-                              manualFailed === 0
-                                ? `Manual refresh: ${manual} attempt${manual === 1 ? "" : "s"}, all succeeded`
-                                : `Manual refresh: ${manual} attempt${manual === 1 ? "" : "s"}, ${manualFailed} failed (${failPct}%)`
-                            }
-                          >
-                            Manual refresh: {manual} · fail {manualFailed} ({failPct}%)
-                          </Text>
-                        );
-                      })()}
-                      {/* #220: payload-validation rejections. Distinct from
-                          manual-refresh failures because background refresh
-                          paths also increment this. A non-zero value here
-                          while the user appears to be on a healthy network
-                          means the upstream API is responding 200 with data
-                          that fails REQUIRED_RATE_CODES enforcement — and
-                          the user is silently running on cached/fallback
-                          rates. Always red because every increment is a
-                          confirmed silent failure. */}
-                      {typeAheadStats && (() => {
-                        const validationFailed = getTelemetrySnapshot()["rates.validationFailed"];
-                        if (validationFailed === 0) return null;
-                        return (
-                          <Text
-                            style={[
-                              styles.infoText,
-                              dynamicStyles.infoText,
-                              { color: colors.errorText },
-                            ]}
-                            accessibilityLabel={`Rate payload rejected: ${validationFailed} time${validationFailed === 1 ? "" : "s"}`}
-                          >
-                            Payload rejected: {validationFailed} (API returned invalid data)
-                          </Text>
-                        );
-                      })()}
-                      {/* Run 16: freshness-grade tag. Renders a short
-                          categorical summary ([stale], [stale · consider
-                          refresh], [critical · refresh now], [no cache ·
-                          using built-in]) so the user doesn't have to do
-                          the "4h is the TTL, my cache is 18h old" math in
-                          their head. Silent on the healthy path. Color
-                          escalates: amber for stale/stale-consider, red
-                          for critical and none. */}
-                      {(() => {
-                        const grade = getRatesFreshnessGrade(ratesCacheState);
-                        const tag = freshnessGradeTag(grade);
-                        if (!tag) return null;
-                        const isCritical = grade === "stale-critical" || grade === "none";
-                        return (
-                          <Text
-                            style={[
-                              styles.infoText,
-                              dynamicStyles.infoText,
-                              { color: isCritical ? colors.errorText : colors.primary },
-                            ]}
-                            accessibilityLabel={`Rate freshness grade: ${tag}`}
-                          >
-                            Freshness: [{tag}]
-                          </Text>
-                        );
-                      })()}
-                      {/* Run 16: silent-staleness counters. staleServed +
-                          fallbackServed are the bottom-line numbers: "how
-                          many conversions in this session ran against
-                          non-authoritative data". Silent when both are
-                          zero (the healthy case). Red when fallbackServed
-                          is non-zero because hardcoded rates are much
-                          worse than a mildly stale cache. */}
-                      {(() => {
-                        const served = getRatesServedStats();
-                        if (served.total === 0) return null;
-                        const hasFallback = served.fallbackServed > 0;
-                        return (
-                          <Text
-                            style={[
-                              styles.infoText,
-                              dynamicStyles.infoText,
-                              hasFallback ? { color: colors.errorText } : null,
-                            ]}
-                            accessibilityLabel={
-                              `Rates served this session: ${served.staleServed} from stale cache, ${served.fallbackServed} from built-in fallback`
-                            }
-                          >
-                            Served: stale {served.staleServed} · fallback {served.fallbackServed}
-                          </Text>
-                        );
-                      })()}
-                    </View>
-                  )}
-                  {/* #174: offline-queue reliability block. Silent when no
-                      queue traffic has resolved this session, otherwise shows
-                      OK / fail counts, fail-rate (red at >=25%), and a
-                      dead-letter line when items have been permanently
-                      dropped. Lets a user who wonders "did my typed-while-
-                      offline translations actually land" get a straight
-                      answer without reading logs. */}
-                  {offlineQueueStats && (offlineQueueStats.total > 0 || offlineQueueStats.deadLetter > 0 || offlineFailLast60s > 0) && (
-                    <View style={styles.telemetryBlock}>
-                      <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
-                        Offline queue (session):
-                      </Text>
-                      {offlineQueueStats.total > 0 && (
-                        <Text
-                          style={[
-                            styles.infoText,
-                            dynamicStyles.infoText,
-                            offlineQueueStats.failRate >= 0.25
-                              ? { color: colors.errorText }
-                              : null,
-                          ]}
-                          accessibilityLabel={`${offlineQueueStats.success} succeeded, ${offlineQueueStats.failed} failed out of ${offlineQueueStats.total} offline queue attempts`}
-                        >
-                          OK: {offlineQueueStats.success} · Fail: {offlineQueueStats.failed} ({Math.round(offlineQueueStats.failRate * 100)}% of {offlineQueueStats.total})
-                        </Text>
-                      )}
-                      {offlineQueueStats.deadLetter > 0 && (
-                        <Text
-                          style={[
-                            styles.infoText,
-                            dynamicStyles.infoText,
-                            { color: colors.errorText },
-                          ]}
-                          accessibilityLabel={`${offlineQueueStats.deadLetter} queue items permanently dropped after exhausting retries`}
-                        >
-                          ⚠ Dead-lettered: {offlineQueueStats.deadLetter}
-                        </Text>
-                      )}
-                      {/* #187: rolling 60s offline-tag warn count. Counterpart
-                          to the speech "Last 60s" line — the session totals
-                          above keep growing after an outage clears, so the
-                          rolling count is the honest "is it on fire right
-                          now" signal. Absolute count rather than a fail rate
-                          because Offline warns are per-item and the
-                          denominator over a 60s window is meaningless. */}
-                      {offlineFailLast60s > 0 && (
-                        <Text
-                          style={[
-                            styles.infoText,
-                            dynamicStyles.infoText,
-                            { color: colors.errorText },
-                          ]}
-                          accessibilityLabel={
-                            offlineQueueStats.success > 0
-                              ? `${offlineFailLast60s} offline queue warnings in the last 60 seconds, against ${offlineQueueStats.success} successful items this session`
-                              : `${offlineFailLast60s} offline queue warnings in the last 60 seconds`
-                          }
-                        >
-                          Last 60s: {offlineFailLast60s} warn{offlineFailLast60s === 1 ? "" : "s"}
-                          {offlineQueueStats.success > 0
-                            ? ` · session OK ${offlineQueueStats.success}`
-                            : ""}
-                        </Text>
-                      )}
-                    </View>
-                  )}
-                  <View style={styles.crashActions}>
-                    <TouchableOpacity
-                      style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                      onPress={refreshDiagnostics}
-                      accessibilityRole="button"
-                      accessibilityLabel="Refresh translation diagnostics"
-                    >
-                      <Text style={[styles.crashActionText, { color: colors.primary }]}>Refresh</Text>
-                    </TouchableOpacity>
-                    {/* #205: explicit user override for the 60s refetch
-                        throttle. Only renders when the cache is stale or
-                        absent — refreshing a fresh cache is wasteful and
-                        the button would be misleading. Disabled while a
-                        manual refresh is in flight to prevent rapid taps
-                        from triggering parallel fetches. */}
-                    {ratesCacheState && (!ratesCacheState.hasCache || !ratesCacheState.isFresh) && (
-                      <TouchableOpacity
-                        style={[
-                          styles.crashActionButton,
-                          { backgroundColor: colors.cardBg, opacity: ratesRefreshing ? 0.5 : 1 },
-                        ]}
-                        onPress={handleRefreshRates}
-                        disabled={ratesRefreshing}
-                        accessibilityRole="button"
-                        accessibilityLabel={
-                          ratesRefreshing
-                            ? "Refreshing exchange rates"
-                            : "Force refresh exchange rates, bypassing the 60 second throttle"
-                        }
-                        accessibilityState={{ disabled: ratesRefreshing }}
-                      >
-                        <Text style={[styles.crashActionText, { color: colors.primary }]}>
-                          {ratesRefreshing ? "Refreshing…" : "Refresh Rates"}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                    {circuitSnapshots.some((s) => s.open || s.failures > 0) && (
-                      <TouchableOpacity
-                        style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                        onPress={handleResetCircuits}
-                        accessibilityRole="button"
-                        accessibilityLabel="Reset translation circuit breakers"
-                      >
-                        <Text style={[styles.crashActionText, { color: colors.primary }]}>Reset Circuits</Text>
-                      </TouchableOpacity>
-                    )}
-                    {cacheStats && cacheStats.size > 0 && (
-                      <TouchableOpacity
-                        style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                        onPress={handleClearTranslationCache}
-                        accessibilityRole="button"
-                        accessibilityLabel="Clear translation cache"
-                      >
-                        <Text style={[styles.crashActionText, { color: colors.dimText }]}>Clear Cache</Text>
-                      </TouchableOpacity>
-                    )}
-                    {typeAheadStats && typeAheadStats.total > 0 && (
-                      <TouchableOpacity
-                        style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                        onPress={handleResetTelemetry}
-                        accessibilityRole="button"
-                        accessibilityLabel="Reset type-ahead telemetry counters"
-                        accessibilityHint="Zeroes session counters without clearing cache or circuits"
-                      >
-                        <Text style={[styles.crashActionText, { color: colors.dimText }]}>Reset Telemetry</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </CollapsibleSection>
-              </View>
+              <DiagnosticsPanel
+                colors={colors}
+                circuitSnapshots={circuitSnapshots}
+                cacheStats={cacheStats}
+                typeAheadStats={typeAheadStats}
+                speechStats={speechStats}
+                offlineQueueStats={offlineQueueStats}
+                speechFailLast60s={speechFailLast60s}
+                offlineFailLast60s={offlineFailLast60s}
+                ratesCacheState={ratesCacheState}
+                ratesRefreshing={ratesRefreshing}
+                refreshOutcome={refreshOutcome}
+                diagnosticsExpanded={diagnosticsExpanded}
+                prunedKeysExpanded={prunedKeysExpanded}
+                isLikelyMicMuted={isLikelyMicMuted}
+                ratesStateLabel={ratesStateLabel}
+                ratesStateAccessibilityLabel={ratesStateAccessibilityLabel}
+                refreshOutcomeLabel={refreshOutcomeLabel}
+                refreshOutcomeAccessibilityLabel={refreshOutcomeAccessibilityLabel}
+                onToggleDiagnostics={toggleDiagnostics}
+                onTogglePrunedKeys={togglePrunedKeys}
+                onRefresh={refreshDiagnostics}
+                onRefreshRates={handleRefreshRates}
+                onResetCircuits={handleResetCircuits}
+                onClearCache={handleClearTranslationCache}
+                onResetTelemetry={handleResetTelemetry}
+                onClearProviderCache={handleClearProviderCache}
+              />
             )}
 
-            {/* Debug / crash report section — collapsible */}
+            {/* Debug / crash report section — extracted to DebugPanel (#224) */}
             {(lastCrash || logger.getRecentErrors().length > 0) && (
-              <View style={styles.infoSection}>
-                <CollapsibleSection
-                  title="Debug"
-                  expanded={crashSectionExpanded}
-                  onToggle={toggleCrashSection}
-                  urgent={!!lastCrash}
-                  colors={colors}
-                >
-                  {lastCrash && (
-                    <View style={[styles.crashCard, { backgroundColor: colors.errorBg, borderColor: colors.errorBorder }]}>
-                      <Text style={[styles.crashTitle, { color: colors.errorText }]}>Last Crash</Text>
-                      <Text style={[styles.crashMessage, { color: colors.errorText }]} numberOfLines={3}>
-                        {lastCrash.message}
-                      </Text>
-                      <Text style={[styles.crashTime, { color: colors.dimText }]}>
-                        {new Date(lastCrash.timestamp).toLocaleString()}
-                      </Text>
-                    </View>
-                  )}
-                  {logger.getRecentErrors().length > 0 && (
-                    <Text style={[styles.infoText, dynamicStyles.infoText]}>
-                      {logger.getRecentErrors().length} recent error{logger.getRecentErrors().length === 1 ? "" : "s"} logged
-                    </Text>
-                  )}
-                  <View style={styles.crashActions}>
-                    <TouchableOpacity
-                      style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                      onPress={copyCrashReport}
-                      accessibilityRole="button"
-                      accessibilityLabel="Copy crash report to clipboard"
-                    >
-                      <Text style={[styles.crashActionText, { color: colors.primary }]}>
-                        {crashCopied ? "Copied!" : "Copy"}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                      onPress={shareCrashReport}
-                      accessibilityRole="button"
-                      accessibilityLabel="Share crash report via system share sheet"
-                      accessibilityHint="Opens the share sheet to send the crash report to another app"
-                    >
-                      <Text style={[styles.crashActionText, { color: colors.primary }]}>Share</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.crashActionButton, { backgroundColor: colors.cardBg }]}
-                      onPress={clearCrashReport}
-                      accessibilityRole="button"
-                      accessibilityLabel="Clear crash report"
-                    >
-                      <Text style={[styles.crashActionText, { color: colors.dimText }]}>Clear</Text>
-                    </TouchableOpacity>
-                  </View>
-                </CollapsibleSection>
-              </View>
+              <DebugPanel
+                colors={colors}
+                lastCrash={lastCrash}
+                crashSectionExpanded={crashSectionExpanded}
+                crashCopied={crashCopied}
+                onToggleCrashSection={toggleCrashSection}
+                onCopyCrashReport={copyCrashReport}
+                onShareCrashReport={shareCrashReport}
+                onClearCrashReport={clearCrashReport}
+              />
             )}
           </ScrollView>
 

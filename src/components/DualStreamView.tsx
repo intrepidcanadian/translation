@@ -28,6 +28,7 @@ import { translateText } from "../services/translation";
 import { clearOCRCache } from "../services/ocrTranslation";
 import { useLiveOCR } from "../hooks/useLiveOCR";
 import { showBlockActionSheet } from "../utils/liveBlockActions";
+import { pruneBlockOpacities } from "../utils/pruneBlockOpacities";
 import { impactLight, impactMedium } from "../services/haptics";
 import { logger } from "../services/logger";
 import * as telemetry from "../services/telemetry";
@@ -649,21 +650,7 @@ export default function DualStreamView({
           // Same pruning strategy as CameraTranslator (#219): cap at 50,
           // prefer evicting entries not in the active set to avoid GC churn
           // from Animated.Values on long scanning sessions.
-          if (blockOpacities.size >= 50) {
-            const activeIds = new Set(detectedBlocks.map((b) => b.id));
-            let pruned = false;
-            for (const key of blockOpacities.keys()) {
-              if (!activeIds.has(key)) {
-                blockOpacities.delete(key);
-                pruned = true;
-                if (blockOpacities.size < 50) break;
-              }
-            }
-            if (!pruned || blockOpacities.size >= 50) {
-              const firstKey = blockOpacities.keys().next().value;
-              if (firstKey !== undefined) blockOpacities.delete(firstKey);
-            }
-          }
+          pruneBlockOpacities(blockOpacities, new Set(detectedBlocks.map((b) => b.id)), 50);
           const val = new Animated.Value(0);
           blockOpacities.set(block.id, val);
           Animated.timing(val, {

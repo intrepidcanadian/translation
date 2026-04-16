@@ -22,6 +22,7 @@ import { clearOCRCache } from "../services/ocrTranslation";
 import { useLiveOCR } from "../hooks/useLiveOCR";
 import { usePhotoCapture } from "../hooks/usePhotoCapture";
 import { showBlockActionSheet } from "../utils/liveBlockActions";
+import { pruneBlockOpacities } from "../utils/pruneBlockOpacities";
 import { primaryAlpha, textOnGlass, type ThemeColors } from "../theme";
 
 interface DetectedBlock {
@@ -255,10 +256,21 @@ const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
 
   return (
     <View style={[{ position: "absolute", top: block.frame.top, left: block.frame.left, minWidth: block.frame.width, minHeight: block.frame.height, justifyContent: "flex-start", alignItems: "flex-start" }]}>
-      <View style={{ backgroundColor: "rgba(26, 26, 46, 0.88)", borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, borderWidth: 1, borderColor: primaryAlpha.border, maxWidth: 280 }}>
+      <Pressable
+        onPress={onPress ? () => onPress(block) : undefined}
+        disabled={!onPress}
+        hitSlop={LABEL_HIT_SLOP}
+        accessibilityRole={onPress ? "button" : undefined}
+        accessibilityLabel={
+          onPress
+            ? `${block.translatedText}. Tap for copy or speak options.`
+            : block.translatedText
+        }
+        style={{ backgroundColor: "rgba(26, 26, 46, 0.88)", borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, borderWidth: 1, borderColor: primaryAlpha.border, maxWidth: 280 }}
+      >
         <Text style={[{ color: "#a8a4ff", fontSize: 14, fontWeight: "700" }, textOnGlass]} numberOfLines={2}>{block.translatedText}</Text>
         <Text style={[{ color: "rgba(255,255,255,0.7)", fontSize: 10, marginTop: 1 }, textOnGlass]} numberOfLines={1}>{block.originalText}</Text>
-      </View>
+      </Pressable>
     </View>
   );
 });
@@ -498,21 +510,7 @@ export default function CameraTranslator({
           // not in the active set — those are already invisible and won't be
           // missed. Only fall back to oldest-first eviction if every entry is
           // still live. (#219)
-          if (blockOpacities.size >= 50) {
-            const activeIds = new Set(detectedBlocks.map((b) => b.id));
-            let pruned = false;
-            for (const key of blockOpacities.keys()) {
-              if (!activeIds.has(key)) {
-                blockOpacities.delete(key);
-                pruned = true;
-                if (blockOpacities.size < 50) break;
-              }
-            }
-            if (!pruned || blockOpacities.size >= 50) {
-              const firstKey = blockOpacities.keys().next().value;
-              if (firstKey !== undefined) blockOpacities.delete(firstKey);
-            }
-          }
+          pruneBlockOpacities(blockOpacities, new Set(detectedBlocks.map((b) => b.id)), 50);
           const val = new Animated.Value(0);
           blockOpacities.set(block.id, val);
           Animated.timing(val, { toValue: 1, duration: 200, useNativeDriver: true }).start();
