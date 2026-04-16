@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   FlatList,
+  ScrollView,
   TextInput,
   Platform,
   Share,
@@ -18,6 +19,7 @@ import { copyWithAutoClear } from "../services/clipboard";
 import { notifySuccess, notifyWarning } from "../services/haptics";
 import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 import { glassSurface, type ThemeColors } from "../theme";
+import { formatRelativeTime } from "../utils/formatRelativeTime";
 import GlassBackdrop from "./GlassBackdrop";
 
 interface NotesViewerProps {
@@ -129,16 +131,6 @@ export default function NotesViewer({
     }
   }, []);
 
-  const formatTime = (ts: number): string => {
-    const d = new Date(ts);
-    const now = Date.now();
-    const diff = now - ts;
-    if (diff < 60000) return "Just now";
-    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  };
-
   if (!visible) return null;
 
   // ---- Note detail view ----
@@ -161,9 +153,7 @@ export default function NotesViewer({
             </TouchableOpacity>
           </View>
 
-          <FlatList
-            data={[{ key: "content" }]}
-            renderItem={() => (
+          <ScrollView>
               <View style={styles.detailContent}>
                 {/* Title */}
                 <View style={[styles.section, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
@@ -258,8 +248,7 @@ export default function NotesViewer({
 
                 <View style={{ height: 40 }} />
               </View>
-            )}
-          />
+          </ScrollView>
         </View>
       </Modal>
     );
@@ -335,7 +324,7 @@ export default function NotesViewer({
                       {item.title}
                     </Text>
                     <Text style={[styles.noteCardSub, { color: colors.dimText }]}>
-                      {mode.label} · {item.sourceLang.toUpperCase()} → {item.targetLang.toUpperCase()} · {formatTime(item.timestamp)}
+                      {mode.label} · {item.sourceLang.toUpperCase()} → {item.targetLang.toUpperCase()} · {formatRelativeTime(item.timestamp) ?? ""}
                     </Text>
                   </View>
                   <TouchableOpacity

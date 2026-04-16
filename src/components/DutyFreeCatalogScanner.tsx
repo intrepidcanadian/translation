@@ -278,11 +278,11 @@ export default function DutyFreeCatalogScanner({
             {!device ? "No camera found" : "Camera permission required"}
           </Text>
           {!hasPermission && (
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.primary }]} onPress={requestPermission}>
+            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.primary }]} onPress={requestPermission} accessibilityRole="button" accessibilityLabel="Grant camera permission">
               <Text style={styles.actionBtnText}>Grant Permission</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={onClose}><Text style={[styles.closeLinkText, { color: colors.primary }]}>Close</Text></TouchableOpacity>
+          <TouchableOpacity onPress={onClose} accessibilityRole="button" accessibilityLabel="Close duty-free scanner"><Text style={[styles.closeLinkText, { color: colors.primary }]}>Close</Text></TouchableOpacity>
         </View>
       </View>
     );
@@ -306,7 +306,7 @@ export default function DutyFreeCatalogScanner({
           <View style={[styles.frameCorner, styles.frameBR]} />
         </View>
         <View style={styles.topBar}>
-          <TouchableOpacity style={styles.topButton} onPress={onClose}>
+          <TouchableOpacity style={styles.topButton} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close duty-free scanner">
             <Text style={styles.topButtonText}>✕</Text>
           </TouchableOpacity>
           <View style={styles.badge}>
@@ -321,7 +321,7 @@ export default function DutyFreeCatalogScanner({
         )}
         <View style={styles.bottomArea}>
           <Text style={styles.instructionText}>Capture a catalog page</Text>
-          <TouchableOpacity style={styles.captureButton} onPress={captureAndAnalyze} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.captureButton} onPress={captureAndAnalyze} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Capture catalog page" accessibilityHint="Takes a photo and extracts products with prices">
             <View style={styles.captureInner}>
               <Text style={styles.captureIcon}>🛍️</Text>
             </View>
@@ -353,11 +353,11 @@ export default function DutyFreeCatalogScanner({
     <View style={{ flex: 1, backgroundColor: colors.containerBg }}>
       {/* Fixed header */}
       <View style={[styles.resultsHeader, { backgroundColor: colors.containerBg, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => { setPhase("camera"); setError(null); }}>
+        <TouchableOpacity onPress={() => { setPhase("camera"); setError(null); }} accessibilityRole="button" accessibilityLabel="Back to scanner">
           <Text style={[styles.headerBackText, { color: colors.primary }]}>← Scan</Text>
         </TouchableOpacity>
         <Text style={[styles.resultsTitle, { color: colors.titleText }]}>🛍️ {totalItems} Product{totalItems !== 1 ? "s" : ""}</Text>
-        <TouchableOpacity onPress={shareResults}>
+        <TouchableOpacity onPress={shareResults} accessibilityRole="button" accessibilityLabel="Share scan results">
           <Text style={[styles.headerBackText, { color: colors.primary }]}>Share</Text>
         </TouchableOpacity>
       </View>
@@ -379,6 +379,10 @@ export default function DutyFreeCatalogScanner({
                   setExpandedProduct(isExpanded ? null : idx);
                 }}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${product.brand ? product.brand + " " : ""}${product.translatedName !== product.name ? product.translatedName : product.name}`}
+                accessibilityHint={isExpanded ? "Collapse product details" : "Expand product details"}
+                accessibilityState={{ expanded: isExpanded }}
               >
                 <View style={{ flex: 1 }}>
                   {product.brand && (
@@ -448,6 +452,8 @@ export default function DutyFreeCatalogScanner({
                             key={conv.currency}
                             style={[styles.priceGridCell, { backgroundColor: colors.containerBg, borderColor: colors.borderLight }]}
                             onPress={() => copyText(`${conv.formatted} ${conv.currency}`)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Copy ${conv.formatted} ${conv.currency}`}
                           >
                             <Text style={styles.priceGridFlag}>{conv.flag}</Text>
                             <Text style={[styles.priceGridAmount, { color: colors.primaryText }]} numberOfLines={1} adjustsFontSizeToFit>
@@ -471,6 +477,9 @@ export default function DutyFreeCatalogScanner({
             style={[styles.fullTextCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
             onPress={() => copyText(translatedText)}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Full translation text"
+            accessibilityHint="Tap to copy full translation to clipboard"
           >
             <Text style={[styles.fullTextLabel, { color: colors.mutedText }]}>Full Translation (tap to copy)</Text>
             <Text style={[styles.fullTextContent, { color: colors.secondaryText }]} numberOfLines={8}>
