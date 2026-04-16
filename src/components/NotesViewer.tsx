@@ -87,7 +87,7 @@ const NoteListCard = React.memo(function NoteListCard({ item, colors, onSelect, 
   );
 });
 
-export default function NotesViewer({
+function NotesViewer({
   visible,
   onClose,
   colors,
@@ -619,3 +619,5 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
+
+export default React.memo(NotesViewer);

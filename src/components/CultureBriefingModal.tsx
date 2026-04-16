@@ -669,7 +669,7 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
       <View style={[styles.container, { backgroundColor: colors.containerBg }]}>
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={onClose} style={styles.headerClose}>
+          <TouchableOpacity onPress={onClose} style={styles.headerClose} accessibilityRole="button" accessibilityLabel="Close culture guide">
             <Text style={[styles.headerCloseText, { color: colors.primary }]}>Done</Text>
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.titleText }]}>Passenger Culture Guide</Text>
@@ -677,7 +677,7 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
         </View>
 
         {/* Route selector */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.routeStrip} contentContainerStyle={styles.routeStripContent}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.routeStrip} contentContainerStyle={styles.routeStripContent} accessibilityRole="tablist">
           {ROUTE_GROUPS.map((group) => {
             const isActive = group.id === selectedRoute;
             return (
@@ -685,6 +685,9 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
                 key={group.id}
                 style={[styles.routePill, { backgroundColor: isActive ? colors.primary : colors.cardBg, borderColor: isActive ? colors.primary : colors.border }]}
                 onPress={() => handleRouteSelect(group.id)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isActive }}
+                accessibilityLabel={`${group.label} route`}
               >
                 <Text style={styles.routePillIcon}>{group.icon}</Text>
                 <Text style={[styles.routePillLabel, { color: isActive ? "#fff" : colors.mutedText }]}>{group.label}</Text>
@@ -703,6 +706,9 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
                   key={profile.id}
                   style={[styles.profilePill, { backgroundColor: isActive ? primaryAlpha.faint : "transparent", borderColor: isActive ? colors.primary : colors.borderLight }]}
                   onPress={() => handleProfileSelect(profile.id)}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: isActive }}
+                  accessibilityLabel={`${profile.groupName} passenger profile`}
                 >
                   <Text style={styles.profilePillFlag}>{profile.flag}</Text>
                   <Text style={[styles.profilePillLabel, { color: isActive ? colors.primary : colors.secondaryText }]}>{profile.groupName}</Text>
@@ -724,7 +730,7 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
         )}
 
         {/* Section tabs */}
-        <View style={[styles.sectionTabs, { borderBottomColor: colors.border }]}>
+        <View style={[styles.sectionTabs, { borderBottomColor: colors.border }]} accessibilityRole="tablist">
           {SECTION_TABS.map((tab) => {
             const isActive = tab.key === activeSection;
             return (
@@ -732,6 +738,9 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
                 key={tab.key}
                 style={[styles.sectionTab, isActive && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
                 onPress={() => { impactLight(); setActiveSection(tab.key); }}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: isActive }}
+                accessibilityLabel={`${tab.label} section`}
               >
                 <Text style={styles.sectionTabIcon}>{tab.icon}</Text>
                 <Text style={[styles.sectionTabLabel, { color: isActive ? colors.primary : colors.mutedText }]}>{tab.label}</Text>

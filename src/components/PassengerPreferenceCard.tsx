@@ -393,6 +393,9 @@ function PassengerPreferenceCard({ visible, onClose, colors, initialLang }: Prop
         style={[styles.submitButton, { backgroundColor: colors.primary, opacity: selected.size > 0 ? 1 : 0.5 }]}
         onPress={handleSubmit}
         disabled={selected.size === 0}
+        accessibilityRole="button"
+        accessibilityLabel={strings.submit}
+        accessibilityHint={selected.size > 0 ? `Submit ${selected.size} selected preferences to crew` : "Select at least one preference first"}
       >
         <Text style={styles.submitButtonText}>{strings.submit}</Text>
       </TouchableOpacity>
@@ -420,7 +423,7 @@ function PassengerPreferenceCard({ visible, onClose, colors, initialLang }: Prop
       </View>
 
       {hasAllergies && (
-        <View style={styles.allergyAlert}>
+        <View style={styles.allergyAlert} accessibilityRole="alert" accessibilityLabel="Allergy alert: this passenger has allergy restrictions">
           <Text style={styles.allergyAlertIcon}>⚠️</Text>
           <Text style={styles.allergyAlertText}>ALLERGY ALERT</Text>
         </View>
@@ -471,12 +474,18 @@ function PassengerPreferenceCard({ visible, onClose, colors, initialLang }: Prop
         <TouchableOpacity
           style={[styles.crewActionBtn, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
           onPress={handleBack}
+          accessibilityRole="button"
+          accessibilityLabel="Edit preferences"
+          accessibilityHint="Go back to edit passenger preferences"
         >
           <Text style={[styles.crewActionBtnText, { color: colors.primary }]}>← Edit</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.crewActionBtn, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
           onPress={handleReset}
+          accessibilityRole="button"
+          accessibilityLabel="New passenger"
+          accessibilityHint="Reset and start fresh for a new passenger"
         >
           <Text style={[styles.crewActionBtnText, { color: colors.primary }]}>🔄 New Passenger</Text>
         </TouchableOpacity>
@@ -489,7 +498,7 @@ function PassengerPreferenceCard({ visible, onClose, colors, initialLang }: Prop
       <SafeAreaView style={[styles.container, { backgroundColor: colors.containerBg }]}>
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={onClose} style={styles.headerClose}>
+          <TouchableOpacity onPress={onClose} style={styles.headerClose} accessibilityRole="button" accessibilityLabel="Close passenger preferences">
             <Text style={[styles.headerCloseText, { color: colors.primary }]}>Close</Text>
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.titleText }]}>

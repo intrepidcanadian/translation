@@ -216,6 +216,10 @@ function ConversationPlayback({
             style={styles.sessionHeader}
             onPress={() => toggleExpand(session.id)}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: isExpanded }}
+            accessibilityLabel={`Conversation session from ${formatDate(session.startTime)}, ${session.items.length} items`}
+            accessibilityHint="Tap to expand or collapse session details"
           >
             <View style={styles.sessionInfo}>
               <Text style={[styles.sessionDate, { color: colors.primaryText }]}>
@@ -240,6 +244,8 @@ function ConversationPlayback({
               <TouchableOpacity
                 style={[styles.actionBtn, { backgroundColor: colors.primary }]}
                 onPress={() => handlePlay(session)}
+                accessibilityRole="button"
+                accessibilityLabel={isSessionPlaying && isPlaying ? "Pause playback" : "Play conversation"}
               >
                 <Text style={{ fontSize: 16, color: "#fff" }}>{isSessionPlaying && isPlaying ? "⏸" : "▶"}</Text>
               </TouchableOpacity>
@@ -247,6 +253,8 @@ function ConversationPlayback({
                 <TouchableOpacity
                   style={[styles.actionBtn, { backgroundColor: "#D94A4A" }]}
                   onPress={handleStop}
+                  accessibilityRole="button"
+                  accessibilityLabel="Stop playback"
                 >
                   <Text style={{ fontSize: 16, color: "#fff" }}>⏹</Text>
                 </TouchableOpacity>
@@ -258,6 +266,8 @@ function ConversationPlayback({
                 ]}
                 onPress={() => handleExportPdf(session)}
                 disabled={exporting}
+                accessibilityRole="button"
+                accessibilityLabel="Export conversation as PDF"
               >
                 {exporting ? (
                   <ActivityIndicator size="small" color={colors.primary} />
@@ -354,7 +364,7 @@ function ConversationPlayback({
           <Text style={[styles.title, { color: colors.primaryText }]}>
             Conversation History
           </Text>
-          <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
+          <TouchableOpacity onPress={handleClose} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close conversation history">
             <Text style={{ fontSize: 20, fontWeight: "700", color: colors.primaryText }}>X</Text>
           </TouchableOpacity>
         </View>

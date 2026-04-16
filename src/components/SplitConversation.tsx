@@ -33,7 +33,7 @@ interface TranslationResult {
   translated: string;
 }
 
-export default function SplitConversation({ visible, onClose }: SplitConversationProps) {
+function SplitConversation({ visible, onClose }: SplitConversationProps) {
   const { sourceLang, targetLang } = useLanguage();
   const { settings, reduceMotion, maybeRequestReview } = useSettings();
   const { glossaryLookup } = useGlossary();
@@ -288,7 +288,7 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
     startListeningAsRef.current = startListeningAs;
   }, [startListeningAs]);
 
-  const stopListening = () => {
+  const stopListening = useCallback(() => {
     impactLight();
     // User explicitly stopped — abandon the auto-handoff for this turn.
     if (autoSwitchTimerRef.current) {
@@ -297,7 +297,7 @@ export default function SplitConversation({ visible, onClose }: SplitConversatio
     }
     setNextSpeaker(null);
     ExpoSpeechRecognitionModule.stop();
-  };
+  }, []);
 
   // Replay the last translation on a given side. Used by the small
   // ↻ button next to each displayed translation so the listener can
@@ -635,3 +635,5 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
+
+export default React.memo(SplitConversation);
