@@ -113,6 +113,13 @@ export function extractReceiptFields(text: string, translated: string): Extracte
 
 // ---- Business Card ----
 
+// NOTE (#207): if you rename or change the shape of any of the three /g
+// patterns below, update the matching non-global `*_TEST_RE` copies just
+// below. They're a deliberate duplication to keep `.test()` stateless in
+// the name-picker loop — see the EMAIL_TEST_RE comment for the bug they
+// prevent. The global patterns here are the source of truth for what
+// counts as an email/phone/URL; the non-global copies exist only to
+// sidestep the `lastIndex` mutation footgun.
 const EMAIL_PATTERN = /[\w.+-]+@[\w.-]+\.\w{2,}/gi;
 const PHONE_PATTERN = /(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}/g;
 const URL_PATTERN = /(?:https?:\/\/|www\.)[^\s,]+/gi;
@@ -124,7 +131,8 @@ const JOB_TITLE_KEYWORDS = /(?:CEO|CTO|CFO|COO|VP|Director|Manager|Engineer|Deve
 // slip past the guard when the first line already matched PHONE_PATTERN
 // (`lastIndex` carries over to a shorter string, `.test()` returns false,
 // and a phone number gets accepted as the Name). Regression fence is in
-// scannerModes.test.ts.
+// scannerModes.test.ts. Keep these shape-identical to the /g patterns
+// above (minus the /g flag) — see the NOTE (#207) there.
 const EMAIL_TEST_RE = /[\w.+-]+@[\w.-]+\.\w{2,}/i;
 const PHONE_TEST_RE = /(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}/;
 const URL_TEST_RE = /(?:https?:\/\/|www\.)[^\s,]+/i;

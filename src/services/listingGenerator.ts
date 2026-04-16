@@ -74,25 +74,44 @@ export function getConditionOptions(): Array<{ key: ListingCondition; label: str
   }));
 }
 
-// Detect likely category from OCR text
-function detectCategory(text: string): ListingCategory {
+// Detect likely category from OCR text.
+//
+// Scans every category's keyword list against the text and picks the one with
+// the *most* matches. This closes a real #208 bug where the previous
+// first-match-wins loop would mis-route a clearly-sports fixture like
+// "Wilson tennis racket USB charger case" (1 electronics hint "usb", 2 sports
+// hints "tennis"/"racket") to electronics, because electronics was earlier
+// in the list. Ties break on array order (electronics before clothing etc.),
+// which preserves the old behavior on ambiguous 1-vs-1 fixtures. Exported for
+// unit tests.
+export function detectCategory(text: string): ListingCategory {
   const lower = text.toLowerCase();
 
   const patterns: Array<{ category: ListingCategory; keywords: RegExp }> = [
-    { category: "electronics", keywords: /\b(iphone|samsung|laptop|macbook|ipad|airpods|headphone|speaker|tv|monitor|camera|nintendo|playstation|xbox|pixel|galaxy|charger|cable|usb|bluetooth|wifi|battery|power bank|processor|gpu|ram|ssd|hard drive)\b/ },
-    { category: "clothing", keywords: /\b(shirt|pants|dress|jacket|coat|shoes|boots|sneakers|jeans|hoodie|sweater|blazer|skirt|socks|hat|scarf|belt|handbag|purse|backpack|nike|adidas|zara|h&m|levi|gucci|prada)\b/ },
-    { category: "furniture", keywords: /\b(chair|table|desk|sofa|couch|bed|mattress|shelf|bookcase|cabinet|drawer|lamp|mirror|rug|ikea|wayfair)\b/ },
-    { category: "books", keywords: /\b(book|novel|textbook|isbn|paperback|hardcover|edition|author|chapter|volume|manga|comic)\b/ },
-    { category: "toys", keywords: /\b(toy|lego|doll|puzzle|game|board game|action figure|plush|stuffed|nerf|barbie|hot wheels|pokemon)\b/ },
-    { category: "sports", keywords: /\b(bike|bicycle|yoga|gym|weights|dumbbell|racket|tennis|golf|soccer|football|basketball|helmet|skateboard|surfboard|camping|tent|fishing)\b/ },
-    { category: "home", keywords: /\b(kitchen|blender|mixer|pot|pan|plate|mug|vacuum|iron|washer|dryer|garden|plant|tool|drill|saw|hammer)\b/ },
-    { category: "auto", keywords: /\b(car|auto|tire|wheel|brake|engine|motor|bumper|headlight|taillight|wiper|oil|filter|spark plug|obd)\b/ },
+    { category: "electronics", keywords: /\b(iphone|samsung|laptop|macbook|ipad|airpods|headphone|speaker|tv|monitor|camera|nintendo|playstation|xbox|pixel|galaxy|charger|cable|usb|bluetooth|wifi|battery|power bank|processor|gpu|ram|ssd|hard drive)\b/g },
+    { category: "clothing", keywords: /\b(shirt|pants|dress|jacket|coat|shoes|boots|sneakers|jeans|hoodie|sweater|blazer|skirt|socks|hat|scarf|belt|handbag|purse|backpack|nike|adidas|zara|h&m|levi|gucci|prada)\b/g },
+    { category: "furniture", keywords: /\b(chair|table|desk|sofa|couch|bed|mattress|shelf|bookcase|cabinet|drawer|lamp|mirror|rug|ikea|wayfair)\b/g },
+    { category: "books", keywords: /\b(book|novel|textbook|isbn|paperback|hardcover|edition|author|chapter|volume|manga|comic)\b/g },
+    { category: "toys", keywords: /\b(toy|lego|doll|puzzle|game|board game|action figure|plush|stuffed|nerf|barbie|hot wheels|pokemon)\b/g },
+    { category: "sports", keywords: /\b(bike|bicycle|yoga|gym|weights|dumbbell|racket|tennis|golf|soccer|football|basketball|helmet|skateboard|surfboard|camping|tent|fishing)\b/g },
+    { category: "home", keywords: /\b(kitchen|blender|mixer|pot|pan|plate|mug|vacuum|iron|washer|dryer|garden|plant|tool|drill|saw|hammer)\b/g },
+    { category: "auto", keywords: /\b(car|auto|tire|wheel|brake|engine|motor|bumper|headlight|taillight|wiper|oil|filter|spark plug|obd)\b/g },
   ];
 
+  let bestCategory: ListingCategory = "other";
+  let bestScore = 0;
   for (const { category, keywords } of patterns) {
-    if (keywords.test(lower)) return category;
+    // `.match()` with a /g regex returns all matches; null when none. Using a
+    // fresh regex per call would be safer against `lastIndex` mutation but
+    // `.match` always resets it for callers, so the /g flag here is purely
+    // so we get all hits instead of the first.
+    const hits = lower.match(keywords)?.length ?? 0;
+    if (hits > bestScore) {
+      bestScore = hits;
+      bestCategory = category;
+    }
   }
-  return "other";
+  return bestCategory;
 }
 
 // Extract potential brand/model from OCR text

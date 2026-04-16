@@ -25,7 +25,7 @@
  * inside `generateSmartListing` calls `generateListing`, so the safety net
  * for that path is the same coverage as below.
  */
-import { generateListing, formatListingForShare } from "../services/listingGenerator";
+import { generateListing, formatListingForShare, detectCategory } from "../services/listingGenerator";
 
 describe("listingGenerator", () => {
   describe("generateListing — category detection", () => {
@@ -75,6 +75,38 @@ describe("listingGenerator", () => {
     it('falls back to "other" when no keywords match', () => {
       const draft = generateListing("zzz qqq xyz nothing relevant here", "good");
       expect(draft.category).toBe("other");
+    });
+
+    // ---- Salience scorer (#208) ----
+    // The detector now picks the category with the MOST keyword hits, not
+    // the first category in array order. These cases pin the behavior so a
+    // regression to first-match-wins gets caught.
+    it("picks the category with the highest keyword match count on multi-category collisions", () => {
+      // 2 sports hits ("tennis", "racket") vs 1 electronics hint ("usb").
+      // Under the old first-match-wins loop this returned "electronics";
+      // the salience scorer must return "sports".
+      expect(detectCategory("Wilson tennis racket with usb charging case")).toBe("sports");
+    });
+
+    it("breaks ties on array order so electronics wins a 1-vs-1 against clothing", () => {
+      // Pure tie-break fence: 1 electronics hit ("iphone") + 1 clothing hit
+      // ("shoes"). Electronics is earlier in the patterns array so it wins.
+      // If this flips (e.g. someone reorders the array or swaps the tie-break
+      // to "later match wins"), this test catches it.
+      expect(detectCategory("iphone case and shoes")).toBe("electronics");
+    });
+
+    it("counts repeated keywords toward the salience score", () => {
+      // Three separate book hints ("novel", "paperback", "edition") beat a
+      // single electronics hint ("camera"). A naive Set-based dedupe would
+      // break this case because it would count each category as "matched"
+      // rather than scoring by hit count.
+      expect(detectCategory("Paperback novel second edition — camera on cover")).toBe("books");
+    });
+
+    it("returns 'other' when no keyword matches at all", () => {
+      // Bare contract for the scorer's fallback path.
+      expect(detectCategory("a b c d")).toBe("other");
     });
 
     it("respects an explicit user-provided category over auto-detection", () => {

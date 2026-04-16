@@ -346,7 +346,13 @@ export function getUILocale(): UILocale {
  * Look up a UI string. Falls back to English if the locale lacks the key,
  * then to the key itself.
  *
- * Supports simple {name} interpolation.
+ * Supports simple {name} interpolation. Parameter values are inserted
+ * verbatim — `$&`, `$1`, `$'`, `$\`` and friends are NOT interpreted as
+ * replacement tokens (which they would be with a string-form replacement
+ * on String.prototype.replace). This matters because user-facing values
+ * can contain `$` (e.g. a product name or price like "$5 off"), and those
+ * should render literally instead of being substituted for the matched
+ * placeholder text. See i18n.test.ts for the regression fence.
  */
 export function t(key: string, params?: Record<string, string | number>): string {
   const table = LOCALES[currentLocale];
@@ -354,7 +360,9 @@ export function t(key: string, params?: Record<string, string | number>): string
   let str = table[key] ?? fallback[key] ?? key;
   if (params) {
     for (const [k, v] of Object.entries(params)) {
-      str = str.replace(new RegExp(`\\{${k}\\}`, "g"), String(v));
+      const value = String(v);
+      // Function replacement bypasses special-token interpretation ($&, $1, …).
+      str = str.replace(new RegExp(`\\{${k}\\}`, "g"), () => value);
     }
   }
   return str;
