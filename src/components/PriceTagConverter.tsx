@@ -20,9 +20,8 @@ import {
   useCameraPermission,
   type PhotoFile,
 } from "react-native-vision-camera";
-import TextRecognition, {
-  TextRecognitionScript,
-} from "@react-native-ml-kit/text-recognition";
+import TextRecognition from "@react-native-ml-kit/text-recognition";
+import { getMLKitScript } from "../utils/getMLKitScript";
 import { copyWithAutoClear } from "../services/clipboard";
 import { impactMedium, impactLight, notifySuccess } from "../services/haptics";
 import { logger } from "../services/logger";
@@ -56,16 +55,6 @@ interface DetectedPrice {
   currency: string;
   amount: number;
   conversions: ConvertedPrice[];
-}
-
-function getMLKitScript(langCode: string): TextRecognitionScript {
-  switch (langCode) {
-    case "zh": return TextRecognitionScript.CHINESE;
-    case "ja": return TextRecognitionScript.JAPANESE;
-    case "ko": return TextRecognitionScript.KOREAN;
-    case "hi": return TextRecognitionScript.DEVANAGARI;
-    default: return TextRecognitionScript.LATIN;
-  }
 }
 
 export default function PriceTagConverter({

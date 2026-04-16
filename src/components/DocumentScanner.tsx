@@ -15,9 +15,8 @@ import {
   useCameraPermission,
   type PhotoFile,
 } from "react-native-vision-camera";
-import TextRecognition, {
-  TextRecognitionScript,
-} from "@react-native-ml-kit/text-recognition";
+import TextRecognition from "@react-native-ml-kit/text-recognition";
+import { getMLKitScript } from "../utils/getMLKitScript";
 import { translateText, translateAppleBatch, type TranslationProvider } from "../services/translation";
 import { logger } from "../services/logger";
 import {
@@ -58,16 +57,6 @@ interface DocumentScannerProps {
   colors: ThemeColors;
   initialMode?: ScannerModeKey;
   onNoteSaved?: () => void;
-}
-
-function getMLKitScript(langCode: string): TextRecognitionScript {
-  switch (langCode) {
-    case "zh": return TextRecognitionScript.CHINESE;
-    case "ja": return TextRecognitionScript.JAPANESE;
-    case "ko": return TextRecognitionScript.KOREAN;
-    case "hi": return TextRecognitionScript.DEVANAGARI;
-    default: return TextRecognitionScript.LATIN;
-  }
 }
 
 type Phase = "camera" | "processing" | "results";

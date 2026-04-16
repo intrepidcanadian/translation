@@ -2,7 +2,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { Platform, Share } from "react-native";
 import { Animated } from "react-native";
 import type { Camera, PhotoFile } from "react-native-vision-camera";
-import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
+import TextRecognition from "@react-native-ml-kit/text-recognition";
+import { getMLKitScript } from "../utils/getMLKitScript";
 import * as FileSystem from "expo-file-system";
 import { logger } from "../services/logger";
 import { showBlockActionSheet } from "../utils/liveBlockActions";
@@ -36,15 +37,6 @@ interface CapturedBlock {
   screenFrame: { top: number; left: number; width: number; height: number };
 }
 
-function getMLKitScript(langCode: string): TextRecognitionScript {
-  switch (langCode) {
-    case "zh": return TextRecognitionScript.CHINESE;
-    case "ja": return TextRecognitionScript.JAPANESE;
-    case "ko": return TextRecognitionScript.KOREAN;
-    case "hi": return TextRecognitionScript.DEVANAGARI;
-    default: return TextRecognitionScript.LATIN;
-  }
-}
 
 interface UsePhotoCaptureParams {
   captureRef: React.RefObject<Camera | null>;

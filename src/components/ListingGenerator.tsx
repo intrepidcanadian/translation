@@ -17,7 +17,8 @@ import {
   useCameraPermission,
   type PhotoFile,
 } from "react-native-vision-camera";
-import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
+import TextRecognition from "@react-native-ml-kit/text-recognition";
+import { getMLKitScript } from "../utils/getMLKitScript";
 import { logger } from "../services/logger";
 import { Linking } from "react-native";
 import { copyWithAutoClear } from "../services/clipboard";
@@ -48,16 +49,6 @@ interface ListingGeneratorProps {
 }
 
 type Phase = "camera" | "processing" | "editing";
-
-function getMLKitScript(langCode: string): TextRecognitionScript {
-  switch (langCode) {
-    case "zh": return TextRecognitionScript.CHINESE;
-    case "ja": return TextRecognitionScript.JAPANESE;
-    case "ko": return TextRecognitionScript.KOREAN;
-    case "hi": return TextRecognitionScript.DEVANAGARI;
-    default: return TextRecognitionScript.LATIN;
-  }
-}
 
 function ListingGenerator({
   visible,
@@ -255,6 +246,9 @@ function ListingGenerator({
                     { backgroundColor: condition === opt.key ? colors.primary : "rgba(0,0,0,0.5)", borderColor: condition === opt.key ? colors.primary : "rgba(255,255,255,0.3)" },
                   ]}
                   onPress={() => { setCondition(opt.key); impactLight(); }}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`Condition: ${opt.label}`}
+                  accessibilityState={{ selected: condition === opt.key }}
                 >
                   <Text style={[styles.conditionText, { color: condition === opt.key ? colors.destructiveText : "#fff" }]}>
                     {opt.label}
@@ -265,7 +259,9 @@ function ListingGenerator({
             <TouchableOpacity
               style={[styles.captureBtn, { backgroundColor: colors.primary }]}
               onPress={captureAndProcess}
+              accessibilityRole="button"
               accessibilityLabel="Capture photo for listing"
+              accessibilityHint="Takes a photo and generates a marketplace listing"
             >
               <View style={styles.captureInner} />
             </TouchableOpacity>
@@ -320,6 +316,9 @@ function ListingGenerator({
                           setEditTitle(draft.insights.suggestedBrand + " " + editTitle);
                         }
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add brand: ${draft.insights.suggestedBrand}`}
+                      accessibilityHint="Tap to add this brand to your listing title"
                     >
                       <Text style={[styles.insightChipLabel, { color: colors.dimText }]}>Brand</Text>
                       <Text style={[styles.insightChipValue, { color: colors.successText }]}>
@@ -335,6 +334,9 @@ function ListingGenerator({
                           setEditTitle(editTitle + " " + draft.insights.suggestedModel);
                         }
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Add model: ${draft.insights.suggestedModel}`}
+                      accessibilityHint="Tap to add this model to your listing title"
                     >
                       <Text style={[styles.insightChipLabel, { color: colors.dimText }]}>Model</Text>
                       <Text style={[styles.insightChipValue, { color: colors.successText }]}>
@@ -369,6 +371,9 @@ function ListingGenerator({
                         const numericPrice = p.replace(/[^0-9.]/g, "");
                         if (numericPrice) setPrice(numericPrice);
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Use detected price: ${p}`}
+                      accessibilityHint="Tap to set this as your listing price"
                     >
                       <Text style={[styles.priceBubbleText, { color: colors.warningText }]}>{p}</Text>
                     </TouchableOpacity>
@@ -394,6 +399,9 @@ function ListingGenerator({
                     { backgroundColor: category === opt.key ? colors.primary : colors.cardBg, borderColor: category === opt.key ? colors.primary : colors.border },
                   ]}
                   onPress={() => { setCategory(opt.key); impactLight(); }}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`Category: ${opt.label}`}
+                  accessibilityState={{ selected: category === opt.key }}
                 >
                   <Text style={styles.categoryIcon}>{opt.icon}</Text>
                   <Text style={[styles.categoryText, { color: category === opt.key ? colors.destructiveText : colors.mutedText }]}>
@@ -415,6 +423,9 @@ function ListingGenerator({
                   { backgroundColor: condition === opt.key ? colors.primary : colors.cardBg, borderColor: condition === opt.key ? colors.primary : colors.border },
                 ]}
                 onPress={() => { setCondition(opt.key); impactLight(); }}
+                accessibilityRole="radio"
+                accessibilityLabel={`Condition: ${opt.label}`}
+                accessibilityState={{ selected: condition === opt.key }}
               >
                 <Text style={[styles.conditionEditText, { color: condition === opt.key ? colors.destructiveText : colors.mutedText }]}>
                   {opt.label}
@@ -454,6 +465,9 @@ function ListingGenerator({
                   key={tag}
                   style={[styles.tagPill, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
                   onPress={() => handleCopy(`#${tag.replace(/\s/g, "")}`, tag)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Copy tag: #${tag.replace(/\s/g, "")}`}
+                  accessibilityHint="Tap to copy this tag to clipboard"
                 >
                   <Text style={[styles.tagText, { color: colors.mutedText }]}>
                     {copiedField === tag ? "Copied!" : `#${tag.replace(/\s/g, "")}`}
@@ -482,6 +496,9 @@ function ListingGenerator({
               style={[styles.priceCheckBtn, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
               onPress={handlePriceCheck}
               disabled={isCheckingPrice}
+              accessibilityRole="button"
+              accessibilityLabel="Price check"
+              accessibilityHint="Check comparable prices on marketplaces"
             >
               {isCheckingPrice ? (
                 <ActivityIndicator size="small" color={colors.primary} />
@@ -512,6 +529,9 @@ function ListingGenerator({
                   key={link.name}
                   style={[styles.compLink, { borderColor: colors.border }]}
                   onPress={() => Linking.openURL(link.url)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`${link.name}: ${link.description}`}
+                  accessibilityHint={`Opens ${link.name} in your browser`}
                 >
                   <Text style={styles.compLinkIcon}>{link.icon}</Text>
                   <View style={styles.compLinkInfo}>
@@ -530,13 +550,13 @@ function ListingGenerator({
               <Text style={[styles.translationLabel, { color: colors.dimText }]}>
                 Translated ({draft.targetLang?.toUpperCase()})
               </Text>
-              <TouchableOpacity onPress={() => handleCopy(draft.translatedTitle!, "translatedTitle")}>
+              <TouchableOpacity onPress={() => handleCopy(draft.translatedTitle!, "translatedTitle")} accessibilityRole="button" accessibilityLabel="Copy translated title" accessibilityHint="Tap to copy the translated title to clipboard">
                 <Text style={[styles.translatedTitle, { color: colors.translatedText }]}>
                   {copiedField === "translatedTitle" ? "Copied!" : draft.translatedTitle}
                 </Text>
               </TouchableOpacity>
               {draft.translatedDescription && (
-                <TouchableOpacity onPress={() => handleCopy(draft.translatedDescription!, "translatedDesc")}>
+                <TouchableOpacity onPress={() => handleCopy(draft.translatedDescription!, "translatedDesc")} accessibilityRole="button" accessibilityLabel="Copy translated description" accessibilityHint="Tap to copy the translated description to clipboard">
                   <Text style={[styles.translatedDesc, { color: colors.secondaryText }]} numberOfLines={6}>
                     {copiedField === "translatedDesc" ? "Copied!" : draft.translatedDescription}
                   </Text>
@@ -551,6 +571,9 @@ function ListingGenerator({
               style={[styles.actionBtn, { backgroundColor: colors.cardBg, borderColor: colors.border, borderWidth: 1 }]}
               onPress={handleTranslate}
               disabled={isTranslating}
+              accessibilityRole="button"
+              accessibilityLabel={isTranslating ? "Translating listing" : "Translate listing"}
+              accessibilityHint="Translate the listing to your target language"
             >
               {isTranslating ? (
                 <ActivityIndicator size="small" color={colors.primary} />
@@ -561,6 +584,9 @@ function ListingGenerator({
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: colors.primary }]}
               onPress={handleShare}
+              accessibilityRole="button"
+              accessibilityLabel="Share listing"
+              accessibilityHint="Share the formatted listing via other apps"
             >
               <Text style={[styles.actionBtnText, { color: colors.destructiveText }]}>Share Listing</Text>
             </TouchableOpacity>
@@ -576,6 +602,9 @@ function ListingGenerator({
                 );
                 handleCopy(fullText, "fullListing");
               }}
+              accessibilityRole="button"
+              accessibilityLabel="Copy entire listing"
+              accessibilityHint="Copy the full formatted listing to clipboard"
             >
               <Text style={[styles.actionBtnText, { color: colors.primary }]}>
                 {copiedField === "fullListing" ? "Copied!" : "Copy All"}
@@ -584,6 +613,9 @@ function ListingGenerator({
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: colors.cardBg, borderColor: colors.border, borderWidth: 1 }]}
               onPress={resetToCamera}
+              accessibilityRole="button"
+              accessibilityLabel="Retake photo"
+              accessibilityHint="Go back to camera to take a new photo"
             >
               <Text style={[styles.actionBtnText, { color: colors.mutedText }]}>Retake Photo</Text>
             </TouchableOpacity>

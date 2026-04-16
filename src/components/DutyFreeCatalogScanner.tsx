@@ -3,7 +3,7 @@
 // → shows cross-border price comparison (HKD vs JPY vs SGD vs USD)
 // Combines Neural Engine ecommerce intelligence with currency conversion
 
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -20,9 +20,8 @@ import {
   useCameraPermission,
   type PhotoFile,
 } from "react-native-vision-camera";
-import TextRecognition, {
-  TextRecognitionScript,
-} from "@react-native-ml-kit/text-recognition";
+import TextRecognition from "@react-native-ml-kit/text-recognition";
+import { getMLKitScript } from "../utils/getMLKitScript";
 import { copyWithAutoClear } from "../services/clipboard";
 import { impactMedium, impactLight, notifySuccess } from "../services/haptics";
 import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
@@ -72,15 +71,113 @@ interface CatalogProduct {
   confidence: number;
 }
 
-function getMLKitScript(langCode: string): TextRecognitionScript {
-  switch (langCode) {
-    case "zh": return TextRecognitionScript.CHINESE;
-    case "ja": return TextRecognitionScript.JAPANESE;
-    case "ko": return TextRecognitionScript.KOREAN;
-    case "hi": return TextRecognitionScript.DEVANAGARI;
-    default: return TextRecognitionScript.LATIN;
-  }
+interface ProductCardProps {
+  product: CatalogProduct;
+  index: number;
+  isExpanded: boolean;
+  onToggleExpand: (index: number) => void;
+  onCopyPrice: (text: string) => void;
+  copiedText: string | null;
+  colors: ThemeColors;
 }
+
+const ProductCard = React.memo(function ProductCard({
+  product, index, isExpanded, onToggleExpand, onCopyPrice, copiedText, colors,
+}: ProductCardProps) {
+  const handleToggle = useCallback(() => {
+    impactLight();
+    onToggleExpand(index);
+  }, [index, onToggleExpand]);
+
+  return (
+    <View style={[styles.productCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+      <TouchableOpacity
+        style={styles.productHeader}
+        onPress={handleToggle}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={`${product.brand ? product.brand + " " : ""}${product.translatedName !== product.name ? product.translatedName : product.name}`}
+        accessibilityHint={isExpanded ? "Collapse product details" : "Expand product details"}
+        accessibilityState={{ expanded: isExpanded }}
+      >
+        <View style={{ flex: 1 }}>
+          {product.brand && (
+            <Text style={[styles.productBrand, { color: colors.primary }]}>{product.brand}</Text>
+          )}
+          <Text style={[styles.productName, { color: colors.primaryText }]} numberOfLines={2}>
+            {product.translatedName !== product.name ? product.translatedName : product.name}
+          </Text>
+          {product.translatedName !== product.name && (
+            <Text style={[styles.productOriginal, { color: colors.dimText }]} numberOfLines={1}>
+              {product.name}
+            </Text>
+          )}
+          {product.category && product.category !== "other" && (
+            <View style={[styles.categoryBadge, { backgroundColor: colors.containerBg }]}>
+              <Text style={[styles.categoryBadgeText, { color: colors.mutedText }]}>
+                {product.category}
+              </Text>
+            </View>
+          )}
+        </View>
+        {product.prices.length > 0 && (
+          <View style={styles.quickPriceCol}>
+            <Text style={[styles.quickPrice, { color: colors.successText }]}>
+              {CURRENCIES[product.prices[0].currency]?.symbol}{product.prices[0].amount.toLocaleString()}
+            </Text>
+            <Text style={[styles.quickPriceCurrency, { color: colors.mutedText }]}>
+              {product.prices[0].currency}
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+
+      {isExpanded && (
+        <View style={styles.expandedContent}>
+          {product.translatedDescription && product.translatedDescription !== product.translatedName && (
+            <Text style={[styles.productDesc, { color: colors.secondaryText }]}>
+              {product.translatedDescription}
+            </Text>
+          )}
+          {product.specs.length > 0 && (
+            <View style={styles.specsRow}>
+              {product.specs.slice(0, 6).map((spec, si) => (
+                <View key={si} style={[styles.specChip, { backgroundColor: colors.containerBg }]}>
+                  <Text style={[styles.specLabel, { color: colors.mutedText }]}>{spec.label}</Text>
+                  <Text style={[styles.specValue, { color: colors.primaryText }]}>{spec.value}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+          {product.prices.map((price, pi) => (
+            <View key={pi} style={styles.priceComparisonBlock}>
+              <Text style={[styles.priceComparisonTitle, { color: colors.primaryText }]}>
+                💱 {CURRENCIES[price.currency]?.flag} {CURRENCIES[price.currency]?.symbol}{price.amount.toLocaleString()} {price.currency}
+              </Text>
+              <View style={styles.priceGrid}>
+                {price.conversions.map((conv) => (
+                  <TouchableOpacity
+                    key={conv.currency}
+                    style={[styles.priceGridCell, { backgroundColor: colors.containerBg, borderColor: colors.borderLight }]}
+                    onPress={() => onCopyPrice(`${conv.formatted} ${conv.currency}`)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Copy ${conv.formatted} ${conv.currency}`}
+                  >
+                    <Text style={styles.priceGridFlag}>{conv.flag}</Text>
+                    <Text style={[styles.priceGridAmount, { color: colors.primaryText }]} numberOfLines={1} adjustsFontSizeToFit>
+                      {copiedText === `${conv.formatted} ${conv.currency}` ? "✓" : conv.formatted}
+                    </Text>
+                    <Text style={[styles.priceGridCode, { color: colors.mutedText }]}>{conv.currency}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+});
 
 export default function DutyFreeCatalogScanner({
   visible,
@@ -225,6 +322,10 @@ export default function DutyFreeCatalogScanner({
     }
   }, [sourceLangCode, targetLangCode, translationProvider]);
 
+  const toggleExpand = useCallback((idx: number) => {
+    setExpandedProduct((prev) => (prev === idx ? null : idx));
+  }, []);
+
   const copyText = useCallback(async (text: string) => {
     try {
       // copyWithAutoClear: duty-free catalog copies follow the same auto-wipe
@@ -366,109 +467,18 @@ export default function DutyFreeCatalogScanner({
           <Text style={[styles.ratesAgeText, { color: colors.mutedText }]}>{ratesAge}</Text>
         ) : null}
 
-        {products.map((product, idx) => {
-          const isExpanded = expandedProduct === idx;
-          return (
-            <View key={idx} style={[styles.productCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-              {/* Product header */}
-              <TouchableOpacity
-                style={styles.productHeader}
-                onPress={() => {
-                  impactLight();
-                  setExpandedProduct(isExpanded ? null : idx);
-                }}
-                activeOpacity={0.7}
-                accessibilityRole="button"
-                accessibilityLabel={`${product.brand ? product.brand + " " : ""}${product.translatedName !== product.name ? product.translatedName : product.name}`}
-                accessibilityHint={isExpanded ? "Collapse product details" : "Expand product details"}
-                accessibilityState={{ expanded: isExpanded }}
-              >
-                <View style={{ flex: 1 }}>
-                  {product.brand && (
-                    <Text style={[styles.productBrand, { color: colors.primary }]}>{product.brand}</Text>
-                  )}
-                  <Text style={[styles.productName, { color: colors.primaryText }]} numberOfLines={2}>
-                    {product.translatedName !== product.name ? product.translatedName : product.name}
-                  </Text>
-                  {product.translatedName !== product.name && (
-                    <Text style={[styles.productOriginal, { color: colors.dimText }]} numberOfLines={1}>
-                      {product.name}
-                    </Text>
-                  )}
-                  {product.category && product.category !== "other" && (
-                    <View style={[styles.categoryBadge, { backgroundColor: colors.containerBg }]}>
-                      <Text style={[styles.categoryBadgeText, { color: colors.mutedText }]}>
-                        {product.category}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Quick price display */}
-                {product.prices.length > 0 && (
-                  <View style={styles.quickPriceCol}>
-                    <Text style={[styles.quickPrice, { color: colors.successText }]}>
-                      {CURRENCIES[product.prices[0].currency]?.symbol}{product.prices[0].amount.toLocaleString()}
-                    </Text>
-                    <Text style={[styles.quickPriceCurrency, { color: colors.mutedText }]}>
-                      {product.prices[0].currency}
-                    </Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              {/* Expanded: full price comparison + specs */}
-              {isExpanded && (
-                <View style={styles.expandedContent}>
-                  {/* Description */}
-                  {product.translatedDescription && product.translatedDescription !== product.translatedName && (
-                    <Text style={[styles.productDesc, { color: colors.secondaryText }]}>
-                      {product.translatedDescription}
-                    </Text>
-                  )}
-
-                  {/* Specs */}
-                  {product.specs.length > 0 && (
-                    <View style={styles.specsRow}>
-                      {product.specs.slice(0, 6).map((spec, si) => (
-                        <View key={si} style={[styles.specChip, { backgroundColor: colors.containerBg }]}>
-                          <Text style={[styles.specLabel, { color: colors.mutedText }]}>{spec.label}</Text>
-                          <Text style={[styles.specValue, { color: colors.primaryText }]}>{spec.value}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-
-                  {/* Price comparisons */}
-                  {product.prices.map((price, pi) => (
-                    <View key={pi} style={styles.priceComparisonBlock}>
-                      <Text style={[styles.priceComparisonTitle, { color: colors.primaryText }]}>
-                        💱 {CURRENCIES[price.currency]?.flag} {CURRENCIES[price.currency]?.symbol}{price.amount.toLocaleString()} {price.currency}
-                      </Text>
-                      <View style={styles.priceGrid}>
-                        {price.conversions.map((conv) => (
-                          <TouchableOpacity
-                            key={conv.currency}
-                            style={[styles.priceGridCell, { backgroundColor: colors.containerBg, borderColor: colors.borderLight }]}
-                            onPress={() => copyText(`${conv.formatted} ${conv.currency}`)}
-                            accessibilityRole="button"
-                            accessibilityLabel={`Copy ${conv.formatted} ${conv.currency}`}
-                          >
-                            <Text style={styles.priceGridFlag}>{conv.flag}</Text>
-                            <Text style={[styles.priceGridAmount, { color: colors.primaryText }]} numberOfLines={1} adjustsFontSizeToFit>
-                              {copiedText === `${conv.formatted} ${conv.currency}` ? "✓" : conv.formatted}
-                            </Text>
-                            <Text style={[styles.priceGridCode, { color: colors.mutedText }]}>{conv.currency}</Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-                    </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          );
-        })}
+        {products.map((product, idx) => (
+          <ProductCard
+            key={idx}
+            product={product}
+            index={idx}
+            isExpanded={expandedProduct === idx}
+            onToggleExpand={toggleExpand}
+            onCopyPrice={copyText}
+            copiedText={copiedText}
+            colors={colors}
+          />
+        ))}
 
         {/* Full translated text */}
         {translatedText && (
