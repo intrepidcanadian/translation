@@ -37,6 +37,7 @@ import {
 import {
   detectPricesInText,
   convertPrice,
+  getExchangeRates,
   CURRENCIES,
   CREW_CURRENCIES,
   type ConvertedPrice,
@@ -156,6 +157,16 @@ export default function DutyFreeCatalogScanner({
       const paragraphs = fullText.split("\n").filter((p) => p.trim());
       let translated: string;
 
+      const translateParagraphs = async (paras: string[]): Promise<string> => {
+        const results: string[] = [];
+        for (const para of paras) {
+          if (!para.trim()) { results.push(""); continue; }
+          const res = await translateText(para, srcLang, targetLangCode, { provider: translationProvider });
+          results.push(res.translatedText);
+        }
+        return results.join("\n");
+      };
+
       if (translationProvider === "apple" && Platform.OS === "ios" && paragraphs.length > 1) {
         try {
           const results = await translateAppleBatch(paragraphs, srcLang, targetLangCode);
@@ -164,21 +175,10 @@ export default function DutyFreeCatalogScanner({
           // Apple batch path failed — fall back to per-paragraph translate.
           // Worth logging so we can measure how often the fast path breaks.
           logger.warn("Translation", "Apple batch translate failed in DutyFree scanner, falling back per-paragraph", err);
-          const results: string[] = [];
-          for (const para of paragraphs) {
-            const res = await translateText(para, srcLang, targetLangCode, { provider: translationProvider });
-            results.push(res.translatedText);
-          }
-          translated = results.join("\n");
+          translated = await translateParagraphs(paragraphs);
         }
       } else {
-        const results: string[] = [];
-        for (const para of paragraphs) {
-          if (!para.trim()) { results.push(""); continue; }
-          const res = await translateText(para, srcLang, targetLangCode, { provider: translationProvider });
-          results.push(res.translatedText);
-        }
-        translated = results.join("\n");
+        translated = await translateParagraphs(paragraphs);
       }
       setTranslatedText(translated);
 
@@ -206,7 +206,6 @@ export default function DutyFreeCatalogScanner({
       );
 
       // Get rates age
-      const { getExchangeRates } = require("../services/currencyExchange");
       const rates = await getExchangeRates();
       if (rates.timestamp === 0) {
         setRatesAge("Offline rates (approximate)");
@@ -494,6 +493,9 @@ export default function DutyFreeCatalogScanner({
 
 // --- Product segmentation logic ---
 
+/** Lines starting with a currency sigil are prices, not product names. */
+const CURRENCY_SIGIL_RE = /^[$€£¥₹₩฿₫₱]/;
+
 function buildProductCards(
   originalText: string,
   translatedText: string,
@@ -540,15 +542,20 @@ function buildProductCards(
   }
 
   // Multiple prices — try to segment into products
-  // Find which line each price appears on
+  // Build a line-index lookup: for each raw price string, find its first line
+  const rawPriceToLine = new Map<string, number>();
+  for (let li = 0; li < lines.length; li++) {
+    for (let pi = 0; pi < prices.length; pi++) {
+      if (!rawPriceToLine.has(prices[pi].raw) && lines[li].includes(prices[pi].raw)) {
+        rawPriceToLine.set(prices[pi].raw, li);
+      }
+    }
+  }
   const priceLineMap: Array<{ priceIdx: number; lineIdx: number }> = [];
   for (let pi = 0; pi < prices.length; pi++) {
-    const rawPrice = prices[pi].raw;
-    for (let li = 0; li < lines.length; li++) {
-      if (lines[li].includes(rawPrice)) {
-        priceLineMap.push({ priceIdx: pi, lineIdx: li });
-        break;
-      }
+    const lineIdx = rawPriceToLine.get(prices[pi].raw);
+    if (lineIdx !== undefined) {
+      priceLineMap.push({ priceIdx: pi, lineIdx });
     }
   }
 
@@ -586,14 +593,14 @@ function buildProductCards(
     const nameLine = productLines.find((l) =>
       l.trim().length > 2 &&
       l.trim().length < 80 &&
-      !l.match(/^[$€£¥₹₩฿₫₱]/) &&
+      !CURRENCY_SIGIL_RE.test(l) &&
       l !== prices[priceLineMap[i].priceIdx].raw
     ) || `Product ${i + 1}`;
 
     const translatedNameLine = productTranslatedLines.find((l) =>
       l.trim().length > 2 &&
       l.trim().length < 80 &&
-      !l.match(/^[$€£¥₹₩฿₫₱]/)
+      !CURRENCY_SIGIL_RE.test(l)
     ) || nameLine;
 
     products.push({
@@ -620,7 +627,7 @@ function findBestProductName(lines: string[], insights: SmartListingInsights): s
 
   for (const line of lines.slice(0, 5)) {
     const trimmed = line.trim();
-    if (trimmed.length > 3 && trimmed.length < 80 && !trimmed.match(/^[$€£¥₹₩฿₫₱]/)) {
+    if (trimmed.length > 3 && trimmed.length < 80 && !CURRENCY_SIGIL_RE.test(trimmed)) {
       return trimmed;
     }
   }
@@ -628,14 +635,15 @@ function findBestProductName(lines: string[], insights: SmartListingInsights): s
   return insights.suggestedBrand || "Catalog Item";
 }
 
+const KNOWN_BRANDS = [
+  "apple", "samsung", "sony", "lg", "nike", "adidas", "canon", "nikon", "bose", "jbl",
+  "dyson", "shiseido", "sk-ii", "lancôme", "estée", "chanel", "dior", "hermès",
+  "louis vuitton", "gucci", "prada", "coach", "michael kors", "tiffany", "swarovski",
+  "rolex", "omega", "seiko", "casio", "jo malone", "tom ford", "burberry", "cartier",
+  "bulgari", "mont blanc", "ysl", "givenchy", "armani", "versace", "dolce",
+] as const;
+
 function extractBrandFromLine(line: string): string | null {
-  const KNOWN_BRANDS = [
-    "apple", "samsung", "sony", "lg", "nike", "adidas", "canon", "nikon", "bose", "jbl",
-    "dyson", "shiseido", "sk-ii", "lancôme", "estée", "chanel", "dior", "hermès",
-    "louis vuitton", "gucci", "prada", "coach", "michael kors", "tiffany", "swarovski",
-    "rolex", "omega", "seiko", "casio", "jo malone", "tom ford", "burberry", "cartier",
-    "bulgari", "mont blanc", "ysl", "givenchy", "armani", "versace", "dolce",
-  ];
   const lower = line.toLowerCase();
   for (const brand of KNOWN_BRANDS) {
     if (lower.includes(brand)) {

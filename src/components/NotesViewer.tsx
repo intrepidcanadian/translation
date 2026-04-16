@@ -142,13 +142,13 @@ export default function NotesViewer({
           <GlassBackdrop />
           {/* Header */}
           <View style={[styles.header, { backgroundColor: colors.glassBg, borderBottomColor: colors.glassBorder }]}>
-            <TouchableOpacity onPress={() => setSelectedNote(null)}>
+            <TouchableOpacity onPress={() => setSelectedNote(null)} accessibilityRole="button" accessibilityLabel="Back" accessibilityHint="Return to notes list">
               <Text style={[styles.headerAction, { color: colors.primary }]}>Back</Text>
             </TouchableOpacity>
             <Text style={[styles.headerTitle, { color: colors.titleText }]} numberOfLines={1}>
               {mode.icon} {mode.label}
             </Text>
-            <TouchableOpacity onPress={() => handleShare(selectedNote)}>
+            <TouchableOpacity onPress={() => handleShare(selectedNote)} accessibilityRole="button" accessibilityLabel="Share note" accessibilityHint="Share this note via other apps">
               <Text style={[styles.headerAction, { color: colors.primary }]}>Share</Text>
             </TouchableOpacity>
           </View>
@@ -167,12 +167,12 @@ export default function NotesViewer({
                         onSubmitEditing={handleSaveTitle}
                         returnKeyType="done"
                       />
-                      <TouchableOpacity onPress={handleSaveTitle}>
+                      <TouchableOpacity onPress={handleSaveTitle} accessibilityRole="button" accessibilityLabel="Save title" accessibilityHint="Save the edited note title">
                         <Text style={[styles.headerAction, { color: colors.primary }]}>Save</Text>
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <TouchableOpacity onPress={() => { setEditingTitle(true); setTitleDraft(selectedNote.title); }}>
+                    <TouchableOpacity onPress={() => { setEditingTitle(true); setTitleDraft(selectedNote.title); }} accessibilityRole="button" accessibilityLabel={`Edit title: ${selectedNote.title}`} accessibilityHint="Tap to edit the note title">
                       <Text style={[styles.noteDetailTitle, { color: colors.titleText }]}>{selectedNote.title}</Text>
                       <Text style={[styles.editHint, { color: colors.dimText }]}>Tap to edit title</Text>
                     </TouchableOpacity>
@@ -198,6 +198,9 @@ export default function NotesViewer({
                         key={i}
                         style={styles.fieldRow}
                         onPress={() => handleCopy(f.value, `field_${i}`)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${f.label}: ${f.value}`}
+                        accessibilityHint="Tap to copy this field value"
                       >
                         <Text style={[styles.fieldLabel, { color: colors.dimText }]}>{f.label}</Text>
                         <Text style={[styles.fieldValue, { color: colors.primaryText }]}>
@@ -212,7 +215,7 @@ export default function NotesViewer({
                 <View style={[styles.section, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
                   <View style={styles.sectionHeader}>
                     <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Translation</Text>
-                    <TouchableOpacity onPress={() => handleCopy(selectedNote.translatedText, "translated")}>
+                    <TouchableOpacity onPress={() => handleCopy(selectedNote.translatedText, "translated")} accessibilityRole="button" accessibilityLabel="Copy translation" accessibilityHint="Copy the translated text to clipboard">
                       <Text style={[styles.headerAction, { color: colors.primary }]}>
                         {copiedId === "translated" ? "Copied!" : "Copy"}
                       </Text>
@@ -227,7 +230,7 @@ export default function NotesViewer({
                 <View style={[styles.section, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
                   <View style={styles.sectionHeader}>
                     <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Original</Text>
-                    <TouchableOpacity onPress={() => handleCopy(selectedNote.originalText, "original")}>
+                    <TouchableOpacity onPress={() => handleCopy(selectedNote.originalText, "original")} accessibilityRole="button" accessibilityLabel="Copy original" accessibilityHint="Copy the original text to clipboard">
                       <Text style={[styles.headerAction, { color: colors.primary }]}>
                         {copiedId === "original" ? "Copied!" : "Copy"}
                       </Text>
@@ -242,6 +245,9 @@ export default function NotesViewer({
                 <TouchableOpacity
                   style={styles.deleteButton}
                   onPress={() => handleDelete(selectedNote.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete note"
+                  accessibilityHint="Permanently delete this note"
                 >
                   <Text style={styles.deleteButtonText}>Delete Note</Text>
                 </TouchableOpacity>
@@ -261,11 +267,11 @@ export default function NotesViewer({
         <GlassBackdrop />
         {/* Header */}
         <View style={[styles.header, { backgroundColor: colors.glassBg, borderBottomColor: colors.glassBorder }]}>
-          <TouchableOpacity onPress={onClose}>
+          <TouchableOpacity onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" accessibilityHint="Close notes viewer">
             <Text style={[styles.headerAction, { color: colors.primary }]}>Close</Text>
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.titleText }]}>Saved Notes</Text>
-          <TouchableOpacity onPress={handleClearAll}>
+          <TouchableOpacity onPress={handleClearAll} accessibilityRole="button" accessibilityLabel="Clear all notes" accessibilityHint={notes.length > 0 ? `Delete all ${notes.length} notes` : "No notes to clear"}>
             <Text style={[styles.headerAction, { color: notes.length > 0 ? "#ef4444" : colors.dimText }]}>
               Clear
             </Text>
@@ -283,7 +289,7 @@ export default function NotesViewer({
             returnKeyType="search"
           />
           {search.length > 0 && (
-            <TouchableOpacity onPress={() => setSearch("")}>
+            <TouchableOpacity onPress={() => setSearch("")} accessibilityRole="button" accessibilityLabel="Clear search" accessibilityHint="Clear the search field">
               <Text style={[styles.clearSearch, { color: colors.dimText }]}>X</Text>
             </TouchableOpacity>
           )}
