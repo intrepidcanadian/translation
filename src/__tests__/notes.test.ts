@@ -217,4 +217,88 @@ describe("notes serialization", () => {
       expect(restored!.originalText).toBe("");
     });
   });
+
+  describe("field value sanitization", () => {
+    it("collapses embedded newlines in field values to spaces", () => {
+      // OCR-extracted fields can contain line breaks from the source text.
+      // Without sanitization, a newline inside a value would break the
+      // per-line field regex in markdownToNote, silently dropping the
+      // second line of the value.
+      const original = makeNote({
+        fields: [{ label: "Address", value: "123 Main St\nSuite 400\nNew York" }],
+      });
+      const md = noteToMarkdown(original);
+      // The serialized markdown must keep the value on a single line.
+      expect(md).toContain("- **Address:** 123 Main St Suite 400 New York");
+      expect(md).not.toContain("Suite 400\n");
+
+      const restored = markdownToNote(md, `${original.id}.md`);
+      expect(restored).not.toBeNull();
+      expect(restored!.fields).toHaveLength(1);
+      expect(restored!.fields[0].value).toBe("123 Main St Suite 400 New York");
+    });
+
+    it("collapses embedded newlines in field labels to spaces", () => {
+      const original = makeNote({
+        fields: [{ label: "Recipient\nName", value: "Alice" }],
+      });
+      const md = noteToMarkdown(original);
+      expect(md).toContain("- **Recipient Name:** Alice");
+
+      const restored = markdownToNote(md, `${original.id}.md`);
+      expect(restored).not.toBeNull();
+      expect(restored!.fields[0].label).toBe("Recipient Name");
+    });
+
+    it("prevents field value containing '## ' from corrupting section parsing", () => {
+      // The critical regression case: a value like "see ## Translation"
+      // would (without sanitization) inject a markdown heading that
+      // terminates the Key Information section's regex early and
+      // corrupts the Translation section match.
+      const original = makeNote({
+        fields: [{ label: "Note", value: "Check section\n## Translation\nfor details" }],
+        translatedText: "This is the real translation",
+        originalText: "Este es el texto original",
+      });
+      const md = noteToMarkdown(original);
+
+      const restored = markdownToNote(md, `${original.id}.md`);
+      expect(restored).not.toBeNull();
+      // The Translation section must contain the real translation, not
+      // the injected heading from the field value.
+      expect(restored!.translatedText).toBe("This is the real translation");
+      expect(restored!.originalText).toBe("Este es el texto original");
+      // The field value is sanitized (newlines collapsed to spaces).
+      expect(restored!.fields[0].value).toBe("Check section ## Translation for details");
+    });
+
+    it("handles \\r\\n (Windows-style) line endings in field values", () => {
+      const original = makeNote({
+        fields: [{ label: "Info", value: "Line one\r\nLine two\r\nLine three" }],
+      });
+      const md = noteToMarkdown(original);
+      expect(md).toContain("- **Info:** Line one Line two Line three");
+    });
+
+    it("trims leading and trailing whitespace from field values", () => {
+      const original = makeNote({
+        fields: [{ label: "Total", value: "  $42.50  \n  " }],
+      });
+      const md = noteToMarkdown(original);
+      expect(md).toContain("- **Total:** $42.50");
+    });
+
+    it("preserves field values that have no newlines (no-op sanitization)", () => {
+      const original = makeNote({
+        fields: [
+          { label: "Price", value: "€42.50" },
+          { label: "Store", value: "Carrefour Paris" },
+        ],
+      });
+      const md = noteToMarkdown(original);
+      const restored = markdownToNote(md, `${original.id}.md`);
+      expect(restored).not.toBeNull();
+      expect(restored!.fields).toEqual(original.fields);
+    });
+  });
 });

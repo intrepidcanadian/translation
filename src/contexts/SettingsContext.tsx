@@ -57,7 +57,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   // fires), so this code path is a no-op on Android — which is fine since
   // there's no equivalent system setting to honor there.
   useEffect(() => {
-    AccessibilityInfo.isReduceTransparencyEnabled?.().then(setReduceTransparency).catch(() => {});
+    AccessibilityInfo.isReduceTransparencyEnabled?.()
+      .then(setReduceTransparency)
+      .catch((err) => logger.warn("Settings", "Failed to read Reduce Transparency setting", err));
     const sub = AccessibilityInfo.addEventListener?.(
       "reduceTransparencyChanged",
       setReduceTransparency,

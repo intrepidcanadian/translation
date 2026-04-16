@@ -38,9 +38,13 @@ function getNotesDir(): Directory {
 }
 
 function ensureDir(): void {
-  const dir = getNotesDir();
-  if (!dir.exists) {
-    dir.create();
+  try {
+    const dir = getNotesDir();
+    if (!dir.exists) {
+      dir.create();
+    }
+  } catch (err) {
+    logger.warn("Notes", "Failed to ensure notes directory exists", err);
   }
 }
 
@@ -53,6 +57,17 @@ function getNoteFile(id: string): File {
 }
 
 // ---- Markdown serialization ----
+
+/**
+ * Collapse embedded newlines to a single space so field labels/values stay on
+ * one line in the serialized Markdown. Without this, a value like
+ * "line1\nline2" would break the per-line `^- \*\*(.+?):\*\*\s*(.+)$` regex
+ * in `markdownToNote`, and a value containing `\n## ` would corrupt the
+ * section lookahead, truncating Key Information and mis-slicing Translation.
+ */
+function sanitizeFieldText(text: string): string {
+  return text.replace(/[\r\n]+/g, " ").trim();
+}
 
 export function noteToMarkdown(note: SavedNote): string {
   const lines: string[] = [];
@@ -74,7 +89,7 @@ export function noteToMarkdown(note: SavedNote): string {
     lines.push("## Key Information");
     lines.push("");
     for (const f of note.fields) {
-      lines.push(`- **${f.label}:** ${f.value}`);
+      lines.push(`- **${sanitizeFieldText(f.label)}:** ${sanitizeFieldText(f.value)}`);
     }
     lines.push("");
   }
@@ -208,9 +223,13 @@ async function rebuildIndex(): Promise<NoteIndex[]> {
 
 function saveIndexSync(index: NoteIndex[]): void {
   indexCache = index;
-  ensureDir();
-  const file = getIndexFile();
-  file.write(JSON.stringify(index));
+  try {
+    ensureDir();
+    const file = getIndexFile();
+    file.write(JSON.stringify(index));
+  } catch (err) {
+    logger.warn("Notes", "Failed to persist notes index", err);
+  }
 }
 
 // ---- Public API ----
@@ -269,8 +288,13 @@ export async function saveNote(note: Omit<SavedNote, "id" | "timestamp">): Promi
   };
 
   const md = noteToMarkdown(newNote);
-  const file = getNoteFile(newNote.id);
-  file.write(md);
+  try {
+    const file = getNoteFile(newNote.id);
+    file.write(md);
+  } catch (err) {
+    logger.warn("Notes", `Failed to write note file: ${newNote.id}`, err);
+    throw err; // Propagate so callers can show user-visible error
+  }
 
   const index = await loadIndex();
   const updated = [noteToIndex(newNote), ...index].slice(0, 200);
@@ -298,8 +322,13 @@ export async function updateNoteTitle(id: string, title: string): Promise<void> 
 
   const updated = { ...note, title };
   const md = noteToMarkdown(updated);
-  const file = getNoteFile(id);
-  file.write(md);
+  try {
+    const file = getNoteFile(id);
+    file.write(md);
+  } catch (err) {
+    logger.warn("Notes", `Failed to write updated note file: ${id}`, err);
+    throw err;
+  }
 
   noteCache.set(id, updated);
 
@@ -315,7 +344,9 @@ export async function clearAllNotes(): Promise<void> {
   try {
     const dir = getNotesDir();
     if (dir.exists) dir.delete();
-  } catch (err) { logger.warn("Notes", "Failed to clear notes directory", err); }
+  } catch (err) {
+    logger.warn("Notes", "Failed to clear notes directory", err);
+  }
   noteCache.clear();
   indexCache = null;
   ensureDir();
