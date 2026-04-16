@@ -285,6 +285,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const [crashCopied, setCrashCopied] = useAutoClearFlag<true>(1500);
   const [circuitSnapshots, setCircuitSnapshots] = useState<CircuitSnapshot[]>([]);
   const [cacheStats, setCacheStats] = useState<TranslationCacheStats | null>(null);
+  const [wordAltCacheStats, setWordAltCacheStats] = useState<{ size: number; max: number } | null>(null);
   const [typeAheadStats, setTypeAheadStats] = useState<TypeAheadStats | null>(null);
   const [speechStats, setSpeechStats] = useState<SpeechStats | null>(null);
   // #174: offline-queue reliability stats sourced from the telemetry module.
@@ -377,6 +378,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     const snapshots = getCircuitSnapshots();
     setCircuitSnapshots(snapshots);
     setCacheStats(getTranslationCacheStats());
+    setWordAltCacheStats(getWordAltCacheStats());
     setTypeAheadStats(computeTypeAheadStats());
     setSpeechStats(computeSpeechStats());
     setOfflineQueueStats(getOfflineQueueStats());
@@ -389,6 +391,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   const refreshDiagnostics = useCallback(() => {
     setCircuitSnapshots(getCircuitSnapshots());
     setCacheStats(getTranslationCacheStats());
+    setWordAltCacheStats(getWordAltCacheStats());
     setTypeAheadStats(computeTypeAheadStats());
     setSpeechStats(computeSpeechStats());
     setOfflineQueueStats(getOfflineQueueStats());
@@ -829,6 +832,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                 colors={colors}
                 circuitSnapshots={circuitSnapshots}
                 cacheStats={cacheStats}
+                wordAltCacheStats={wordAltCacheStats}
                 typeAheadStats={typeAheadStats}
                 speechStats={speechStats}
                 offlineQueueStats={offlineQueueStats}
@@ -930,10 +934,19 @@ function OptionPicker<T extends string | number>({
   );
 }
 
-function OfflineFeatureRow({ label, available, hint, colors }: { label: string; available: boolean; hint: string; colors: ReturnType<typeof getColors> }) {
+const OfflineFeatureRow = React.memo(function OfflineFeatureRow({ label, available, hint, colors }: { label: string; available: boolean; hint: string; colors: ReturnType<typeof getColors> }) {
   return (
-    <View style={offlineStyles.row}>
-      <Text style={[offlineStyles.indicator, { color: available ? "#4ade80" : colors.dimText }]}>
+    <View
+      style={offlineStyles.row}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={`${label}: ${available ? "available offline" : "requires internet"}. ${hint}`}
+      accessibilityState={{ checked: available }}
+    >
+      <Text
+        style={[offlineStyles.indicator, { color: available ? "#4ade80" : colors.dimText }]}
+        importantForAccessibility="no"
+      >
         {available ? "●" : "○"}
       </Text>
       <View style={offlineStyles.textCol}>
@@ -942,7 +955,7 @@ function OfflineFeatureRow({ label, available, hint, colors }: { label: string; 
       </View>
     </View>
   );
-}
+});
 
 const offlineStyles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4 },

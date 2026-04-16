@@ -183,6 +183,24 @@ describe("listingGenerator", () => {
     it("'vintage' as a generic adjective does NOT trigger the books category", () => {
       expect(detectCategory("Vintage handcrafted item")).toBe("other");
     });
+
+    // ---- Beauty category: duty-free's largest product segment ----
+    it("routes perfume/fragrance products to beauty", () => {
+      expect(detectCategory("Chanel No. 5 Eau de Parfum fragrance perfume 100ml")).toBe("beauty");
+    });
+
+    it("routes skincare products to beauty", () => {
+      expect(detectCategory("Shiseido moisturizer serum SPF 50 sunscreen skincare")).toBe("beauty");
+    });
+
+    // ---- Food category: duty-free alcohol/chocolate/specialty ----
+    it("routes whisky products to food", () => {
+      expect(detectCategory("Johnnie Walker Blue Label whisky 750ml")).toBe("food");
+    });
+
+    it("routes chocolate/confectionery to food", () => {
+      expect(detectCategory("Godiva chocolate gift box assorted candy 500g")).toBe("food");
+    });
   });
 
   describe("generateListing — brand & model extraction", () => {

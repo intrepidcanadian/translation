@@ -36,10 +36,16 @@ interface SpeechStats {
   total: number;
 }
 
+interface WordAltCacheStats {
+  size: number;
+  max: number;
+}
+
 interface Props {
   colors: ThemeColors;
   circuitSnapshots: CircuitSnapshot[];
   cacheStats: TranslationCacheStats | null;
+  wordAltCacheStats: WordAltCacheStats | null;
   typeAheadStats: TypeAheadStats | null;
   speechStats: SpeechStats | null;
   offlineQueueStats: OfflineQueueStats | null;
@@ -69,6 +75,7 @@ function DiagnosticsPanel({
   colors,
   circuitSnapshots,
   cacheStats,
+  wordAltCacheStats,
   typeAheadStats,
   speechStats,
   offlineQueueStats,
@@ -108,12 +115,27 @@ function DiagnosticsPanel({
       >
         {cacheStats && (
           <>
-            <Text style={[styles.infoText, dynamicStyles.infoText]}>
+            <Text
+              style={[
+                styles.infoText,
+                dynamicStyles.infoText,
+                cacheStats.maxBytes > 0 && cacheStats.bytes / cacheStats.maxBytes >= 0.95
+                  ? { color: colors.errorText }
+                  : cacheStats.maxBytes > 0 && cacheStats.bytes / cacheStats.maxBytes >= 0.8
+                    ? { color: colors.primary }
+                    : null,
+              ]}
+            >
               Cache: {cacheStats.size}/{cacheStats.max}{cacheStats.bytes > 0 ? ` · ${Math.round(cacheStats.bytes / 1024)}KB / ${Math.round(cacheStats.maxBytes / 1024)}KB` : ""}
             </Text>
             {(cacheStats.hits + cacheStats.misses) > 0 && (
               <Text style={[styles.infoText, dynamicStyles.infoText]}>
                 Hit rate: {Math.round((cacheStats.hits / (cacheStats.hits + cacheStats.misses)) * 100)}% ({cacheStats.hits}/{cacheStats.hits + cacheStats.misses})
+              </Text>
+            )}
+            {wordAltCacheStats && wordAltCacheStats.size > 0 && (
+              <Text style={[styles.infoText, dynamicStyles.infoText]}>
+                Word alt cache: {wordAltCacheStats.size}/{wordAltCacheStats.max}
               </Text>
             )}
             {Object.entries(cacheStats.byProvider).map(([provider, count]) => (

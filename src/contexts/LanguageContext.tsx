@@ -101,7 +101,13 @@ function LanguagePairsProvider({ children }: { children: React.ReactNode }) {
         if (results[0][1]) {
           try {
             const parsed = JSON.parse(results[0][1]);
-            if (Array.isArray(parsed)) setRecentLangCodes(parsed);
+            if (Array.isArray(parsed)) {
+              // Filter to valid string language codes only
+              const valid = parsed.filter(
+                (c: unknown): c is string => typeof c === "string" && c.length > 0
+              );
+              setRecentLangCodes(valid);
+            }
           } catch (err) {
             logger.warn("Settings", "Corrupted recent languages data, using defaults", err);
           }
@@ -109,7 +115,22 @@ function LanguagePairsProvider({ children }: { children: React.ReactNode }) {
         if (results[1][1]) {
           try {
             const parsed = JSON.parse(results[1][1]);
-            if (Array.isArray(parsed)) setSavedPairs(parsed);
+            if (Array.isArray(parsed)) {
+              // Validate each entry has required string fields
+              const valid = parsed.filter(
+                (p: unknown): p is SavedPair =>
+                  typeof p === "object" &&
+                  p !== null &&
+                  typeof (p as SavedPair).sourceCode === "string" &&
+                  typeof (p as SavedPair).targetCode === "string" &&
+                  (p as SavedPair).sourceCode.length > 0 &&
+                  (p as SavedPair).targetCode.length > 0
+              );
+              if (valid.length < parsed.length) {
+                logger.warn("Settings", `Filtered ${parsed.length - valid.length} invalid saved pair entries`);
+              }
+              setSavedPairs(valid);
+            }
           } catch (err) {
             logger.warn("Settings", "Corrupted saved pairs data, using defaults", err);
           }

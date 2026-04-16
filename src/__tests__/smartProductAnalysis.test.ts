@@ -206,17 +206,16 @@ describe("smartProductAnalysis", () => {
       expect(detectCategoryFromEntities("random miscellaneous item", ent)).toBe("other");
     });
 
-    it('maps beauty/cosmetics to "other" (no beauty category yet)', () => {
+    it('routes beauty/cosmetics to "beauty" category', () => {
       const ent = emptyEntities();
-      // Beauty keywords should score but map to "other" per the TODO comment
       const result = detectCategoryFromEntities("Shiseido moisturizer cream SPF 50 skincare serum", ent);
-      expect(result).toBe("other");
+      expect(result).toBe("beauty");
     });
 
-    it('maps food/drink to "other" (no food category yet)', () => {
+    it('routes food/drink to "food" category', () => {
       const ent = emptyEntities();
       const result = detectCategoryFromEntities("Ingredients: sugar, flour. Nutrition: 200 calories protein", ent);
-      expect(result).toBe("other");
+      expect(result).toBe("food");
     });
 
     it("uses specs in scoring alongside text", () => {

@@ -15,6 +15,8 @@ export type ListingCondition = "new" | "like_new" | "good" | "fair" | "parts";
 export type ListingCategory =
   | "electronics"
   | "clothing"
+  | "beauty"
+  | "food"
   | "furniture"
   | "books"
   | "toys"
@@ -51,6 +53,8 @@ const CONDITION_LABELS: Record<ListingCondition, string> = {
 const CATEGORY_LABELS: Record<ListingCategory, { label: string; icon: string }> = {
   electronics: { label: "Electronics", icon: "💻" },
   clothing: { label: "Clothing & Accessories", icon: "👕" },
+  beauty: { label: "Beauty & Fragrances", icon: "✨" },
+  food: { label: "Food & Beverages", icon: "🍫" },
   furniture: { label: "Furniture", icon: "🪑" },
   books: { label: "Books & Media", icon: "📚" },
   toys: { label: "Toys & Games", icon: "🧸" },
@@ -96,6 +100,10 @@ export function detectCategory(text: string): ListingCategory {
   const patterns: Array<{ category: ListingCategory; keywords: RegExp }> = [
     { category: "electronics", keywords: /\b(iphone|samsung|laptop|macbook|ipad|airpods|headphone|speaker|tv|monitor|camera|nintendo|playstation|xbox|pixel|galaxy|charger|cable|usb|bluetooth|wifi|battery|power bank|processor|gpu|ram|ssd|hard drive)\b/g },
     { category: "clothing", keywords: /\b(shirt|pants|dress|jacket|coat|shoes|boots|sneakers|jeans|hoodie|sweater|blazer|skirt|socks|hat|scarf|belt|handbag|purse|backpack|nike|adidas|zara|h&m|levi|gucci|prada)\b/g },
+    // beauty: duty-free's largest product category — perfume, skincare, cosmetics.
+    { category: "beauty", keywords: /\b(perfume|fragrance|cologne|eau de|moisturizer|serum|cream|sunscreen|spf|lipstick|mascara|foundation|concealer|eyeshadow|blush|skincare|cosmetic|shampoo|conditioner|lotion|shiseido|sk-ii|lancôme|estée|chanel|dior|clinique|mac|nars|fenty|tom ford|ysl|guerlain|la mer)\b/g },
+    // food: duty-free alcohol, chocolate, specialty food items.
+    { category: "food", keywords: /\b(chocolate|whisky|whiskey|wine|vodka|gin|rum|champagne|cognac|sake|tea|coffee|candy|snack|biscuit|cookie|ingredients|nutrition|calories|protein|sugar|allergen|organic|gluten.free|johnnie walker|hennessy|moet|veuve|godiva|lindt|toblerone|macallan)\b/g },
     { category: "furniture", keywords: /\b(chair|table|desk|sofa|couch|bed|mattress|shelf|bookcase|cabinet|drawer|lamp|mirror|rug|ikea|wayfair)\b/g },
     // books: generic nouns + ISBN + major English-language trade publishers.
     // "vintage" is deliberately omitted — Vintage Books is a real publisher

@@ -308,9 +308,5 @@ export function detectCategoryFromEntities(text: string, entities: ProductEntiti
     }
   }
 
-  // Map beauty/food to closest ListingCategory
-  if (best === "beauty") return "other"; // Could add beauty category later
-  if (best === "food") return "other";   // Could add food category later
-
   return bestScore >= 2 ? best : "other";
 }
