@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import { translateText, translateAppleBatch, type TranslateOptions, type TranslationProvider } from "./translation";
 import { logger } from "./logger";
+import { makeStableBlockId } from "../utils/rectMapping";
 
 interface OCRLine {
   text: string;
@@ -12,6 +13,34 @@ interface TranslatedBlock {
   originalText: string;
   translatedText: string;
   frame: { top: number; left: number; width: number; height: number };
+}
+
+// Cap parallel translation requests so a cluttered scene (20+ OCR lines in a
+// single frame) doesn't fire 20 simultaneous fetches and trip a cloud
+// provider's rate limiter (MyMemory especially — its free tier throttles
+// aggressively). 5 gives us a ~5× latency win over the old sequential loop
+// while staying under typical per-second caps.
+const TRANSLATION_CONCURRENCY = 5;
+
+/** Run `fn` over every item in `items` with at most `limit` concurrent
+ * in-flight calls, preserving input order in the result array. */
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workerCount = Math.min(limit, items.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const idx = next++;
+      if (idx >= items.length) return;
+      results[idx] = await fn(items[idx], idx);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 const MAX_CACHE_SIZE = 2000;
@@ -81,17 +110,25 @@ export async function translateOCRLines(
       if (provider === "apple" && Platform.OS === "ios") {
         translatedTexts = await translateAppleBatch(uncachedTexts, sourceLangCode, targetLangCode);
       } else {
+        // Parallelize non-Apple providers so a frame with N uncached lines
+        // takes ~1 round-trip instead of N. Concurrency is capped so we
+        // don't hammer rate-limited cloud providers, and per-line errors
+        // are absorbed into the original text (same fallback behaviour as
+        // the old sequential loop, just without blocking the whole batch
+        // on the slowest request). Abort-short-circuit per worker keeps
+        // the cancellation semantics identical: a superseding frame still
+        // abandons pending work. (#5)
         const translateOptions: TranslateOptions = { provider, signal };
-        for (const text of uncachedTexts) {
-          if (signal?.aborted) break;
+        translatedTexts = await mapWithConcurrency(uncachedTexts, TRANSLATION_CONCURRENCY, async (text) => {
+          if (signal?.aborted) return text;
           try {
             const res = await translateText(text, sourceLangCode, targetLangCode, translateOptions);
-            translatedTexts.push(res.translatedText);
+            return res.translatedText;
           } catch (err) {
             logger.warn("OCR", "OCR line translation failed", err);
-            translatedTexts.push(text);
+            return text;
           }
-        }
+        });
       }
 
       // Cache the results
@@ -114,7 +151,12 @@ export async function translateOCRLines(
     const translated = cached ?? (uncachedIdx < translatedTexts.length ? translatedTexts[uncachedIdx++] : line.text);
 
     blocks.push({
-      id: `${line.frame.top}-${line.frame.left}-${line.text.slice(0, 10)}`,
+      // Stable bucketed ID — see makeStableBlockId for the rationale. The
+      // previous `${top}-${left}-${text.slice(0,10)}` hashed raw pixel
+      // coords, so the 5-20 px of OCR jitter on a still line produced a
+      // fresh ID every frame — every label re-ran its 200 ms fade-in and
+      // the overlays strobed. Bucketing to 32 px absorbs that noise. (#1)
+      id: makeStableBlockId(line.frame, line.text),
       originalText: line.text,
       translatedText: translated,
       frame: line.frame,
@@ -126,6 +168,9 @@ export async function translateOCRLines(
 
 /**
  * Translates lines from a captured photo (no caching needed, one-shot).
+ * Uses the same bounded-concurrency pool as the live path (#5) so a
+ * photo with lots of text lines doesn't serialize the translation
+ * calls end-to-end.
  */
 export async function translateCapturedLines(
   texts: string[],
@@ -138,43 +183,24 @@ export async function translateCapturedLines(
       return await translateAppleBatch(texts, sourceLangCode, targetLangCode);
     }
 
-    const translations: string[] = [];
-    for (const text of texts) {
+    return await mapWithConcurrency(texts, TRANSLATION_CONCURRENCY, async (text) => {
       try {
         const res = await translateText(text, sourceLangCode, targetLangCode, { provider });
-        translations.push(res.translatedText);
+        return res.translatedText;
       } catch (err) {
         logger.warn("OCR", "Capture line translation failed", err);
-        translations.push(text);
+        return text;
       }
-    }
-    return translations;
+    });
   } catch (err) {
     logger.warn("OCR", "Batch capture translation failed, using originals", err);
     return texts;
   }
 }
 
-/**
- * Maps image-space coordinates to screen-space coordinates for overlay rendering.
- */
-export function mapToScreenCoords(
-  imageFrame: { top: number; left: number; width: number; height: number },
-  imageWidth: number,
-  imageHeight: number,
-  screenWidth: number,
-  screenHeight: number
-): { top: number; left: number; width: number; height: number } {
-  const isRotated = imageWidth > imageHeight && screenHeight > screenWidth;
-  const effectiveW = isRotated ? imageHeight : imageWidth;
-  const effectiveH = isRotated ? imageWidth : imageHeight;
-  const scaleX = screenWidth / effectiveW;
-  const scaleY = screenHeight / effectiveH;
-
-  return {
-    top: imageFrame.top * scaleY,
-    left: imageFrame.left * scaleX,
-    width: imageFrame.width * scaleX,
-    height: imageFrame.height * scaleY,
-  };
-}
+// NOTE: the naive `mapToScreenCoords` that used to live here was a simple
+// X/Y stretch that ignored the camera preview's aspect-fill layout — it
+// drifted captured-photo overlays away from their source text the same way
+// the live path used to drift before the coordinate fix. It's been removed;
+// both paths now import `mapImageRectToScreen` from `utils/rectMapping.ts`
+// so there's only one correct mapper in the codebase. (#2)

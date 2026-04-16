@@ -130,23 +130,89 @@ const NO_COMMA_WRAP_RE = new RegExp(
 );
 
 /**
+ * #203: Context-aware no-decimal wrap preprocessor.
+ *
+ * The third wrap shape the OCR corpus turns up is `$1,234\n.56` — a complete
+ * US-thousands integer on the first line, then a bare `.56` fractional tail
+ * on the next line. Without preprocessing, `detectPricesInText` pulls the
+ * first half out as `$1,234` (which `parsePrice` reads as 1234 via Rule 3
+ * thousands-strip) and leaves the orphaned `.56` fragment dangling.
+ *
+ * This shape is strictly more ambiguous than the #215 comma-wrap and #198
+ * no-comma-wrap cases: a stray `.56` on its own line is far more often an
+ * OCR smudge than an intended decimal tail. So the gate is the strongest of
+ * the three:
+ *
+ *  1. **Head must be a complete thousands-grouped integer** — `\d{1,3},\d{3}`
+ *     (optionally with additional comma groups, but at least one). A bare
+ *     `$5\n.56` or `$12\n.56` does NOT match because those heads have no
+ *     thousands comma and could just be `$5` followed by garbage.
+ *  2. **Head must be preceded by a TOTAL-style keyword** — same keyword set
+ *     as the #198 pass, same 20-char lazy-fill window. A TOTAL line carries
+ *     one value, which eliminates the "two unrelated prices on adjacent
+ *     lines" false positive.
+ *  3. **Wrapped segment must be EXACTLY `.\d{1,2}` with no leading digits** —
+ *     `$1,234\n5.67` (a legitimate 5-item count following a total) does NOT
+ *     match because the wrapped line has a leading digit before any decimal
+ *     point. Only a bare `.56` fractional tail triggers the merge.
+ *  4. **`(?!\d)` negative lookahead on the decimal tail** — blocks the merge
+ *     from eating into `.56789` garbage runs, same as the other two passes.
+ *
+ * Under these constraints the merge is safe: there is no plausible two-
+ * price reading of "TOTAL $1,234\n.56" because `.56` cannot stand alone as
+ * a price (no sigil, no integer part). The only readings are (a) OCR
+ * smudge, pass through — but we're gated on a TOTAL keyword which makes
+ * the smudge reading implausible; and (b) wrapped tail, merge.
+ *
+ * Shape:
+ *   - `keyword`     — TOTAL/SUBTOTAL/etc., case-insensitive, word-bounded
+ *   - `.{0,20}?`    — lazy fill for "TOTAL :" / "TO PAY USD" etc.
+ *   - `prefix`      — currency sigil
+ *   - `headInt`     — 1–3 digits + at least one `,\d{3}` thousands group
+ *   - `\n` + ws     — line break and any whitespace at start of next line
+ *   - `decimalTail` — `.` then 1–2 digits, NOT followed by another digit
+ *
+ * Example trace for `TOTAL $1,234\n.56`:
+ *   keyword=`TOTAL `, prefix=`$`, headInt=`1,234`, decimalTail=`56`
+ *   merged = `TOTAL $1,234.56` → parsePrice via Rule 1 → USD 1234.56
+ *
+ * Note the merged string still carries the thousands comma — we don't
+ * strip it, just attach the decimal tail. `parseLocaleAmount` Rule 1
+ * (period present → comma is thousands) handles the resulting `1,234.56`
+ * correctly, which is the whole point of doing the merge at the
+ * preprocessing layer.
+ */
+const NO_DECIMAL_WRAP_RE = new RegExp(
+  `\\b(?:${TOTAL_KEYWORDS})\\b[^\\n]{0,20}?(${PRICE_PREFIX})\\s*(\\d{1,3}(?:,\\d{3})+)[ \\t]*\\n[ \\t]*\\.(\\d{1,2})(?!\\d)`,
+  "gi"
+);
+
+/**
  * Merge price-shaped line wraps in OCR text. Pure, idempotent: passing the
  * same string through twice produces the same result on the second call.
  *
  * Returns the input unchanged if no wraps are found, so callers can chain it
  * unconditionally without a measurable cost on clean receipts.
  *
- * Two passes run back-to-back:
+ * Three passes run back-to-back:
  *  1. #215 — the unambiguous comma-wrap shape (`$1,2\n34.56` → `$1234.56`)
  *  2. #198 — the no-comma wrap shape gated by a TOTAL-style keyword
  *     (`GRAND TOTAL $1\n234.56` → `GRAND TOTAL $1234.56`)
+ *  3. #203 — the no-decimal wrap shape gated by both a TOTAL-style keyword
+ *     AND a thousands-grouped integer head (`TOTAL $1,234\n.56` →
+ *     `TOTAL $1,234.56`)
  *
- * Both passes are additive and independent: the comma-wrap pass never
- * matches the shape the no-comma pass handles (because the comma-wrap
- * requires a trailing comma before the line break), and vice versa, so
- * running them in either order produces the same result. We run #215
- * first because it's strictly cheaper on the common case (short regex,
- * no keyword lookback).
+ * The three passes are additive and independent because each one requires
+ * a shape the others do not produce:
+ *   - #215 requires a trailing comma at end of line 1
+ *   - #198 requires NO comma anywhere in the head (the whole point of the
+ *     no-comma rule) AND 1-3 digits in the head
+ *   - #203 requires a thousands-grouped integer head (at least one `,\d{3}`
+ *     group, which #198 rejects) AND a bare `.\d{1,2}` on line 2 with no
+ *     leading digits
+ * So running them in order is idempotent, and swapping order would not
+ * change the result on clean input. We run #215 first because it's the
+ * cheapest on the hot path (short regex, no keyword lookback).
  */
 export function preprocessOCRPriceWraps(text: string): string {
   if (!text || !text.includes("\n")) return text;
@@ -167,7 +233,7 @@ export function preprocessOCRPriceWraps(text: string): string {
   // pass removed all newlines (nothing left for the no-comma pass to find).
   if (!afterCommaPass.includes("\n")) return afterCommaPass;
 
-  return afterCommaPass.replace(
+  const afterNoCommaPass = afterCommaPass.replace(
     NO_COMMA_WRAP_RE,
     (match, prefix: string, headInt: string, midDigits: string, decimalTail: string) => {
       // Preserve the TOTAL-style keyword prefix (everything before the sigil)
@@ -175,6 +241,22 @@ export function preprocessOCRPriceWraps(text: string): string {
       // that was there before — we only collapse the number, not the framing.
       const keywordSpan = match.slice(0, match.indexOf(prefix));
       return `${keywordSpan}${prefix}${headInt}${midDigits}.${decimalTail}`;
+    }
+  );
+
+  // #203 — keyword-gated no-decimal wrap pass. Same short-circuit: if the
+  // previous passes removed every newline, nothing left for this pass.
+  if (!afterNoCommaPass.includes("\n")) return afterNoCommaPass;
+
+  return afterNoCommaPass.replace(
+    NO_DECIMAL_WRAP_RE,
+    (match, prefix: string, headInt: string, decimalTail: string) => {
+      // Same keyword-preservation trick as #198: carry the narrative framing
+      // across the merge. Unlike #198 we retain the thousands comma in the
+      // head — parseLocaleAmount Rule 1 handles `1,234.56` correctly (period
+      // present → comma is thousands), so no need to strip it.
+      const keywordSpan = match.slice(0, match.indexOf(prefix));
+      return `${keywordSpan}${prefix}${headInt}.${decimalTail}`;
     }
   );
 }

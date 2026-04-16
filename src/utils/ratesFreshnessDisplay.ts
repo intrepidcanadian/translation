@@ -99,3 +99,43 @@ export function gradeWarningText(grade: RatesFreshnessGrade | null): string | nu
 export function isSoftWarning(grade: RatesFreshnessGrade | null): boolean {
   return grade === "stale-ok";
 }
+
+/**
+ * #202: Single source of truth for the crash-report "Exchange rates" line.
+ *
+ * `buildCrashReport` previously composed this line inline by concatenating
+ * `"Exchange rates: "`, the consumer-owned rates-state label, and a `[tag]`
+ * suffix derived from `freshnessGradeTag(grade)`. That worked but meant the
+ * composition logic lived in SettingsModal with no test coverage and no easy
+ * way for a future consumer (e.g. a dedicated bug-report screen, a support
+ * copy-to-clipboard action on the error banner) to produce the same string.
+ *
+ * This helper takes a pre-rendered `stateLabel` (the consumer still owns the
+ * rates-state-to-label formatting because it depends on a relative-time
+ * formatter that's SettingsModal-local today) and the grade, and returns the
+ * composed line with the grade tag appended in square brackets when present.
+ * `fresh` grades render the plain `Exchange rates: Fresh · 2m ago` form with
+ * no suffix — the dashboard and crash report both agree that a fresh cache
+ * doesn't need a tag.
+ *
+ * Leading indentation is NOT included so callers that render nested
+ * diagnostics blocks (SettingsModal's `  Exchange rates: …` with two leading
+ * spaces) can prepend their own indent without clashing with callers that
+ * want a flat line.
+ *
+ * Examples:
+ *   ratesLineForCrashReport("Fresh · 2m ago", "fresh")
+ *     → "Exchange rates: Fresh · 2m ago"
+ *   ratesLineForCrashReport("Stale · 14h ago · will refetch", "stale-warn")
+ *     → "Exchange rates: Stale · 14h ago · will refetch [stale · consider refresh]"
+ *   ratesLineForCrashReport("No cache yet", "none")
+ *     → "Exchange rates: No cache yet [no cache · using built-in]"
+ */
+export function ratesLineForCrashReport(
+  stateLabel: string,
+  grade: RatesFreshnessGrade
+): string {
+  const tag = freshnessGradeTag(grade);
+  const suffix = tag ? ` [${tag}]` : "";
+  return `Exchange rates: ${stateLabel}${suffix}`;
+}

@@ -3,6 +3,13 @@ import { Animated } from "react-native";
 import { logger } from "../services/logger";
 import type { TranslationProvider } from "../services/translation";
 import { translateOCRLines } from "../services/ocrTranslation";
+import { mapImageRectToScreen } from "../utils/rectMapping";
+
+// Re-export so existing imports (and the parseOCRFrameData tests) keep working
+// after the function moved to `src/utils/rectMapping.ts`. The tests and this
+// hook import `mapImageRectToScreen` from `../hooks/useLiveOCR` — keeping the
+// re-export means no churn in the test file and no duplicate implementations.
+export { mapImageRectToScreen };
 
 interface DetectedBlock {
   id: string;
@@ -97,38 +104,6 @@ export function parseOCRFrameData(data: unknown): ParsedOCRLine[] {
     }
   }
   return lines;
-}
-
-/**
- * Map an image-space rectangle to screen-space using aspect-fill ("cover")
- * math — matching how VisionCamera / `Image resizeMode="cover"` lay out the
- * preview over the phone screen.
- *
- * The image is scaled so that its SHORTER axis fills the screen's
- * corresponding axis, then centered; the longer axis overflows symmetrically
- * and is cropped. A point at `(imgX, imgY)` in the source image lands at
- * `(imgX * scale + offsetX, imgY * scale + offsetY)` on the screen, where
- * `scale = max(sw/iw, sh/ih)`.
- */
-export function mapImageRectToScreen(
-  rect: { top: number; left: number; width: number; height: number },
-  imageW: number,
-  imageH: number,
-  screenW: number,
-  screenH: number
-): { top: number; left: number; width: number; height: number } {
-  if (imageW <= 0 || imageH <= 0) return { top: 0, left: 0, width: 0, height: 0 };
-  const scale = Math.max(screenW / imageW, screenH / imageH);
-  const displayW = imageW * scale;
-  const displayH = imageH * scale;
-  const offsetX = (screenW - displayW) / 2;
-  const offsetY = (screenH - displayH) / 2;
-  return {
-    left: rect.left * scale + offsetX,
-    top: rect.top * scale + offsetY,
-    width: rect.width * scale,
-    height: rect.height * scale,
-  };
 }
 
 interface UseLiveOCRParams {

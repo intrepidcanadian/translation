@@ -267,4 +267,121 @@ describe("preprocessOCRPriceWraps (#215)", () => {
       });
     });
   });
+
+  // #203: the third wrap shape — a complete thousands-grouped integer head
+  // on line 1 and a bare `.\d{1,2}` fractional tail on line 2. The trigger is
+  // stricter than the previous two because the fractional tail alone is more
+  // likely to be OCR garbage than an intended decimal — gated on BOTH a
+  // TOTAL-style keyword AND a thousands-grouped head to keep false-positives
+  // near zero.
+  describe("keyword-gated no-decimal wrap (#203)", () => {
+    describe("positive — merges when gated by a total-style keyword + thousands head", () => {
+      it("merges TOTAL $1,234\\n.56 into TOTAL $1,234.56", () => {
+        // Canonical fixture. Head has one thousands group (`1,234`), tail is
+        // a bare `.56`. parseLocaleAmount Rule 1 handles the `1,234.56`
+        // form (period present → comma is thousands) → USD 1234.56.
+        expect(preprocessOCRPriceWraps("TOTAL $1,234\n.56")).toBe("TOTAL $1,234.56");
+      });
+
+      it("merges GRAND TOTAL €12,345\\n.67 into GRAND TOTAL €12,345.67", () => {
+        // 2-digit head before the comma — the `\\d{1,3}` bound still accepts.
+        expect(preprocessOCRPriceWraps("GRAND TOTAL €12,345\n.67")).toBe(
+          "GRAND TOTAL €12,345.67"
+        );
+      });
+
+      it("merges AMOUNT DUE £123,456\\n.78 (3-digit head → 6-digit integer)", () => {
+        expect(preprocessOCRPriceWraps("AMOUNT DUE £123,456\n.78")).toBe(
+          "AMOUNT DUE £123,456.78"
+        );
+      });
+
+      it("merges multiple thousands groups (BALANCE $1,234,567\\n.89)", () => {
+        // The `(?:,\\d{3})+` quantifier accepts any number of thousands
+        // groups, not just one — million-dollar totals wrap the same way.
+        expect(preprocessOCRPriceWraps("BALANCE $1,234,567\n.89")).toBe(
+          "BALANCE $1,234,567.89"
+        );
+      });
+
+      it("tolerates whitespace and tabs around the line break", () => {
+        expect(preprocessOCRPriceWraps("TOTAL $1,234  \n  .56")).toBe("TOTAL $1,234.56");
+        expect(preprocessOCRPriceWraps("TOTAL $1,234\t\n\t.56")).toBe("TOTAL $1,234.56");
+      });
+
+      it("keyword match is case-insensitive", () => {
+        expect(preprocessOCRPriceWraps("total $1,234\n.56")).toBe("total $1,234.56");
+        expect(preprocessOCRPriceWraps("Grand Total $1,234\n.56")).toBe(
+          "Grand Total $1,234.56"
+        );
+      });
+    });
+
+    describe("negative — false-positive guards for no-decimal pass", () => {
+      it("does NOT merge when there is no total-style keyword", () => {
+        // Without the keyword, `$1,234\n.56` is still ambiguous (the
+        // fractional tail could be OCR garbage), so pass through untouched.
+        expect(preprocessOCRPriceWraps("Item $1,234\n.56")).toBe("Item $1,234\n.56");
+      });
+
+      it("does NOT merge when the head has no thousands comma (guards against $5\\n.56)", () => {
+        // A bare `$5` head could legitimately be "$5" followed by OCR
+        // garbage `.56`. The thousands-grouping requirement rejects it.
+        expect(preprocessOCRPriceWraps("TOTAL $5\n.56")).toBe("TOTAL $5\n.56");
+        // Two-digit head, still no comma — same rejection.
+        expect(preprocessOCRPriceWraps("TOTAL $42\n.56")).toBe("TOTAL $42\n.56");
+      });
+
+      it("does NOT merge when the wrapped line has leading digits before the decimal", () => {
+        // `$1,234\n5.67` looks superficially like a wrap but `5.67` on its
+        // own is a valid standalone price — could be a line count, not a
+        // decimal tail. The regex requires `\\.\\d{1,2}` with no leading
+        // integer on the wrapped line.
+        expect(preprocessOCRPriceWraps("TOTAL $1,234\n5.67")).toBe("TOTAL $1,234\n5.67");
+      });
+
+      it("does NOT merge when the decimal tail is followed by another digit", () => {
+        // `(?!\\d)` lookahead — protects against garbage digit runs.
+        expect(preprocessOCRPriceWraps("TOTAL $1,234\n.56789")).toBe("TOTAL $1,234\n.56789");
+      });
+
+      it("does NOT merge when the keyword is on a distant line", () => {
+        // 20-char lazy-fill window — a keyword three lines above can't anchor.
+        const distant = "TOTAL COUNT\n\n\nItem $1,234\n.56";
+        expect(preprocessOCRPriceWraps(distant)).toBe(distant);
+      });
+
+      it("does NOT merge when the keyword is far from the sigil within the same line", () => {
+        // Same 20-char window applies to in-line distance. Keyword + 25 chars
+        // of filler + sigil exceeds the cap → no merge.
+        const longFiller = "TOTAL purchases made during the trip $1,234\n.56";
+        expect(preprocessOCRPriceWraps(longFiller)).toBe(longFiller);
+      });
+
+      it("idempotence: merged output does not re-merge on a second pass", () => {
+        const merged = preprocessOCRPriceWraps("TOTAL $1,234\n.56");
+        expect(merged).toBe("TOTAL $1,234.56");
+        // Second pass: no newline between head and tail anymore → nothing
+        // to match.
+        expect(preprocessOCRPriceWraps(merged)).toBe(merged);
+      });
+    });
+
+    describe("pipeline integration with detectPricesInText", () => {
+      it("extracts a keyword-gated no-decimal merge as a single USD price", () => {
+        const found = detectPricesInText("TOTAL $1,234\n.56");
+        expect(found).toContainEqual(
+          expect.objectContaining({ currency: "USD", amount: 1234.56 })
+        );
+        expect(found.length).toBe(1);
+      });
+
+      it("leaves ungated no-decimal shapes alone", () => {
+        // No TOTAL keyword — distinct prices. Ideally `$1,234` still parses
+        // as USD 1234 while the `.56` is dropped as an unparseable fragment.
+        const found = detectPricesInText("Cost $1,234\nMisc .56");
+        expect(found.map((p) => p.amount)).toContain(1234);
+      });
+    });
+  });
 });

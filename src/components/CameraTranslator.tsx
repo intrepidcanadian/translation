@@ -1,9 +1,10 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useMemo, useCallback } from "react";
 import {
   View,
   Text,
   Image,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   Dimensions,
   Platform,
@@ -20,6 +21,7 @@ import type { TranslationProvider } from "../services/translation";
 import { clearOCRCache } from "../services/ocrTranslation";
 import { useLiveOCR } from "../hooks/useLiveOCR";
 import { usePhotoCapture } from "../hooks/usePhotoCapture";
+import { showBlockActionSheet } from "../utils/liveBlockActions";
 import { primaryAlpha, textOnGlass, type ThemeColors } from "../theme";
 
 interface DetectedBlock {
@@ -104,18 +106,29 @@ const LABEL_SIDE_MAX_WIDTH = 240; // cap so a long line doesn't cross the whole 
 const LABEL_SIDE_PADDING = 12;  // screen margin — stay this far from the edges
 const LABEL_MIN_HEIGHT = 22;    // px — small OCR boxes still get a tappable label
 
+// Tap hit-slop for live overlay labels. The label itself is as small as
+// ~22 px tall on tight OCR boxes, which is below the 44 pt iOS accessibility
+// minimum — hitSlop pads the tappable area outward so the label is still
+// comfortable to hit even when it sits on a small sign or a single
+// word. (#10)
+const LABEL_HIT_SLOP = { top: 10, bottom: 10, left: 6, right: 6 };
+
 const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
   block,
   overlayMode,
   animatedOpacity,
   screenWidth,
   screenHeight,
+  onPress,
 }: {
   block: DetectedBlock;
   overlayMode: "bubble" | "label";
   animatedOpacity: Animated.Value;
   screenWidth: number;
   screenHeight: number;
+  /** Invoked when the label is tapped — opens the copy/speak action sheet.
+   *  Optional so bubble mode (which is display-only) can skip wiring it. */
+  onPress?: (block: DetectedBlock) => void;
 }) {
   if (overlayMode === "label") {
     // Decide side: try right, then left, then below. Only the chosen branch
@@ -152,19 +165,50 @@ const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
       };
     }
 
+    // Label body is identical for side + fallback branches — extracted so
+    // the only difference between them is positioning. Wrapping the Text in
+    // a Pressable (instead of the old pointerEvents="none" Animated.View)
+    // makes the label tappable; hitSlop widens the tap target beyond the
+    // visual rect so small labels (~22 px tall) still meet the iOS 44 pt
+    // accessibility minimum. (#10)
+    const labelBody = (
+      <Pressable
+        onPress={onPress ? () => onPress(block) : undefined}
+        disabled={!onPress}
+        hitSlop={LABEL_HIT_SLOP}
+        accessibilityRole={onPress ? "button" : undefined}
+        accessibilityLabel={
+          onPress
+            ? `${block.translatedText}. Tap for copy or speak options.`
+            : block.translatedText
+        }
+        style={{
+          flex: 1,
+          paddingHorizontal: 10,
+          paddingVertical: 3,
+          justifyContent: "center",
+        }}
+      >
+        <Text
+          style={[{ color: "#fff", fontSize, fontWeight: "700", lineHeight: fontSize * 1.2 }, textOnGlass]}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.6}
+        >
+          {block.translatedText}
+        </Text>
+      </Pressable>
+    );
+
     if (sideStyle) {
       return (
         <Animated.View
-          pointerEvents="none"
           style={{
             position: "absolute",
             top: sideStyle.top,
             left: sideStyle.left,
             maxWidth: sideStyle.maxWidth,
             minHeight: labelHeight,
-            justifyContent: "center",
-            paddingHorizontal: 10,
-            paddingVertical: 3,
             backgroundColor: "rgba(26, 26, 46, 0.92)",
             borderRadius: 8,
             borderWidth: StyleSheet.hairlineWidth,
@@ -177,14 +221,7 @@ const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
             borderLeftColor: "#a8a4ff",
           }}
         >
-          <Text
-            style={[{ color: "#fff", fontSize, fontWeight: "700", lineHeight: fontSize * 1.2 }, textOnGlass]}
-            numberOfLines={2}
-            adjustsFontSizeToFit
-            minimumFontScale={0.6}
-          >
-            {block.translatedText}
-          </Text>
+          {labelBody}
         </Animated.View>
       );
     }
@@ -196,16 +233,12 @@ const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
     const fallbackLeft = Math.max(LABEL_SIDE_PADDING, Math.min(textLeft, screenWidth - LABEL_SIDE_MAX_WIDTH - LABEL_SIDE_PADDING));
     return (
       <Animated.View
-        pointerEvents="none"
         style={{
           position: "absolute",
           top: fallbackTop,
           left: fallbackLeft,
           maxWidth: LABEL_SIDE_MAX_WIDTH,
           minHeight: labelHeight,
-          justifyContent: "center",
-          paddingHorizontal: 10,
-          paddingVertical: 3,
           backgroundColor: "rgba(26, 26, 46, 0.92)",
           borderRadius: 8,
           borderWidth: StyleSheet.hairlineWidth,
@@ -215,14 +248,7 @@ const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
           opacity: animatedOpacity,
         }}
       >
-        <Text
-          style={[{ color: "#fff", fontSize, fontWeight: "700", lineHeight: fontSize * 1.2 }, textOnGlass]}
-          numberOfLines={2}
-          adjustsFontSizeToFit
-          minimumFontScale={0.6}
-        >
-          {block.translatedText}
-        </Text>
+        {labelBody}
       </Animated.View>
     );
   }
@@ -247,6 +273,36 @@ function getOCRLanguage(langCode: string): "latin" | "chinese" | "japanese" | "k
     default: return "latin";
   }
 }
+
+// Frame-processor options for the live OCR plugin. Three tunables beyond
+// `language` give us meaningful battery + latency wins without hurting
+// detection quality on the signs / menus / documents this scanner targets:
+//
+//  * frameSkipThreshold=15 — the plugin defaults to 10; we nudge it higher
+//    so ~33% more frames are skipped on the native side before they ever
+//    reach JS. Text in a real scene doesn't change at 30 fps, so this is
+//    pure battery savings.
+//
+//  * scanRegion={ 5% / 15% / 90% / 70% } — restrict recognition to a
+//    center-weighted viewfinder that excludes the top/bottom edges where
+//    our own UI chrome (top bar, bottom status) sits and where spurious
+//    reflections / status bar text would otherwise be OCR'd. Users
+//    naturally aim the camera at the center anyway, so clipping here cuts
+//    work without changing the useful detection area.
+//
+//  * useLightweightMode=true — Android-only; iOS ignores this. Skips
+//    corner-point / element / language metadata we don't currently
+//    consume, ~20% CPU win on mid-range Android.
+//
+// The object is memoized on sourceLangCode so the VisionCamera frame
+// processor (which memoizes on options identity) doesn't rebuild every
+// render — without the useMemo, every state change in CameraTranslator
+// tore down and rebuilt the frame processor pipeline. (#4)
+const OCR_OPTIONS_BASE = {
+  frameSkipThreshold: 15,
+  scanRegion: { left: "5%", top: "15%", width: "90%", height: "70%" } as const,
+  useLightweightMode: true,
+};
 
 export default function CameraTranslator({
   visible,
@@ -296,6 +352,27 @@ export default function CameraTranslator({
     screenDims,
   });
 
+  // Memoized OCR plugin options. See OCR_OPTIONS_BASE for why the tunables
+  // are what they are; the only per-render-variable field is `language`,
+  // which follows sourceLangCode. Without the memo the options object
+  // identity changed every render and the VisionCamera frame processor
+  // rebuilt on every parent state change. (#4)
+  const ocrOptions = useMemo(
+    () => ({ ...OCR_OPTIONS_BASE, language: getOCRLanguage(sourceLangCode) }),
+    [sourceLangCode]
+  );
+
+  // Tap handler for live label overlays — opens a copy/speak action sheet
+  // for the tapped block. Previously live labels were
+  // `pointerEvents="none"` and learners couldn't hear a sign pronounced or
+  // copy a menu item without first freezing the frame. (#10)
+  const handleLiveBlockTap = useCallback(
+    (block: DetectedBlock) => {
+      showBlockActionSheet(block.originalText, block.translatedText, targetLangCode);
+    },
+    [targetLangCode]
+  );
+
   // Track screen dimensions for overlay mapping
   useEffect(() => {
     const sub = Dimensions.addEventListener("change", ({ window }) => {
@@ -327,6 +404,18 @@ export default function CameraTranslator({
     blockOpacities.clear();
     lastOCRTextRef.current = "";
   }, [sourceLangCode, targetLangCode, setDetectedBlocks]);
+
+  // Clear OCR cache and overlay state when the component becomes hidden (mode
+  // switch between Live / Document / Dual-Stream / Product). Without this,
+  // stale translations from one scanner mode could leak into the next via the
+  // module-level ocrTranslationCache, and Animated.Value entries accumulate
+  // across mode switches in a long session. (#219)
+  useEffect(() => {
+    if (!visible) {
+      clearOCRCache();
+      blockOpacities.clear();
+    }
+  }, [visible, blockOpacities]);
 
   if (!visible) return null;
 
@@ -386,7 +475,7 @@ export default function CameraTranslator({
           isActive={visible && !isCaptured}
           mode="recognize"
           photo={true}
-          options={{ language: getOCRLanguage(sourceLangCode) }}
+          options={ocrOptions}
           callback={isPaused ? () => {} : handleOCRResult}
         />
       )}
@@ -403,10 +492,26 @@ export default function CameraTranslator({
       {/* Live OCR overlays */}
       {!isCaptured && detectedBlocks.map((block) => {
         if (!blockOpacities.has(block.id)) {
-          // Cap map size to prevent unbounded memory growth during long sessions
-          if (blockOpacities.size > 100) {
-            const firstKey = blockOpacities.keys().next().value;
-            if (firstKey !== undefined) blockOpacities.delete(firstKey);
+          // Prune stale entries before inserting. 50 is a generous cap — most
+          // scenes produce 10-20 lines, so 50 covers a cluttered receipt with
+          // headroom. Before blindly deleting the oldest key, sweep entries
+          // not in the active set — those are already invisible and won't be
+          // missed. Only fall back to oldest-first eviction if every entry is
+          // still live. (#219)
+          if (blockOpacities.size >= 50) {
+            const activeIds = new Set(detectedBlocks.map((b) => b.id));
+            let pruned = false;
+            for (const key of blockOpacities.keys()) {
+              if (!activeIds.has(key)) {
+                blockOpacities.delete(key);
+                pruned = true;
+                if (blockOpacities.size < 50) break;
+              }
+            }
+            if (!pruned || blockOpacities.size >= 50) {
+              const firstKey = blockOpacities.keys().next().value;
+              if (firstKey !== undefined) blockOpacities.delete(firstKey);
+            }
           }
           const val = new Animated.Value(0);
           blockOpacities.set(block.id, val);
@@ -420,6 +525,7 @@ export default function CameraTranslator({
             animatedOpacity={blockOpacities.get(block.id)!}
             screenWidth={screenDims.width}
             screenHeight={screenDims.height}
+            onPress={handleLiveBlockTap}
           />
         );
       })}

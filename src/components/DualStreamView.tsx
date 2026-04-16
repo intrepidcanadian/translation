@@ -1,8 +1,9 @@
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
+  Pressable,
   StyleSheet,
   Dimensions,
   Platform,
@@ -26,6 +27,7 @@ import type { TranslationProvider } from "../services/translation";
 import { translateText } from "../services/translation";
 import { clearOCRCache } from "../services/ocrTranslation";
 import { useLiveOCR } from "../hooks/useLiveOCR";
+import { showBlockActionSheet } from "../utils/liveBlockActions";
 import { impactLight, impactMedium } from "../services/haptics";
 import { logger } from "../services/logger";
 import * as telemetry from "../services/telemetry";
@@ -63,17 +65,24 @@ const LABEL_MIN_SIDE = 80;
 const LABEL_SIDE_MAX_WIDTH = 240;
 const LABEL_SIDE_PADDING = 12;
 const LABEL_MIN_HEIGHT = 22;
+// Pad the tap target beyond the visible label so thin OCR boxes (~22 px)
+// still meet the iOS 44 pt accessibility minimum for touch targets. (#10)
+const LABEL_HIT_SLOP = { top: 10, bottom: 10, left: 6, right: 6 };
 
 const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
   block,
   animatedOpacity,
   screenWidth,
   screenHeight,
+  onPress,
 }: {
   block: DetectedBlock;
   animatedOpacity: Animated.Value;
   screenWidth: number;
   screenHeight: number;
+  /** Invoked when the label is tapped — opens the copy/speak action sheet.
+   *  Optional so callers can render read-only labels if they prefer. */
+  onPress?: (block: DetectedBlock) => void;
 }) {
   const textTop = block.frame.top;
   const textLeft = block.frame.left;
@@ -102,16 +111,12 @@ const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
 
   return (
     <Animated.View
-      pointerEvents="none"
       style={{
         position: "absolute",
         top: pos.top,
         left: pos.left,
         maxWidth: pos.maxWidth,
         minHeight: labelHeight,
-        justifyContent: "center",
-        paddingHorizontal: 10,
-        paddingVertical: 3,
         backgroundColor: "rgba(26, 26, 46, 0.92)",
         borderRadius: 8,
         borderWidth: StyleSheet.hairlineWidth,
@@ -121,14 +126,32 @@ const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
         opacity: animatedOpacity,
       }}
     >
-      <Text
-        style={[{ color: "#fff", fontSize, fontWeight: "700", lineHeight: fontSize * 1.2 }, textOnGlass]}
-        numberOfLines={2}
-        adjustsFontSizeToFit
-        minimumFontScale={0.6}
+      <Pressable
+        onPress={onPress ? () => onPress(block) : undefined}
+        disabled={!onPress}
+        hitSlop={LABEL_HIT_SLOP}
+        accessibilityRole={onPress ? "button" : undefined}
+        accessibilityLabel={
+          onPress
+            ? `${block.translatedText}. Tap for copy or speak options.`
+            : block.translatedText
+        }
+        style={{
+          flex: 1,
+          paddingHorizontal: 10,
+          paddingVertical: 3,
+          justifyContent: "center",
+        }}
       >
-        {block.translatedText}
-      </Text>
+        <Text
+          style={[{ color: "#fff", fontSize, fontWeight: "700", lineHeight: fontSize * 1.2 }, textOnGlass]}
+          numberOfLines={2}
+          adjustsFontSizeToFit
+          minimumFontScale={0.6}
+        >
+          {block.translatedText}
+        </Text>
+      </Pressable>
     </Animated.View>
   );
 });
@@ -150,6 +173,15 @@ function getOCRLanguage(
       return "latin";
   }
 }
+
+// Frame-processor tunables — see the matching block in CameraTranslator for
+// the full rationale. Kept in sync so Live and Dual modes give the user
+// identical scan behavior and battery characteristics. (#4)
+const OCR_OPTIONS_BASE = {
+  frameSkipThreshold: 15,
+  scanRegion: { left: "5%", top: "15%", width: "90%", height: "70%" } as const,
+  useLightweightMode: true,
+};
 
 export default function DualStreamView({
   visible,
@@ -185,12 +217,18 @@ export default function DualStreamView({
   const [speechOriginal, setSpeechOriginal] = useState("");
   const [speechTranslated, setSpeechTranslated] = useState("");
   const [isSpeechTranslating, setIsSpeechTranslating] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
   const speechFinalRef = useRef("");
   const lastSpeechTranslatedRef = useRef("");
   const speechTranslationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechAbortRef = useRef<AbortController | null>(null);
   const isStartingRef = useRef(false);
   const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Tracks the auto-restart timers fired from the "end" and "error" speech
+  // events so we can cancel them on unmount. Without this, a 300ms/1000ms
+  // pending restart could fire `startSpeechRecognition()` after the component
+  // has torn down, causing a state-update-after-unmount warning. (#219)
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Subtitle history — keep last 3 lines for context
   const [subtitleHistory, setSubtitleHistory] = useState<
@@ -225,6 +263,25 @@ export default function DualStreamView({
     screenDims,
   });
 
+  // Memoized so the frame processor doesn't rebuild on every DualStream
+  // state change (isMicActive, speechOriginal, etc.). Without the memo the
+  // options identity changed every render and every unrelated piece of
+  // speech state tore down the OCR pipeline. (#4)
+  const ocrOptions = useMemo(
+    () => ({ ...OCR_OPTIONS_BASE, language: getOCRLanguage(sourceLangCode) }),
+    [sourceLangCode]
+  );
+
+  // Tap handler for live OCR labels — opens the shared copy/speak action
+  // sheet, same behavior as CameraTranslator so users don't have to
+  // relearn the interaction between modes. (#10)
+  const handleLiveBlockTap = useCallback(
+    (block: DetectedBlock) => {
+      showBlockActionSheet(block.originalText, block.translatedText, targetLangCode);
+    },
+    [targetLangCode]
+  );
+
   // --- Lifecycle ---
   useEffect(() => {
     isMountedRef.current = true;
@@ -234,6 +291,7 @@ export default function DualStreamView({
       speechAbortRef.current?.abort();
       if (speechTranslationTimer.current) clearTimeout(speechTranslationTimer.current);
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       // Stop speech if running. A throw here usually means the module was
       // already stopped or the native bridge is gone mid-unmount — worth
       // logging but not fatal.
@@ -259,6 +317,16 @@ export default function DualStreamView({
     blockOpacities.clear();
     lastOCRTextRef.current = "";
   }, [sourceLangCode, targetLangCode, setDetectedBlocks, blockOpacities]);
+
+  // Clear OCR cache and overlay state when the component becomes hidden (mode
+  // switch). Prevents stale translations from leaking between scanner modes
+  // and stops Animated.Value entries from accumulating across switches. (#219)
+  useEffect(() => {
+    if (!visible) {
+      clearOCRCache();
+      blockOpacities.clear();
+    }
+  }, [visible, blockOpacities]);
 
   // Mic pulse animation
   useEffect(() => {
@@ -329,6 +397,7 @@ export default function DualStreamView({
         speechAbortRef.current = controller;
 
         setIsSpeechTranslating(true);
+        setSpeechError(null);
         try {
           const result = await translateText(
             text.trim(),
@@ -340,19 +409,22 @@ export default function DualStreamView({
             setSpeechTranslated(result.translatedText);
             lastSpeechTranslatedRef.current = text.trim();
             telemetry.increment("speech.translateSuccess");
+            setSpeechError(null);
           }
         } catch (err) {
           if (controller.signal.aborted) return;
-          // Speech translation is secondary to OCR, so we don't surface an
-          // error banner — but still log + increment a counter so a
-          // systematically-failing mic path is visible in diagnostics even
-          // in release builds where debug ring buffers are empty.
           telemetry.increment("speech.translateFail");
           // Tag as "Speech" (not "Translation") so the errors-by-tag crash
           // report line and Settings diagnostics rolling fail count lump all
           // speech-translate failures together regardless of which pipeline
           // (primary vs. DualStream secondary) produced them. (#141)
           logger.warn("Speech", "DualStream speech translate failed", err);
+          // Surface a brief error hint in the subtitle bar so the user knows
+          // their speech wasn't translated — previously this failed silently
+          // and the user saw nothing after speaking. (#219)
+          if (isMountedRef.current) {
+            setSpeechError("Speech translation failed");
+          }
         } finally {
           if (!controller.signal.aborted && isMountedRef.current) {
             setIsSpeechTranslating(false);
@@ -397,12 +469,14 @@ export default function DualStreamView({
     // Reset for next utterance
     setSpeechOriginal("");
     setSpeechTranslated("");
+    setSpeechError(null);
     speechFinalRef.current = "";
     lastSpeechTranslatedRef.current = "";
 
     // If mic is still "active" (user toggled it on), auto-restart
     if (isMicActive && isMountedRef.current) {
-      setTimeout(() => {
+      restartTimerRef.current = setTimeout(() => {
+        restartTimerRef.current = null;
         if (isMicActive && isMountedRef.current) {
           startSpeechRecognition();
         }
@@ -441,7 +515,8 @@ export default function DualStreamView({
     setIsListening(false);
     // Auto-restart on transient errors if mic is active
     if (isMicActive && isMountedRef.current) {
-      setTimeout(() => {
+      restartTimerRef.current = setTimeout(() => {
+        restartTimerRef.current = null;
         if (isMicActive && isMountedRef.current) {
           startSpeechRecognition();
         }
@@ -564,16 +639,30 @@ export default function DualStreamView({
         device={device}
         isActive={visible}
         mode="recognize"
-        options={{ language: getOCRLanguage(sourceLangCode) }}
+        options={ocrOptions}
         callback={isPaused ? () => {} : handleOCRResult}
       />
 
       {/* OCR text overlays */}
       {detectedBlocks.map((block) => {
         if (!blockOpacities.has(block.id)) {
-          if (blockOpacities.size > 100) {
-            const firstKey = blockOpacities.keys().next().value;
-            if (firstKey !== undefined) blockOpacities.delete(firstKey);
+          // Same pruning strategy as CameraTranslator (#219): cap at 50,
+          // prefer evicting entries not in the active set to avoid GC churn
+          // from Animated.Values on long scanning sessions.
+          if (blockOpacities.size >= 50) {
+            const activeIds = new Set(detectedBlocks.map((b) => b.id));
+            let pruned = false;
+            for (const key of blockOpacities.keys()) {
+              if (!activeIds.has(key)) {
+                blockOpacities.delete(key);
+                pruned = true;
+                if (blockOpacities.size < 50) break;
+              }
+            }
+            if (!pruned || blockOpacities.size >= 50) {
+              const firstKey = blockOpacities.keys().next().value;
+              if (firstKey !== undefined) blockOpacities.delete(firstKey);
+            }
           }
           const val = new Animated.Value(0);
           blockOpacities.set(block.id, val);
@@ -590,6 +679,7 @@ export default function DualStreamView({
             animatedOpacity={blockOpacities.get(block.id)!}
             screenWidth={screenDims.width}
             screenHeight={screenDims.height}
+            onPress={handleLiveBlockTap}
           />
         );
       })}
@@ -729,6 +819,15 @@ export default function DualStreamView({
           {ocrError && (
             <Text style={styles.ocrErrorText} numberOfLines={1}>
               OCR: {ocrError}
+            </Text>
+          )}
+          {speechError && (
+            <Text
+              style={styles.speechErrorText}
+              numberOfLines={1}
+              accessibilityLiveRegion="polite"
+            >
+              🎙️ {speechError}
             </Text>
           )}
         </View>
@@ -979,5 +1078,10 @@ const styles = StyleSheet.create({
     color: "#ff6b6b",
     fontSize: 11,
     maxWidth: 120,
+  },
+  speechErrorText: {
+    color: "#ffa07a",
+    fontSize: 11,
+    maxWidth: 140,
   },
 });

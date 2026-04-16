@@ -18,8 +18,10 @@ import {
   isAppleTranslationAvailable,
   getCircuitSnapshots,
   getTranslationCacheStats,
+  getWordAltCacheStats,
   resetCircuits,
   clearTranslationCache,
+  clearWordAltCache,
   type CircuitSnapshot,
   type TranslationCacheStats,
   type TranslationProvider,
@@ -1071,7 +1073,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                   {cacheStats && (
                     <>
                       <Text style={[styles.infoText, dynamicStyles.infoText]}>
-                        Cache: {cacheStats.size}/{cacheStats.max}
+                        Cache: {cacheStats.size}/{cacheStats.max}{cacheStats.bytes > 0 ? ` · ${Math.round(cacheStats.bytes / 1024)}KB / ${Math.round(cacheStats.maxBytes / 1024)}KB` : ""}
                       </Text>
                       {(cacheStats.hits + cacheStats.misses) > 0 && (
                         <Text style={[styles.infoText, dynamicStyles.infoText]}>

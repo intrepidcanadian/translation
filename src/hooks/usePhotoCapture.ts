@@ -1,12 +1,11 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Platform, Share, Alert } from "react-native";
+import { Platform, Share } from "react-native";
 import { Animated } from "react-native";
 import type { Camera, PhotoFile } from "react-native-vision-camera";
 import TextRecognition, { TextRecognitionScript } from "@react-native-ml-kit/text-recognition";
-import { copyWithAutoClear } from "../services/clipboard";
-import * as Speech from "expo-speech";
 import * as FileSystem from "expo-file-system";
 import { logger } from "../services/logger";
+import { showBlockActionSheet } from "../utils/liveBlockActions";
 
 // Best-effort delete of a captured photo temp file. Silent on failure — the OS
 // will reap the temp dir eventually, and we don't want cleanup errors to
@@ -20,7 +19,14 @@ async function deleteCapturedUri(uri: string | null): Promise<void> {
   }
 }
 import type { TranslationProvider } from "../services/translation";
-import { translateCapturedLines, mapToScreenCoords } from "../services/ocrTranslation";
+import { translateCapturedLines } from "../services/ocrTranslation";
+// Aspect-fill ("cover") mapper — the same one the live OCR overlay uses.
+// The captured-photo path used to import a naive X/Y stretch from
+// ocrTranslation.ts; that mapper ignored how the Image displays the capture
+// with resizeMode="cover" and drifted every overlay away from its source
+// text. Consolidated into a shared util so both paths pick the correct
+// math. (#2)
+import { mapImageRectToScreen } from "../utils/rectMapping";
 
 interface CapturedBlock {
   id: string;
@@ -137,7 +143,7 @@ export function usePhotoCapture({
         originalText: line.text,
         translatedText: translations[i] || line.text,
         imageFrame: line.frame,
-        screenFrame: mapToScreenCoords(line.frame, photo.width, photo.height, screenDims.width, screenDims.height),
+        screenFrame: mapImageRectToScreen(line.frame, photo.width, photo.height, screenDims.width, screenDims.height),
       }));
 
       setCapturedBlocks(blocks);
@@ -180,27 +186,11 @@ export function usePhotoCapture({
   }, [capturedUri, capturedBlocks, sourceLangCode, targetLangCode]);
 
   const handleBlockTap = useCallback((block: CapturedBlock) => {
-    Alert.alert(
-      block.translatedText,
-      block.originalText,
-      [
-        {
-          // copyWithAutoClear: OCR blocks captured from the camera can contain
-          // signs, labels, or document snippets; reuse the 60s auto-wipe. (#128)
-          text: "Copy Translation",
-          onPress: () => { copyWithAutoClear(block.translatedText); },
-        },
-        {
-          text: "Copy Original",
-          onPress: () => { copyWithAutoClear(block.originalText); },
-        },
-        {
-          text: "Speak",
-          onPress: () => Speech.speak(block.translatedText, { language: targetLangCode }),
-        },
-        { text: "Cancel", style: "cancel" },
-      ]
-    );
+    // Shared with the live-OCR overlays (CameraTranslator, DualStreamView)
+    // so users see the same copy/speak interaction regardless of whether
+    // they tapped a live label or a captured-photo block. See
+    // utils/liveBlockActions.ts for the action sheet config.
+    showBlockActionSheet(block.originalText, block.translatedText, targetLangCode);
   }, [targetLangCode]);
 
   return {
