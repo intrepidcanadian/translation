@@ -116,6 +116,73 @@ describe("listingGenerator", () => {
       const draft = generateListing("Apple iPhone 13", "good", undefined, "books");
       expect(draft.category).toBe("books");
     });
+
+    // ---- Keyword corpus expansion (#210) ----
+    // These cover the brand additions to the auto, home, and books
+    // categories. The motivating real-world cases: a luxury car emblem
+    // photo, a kitchen appliance brand label, and a publisher imprint
+    // line on a book cover. Before the expansion these would all route
+    // to "other" because none of the generic nouns in the text match.
+    it("detects auto from a luxury car brand alone (no generic noun)", () => {
+      // Pre-#210 this fixture had zero auto matches and would have routed
+      // to "other" — the only previously-recognized auto hint was generic
+      // car nouns. A photo of just a BMW emblem is now detectable.
+      expect(detectCategory("BMW M3 Competition Coupe")).toBe("auto");
+    });
+
+    it("detects auto from a Toyota model with no generic car noun", () => {
+      // Toyota Camry is one of the highest-volume listings on every used
+      // marketplace — pre-#210 a "Toyota Camry XLE 2018" listing without
+      // the word "car" routed to "other".
+      expect(detectCategory("Toyota Camry XLE 2018")).toBe("auto");
+    });
+
+    it("detects auto from a multi-brand mention (collision-safe)", () => {
+      // 2 auto hints (mercedes, bmw) → unambiguous auto. Tests that the
+      // appended brands stack as expected through the salience scorer.
+      expect(detectCategory("Mercedes vs BMW comparison report")).toBe("auto");
+    });
+
+    it("detects home from a KitchenAid stand mixer label", () => {
+      // KitchenAid was already in the brands list but not the home
+      // keyword regex — pre-#210 this had only "mixer" as a hit (1
+      // home vote) and could be drowned out by other categories. With
+      // the brand entry it now scores 2 votes and is unambiguous.
+      expect(detectCategory("KitchenAid Artisan stand mixer 5qt")).toBe("home");
+    });
+
+    it("detects home from a Roomba model number alone", () => {
+      // "Roomba i7" has no generic home noun — pre-#210 it routed to
+      // "other". The robot vacuum category is high-volume on resale
+      // marketplaces, so this is a real coverage gap that's now closed.
+      expect(detectCategory("Roomba i7+ robot vacuum")).toBe("home");
+    });
+
+    it("detects books from an O'Reilly publisher imprint", () => {
+      // Tech book covers carry the O'Reilly animal mark and the
+      // publisher name without necessarily saying "book" or "edition".
+      // The publisher-name additions catch this shape.
+      expect(detectCategory("O'Reilly Designing Data-Intensive Applications")).toBe("books");
+    });
+
+    // ---- Regression fence: "ram" stays in electronics ----
+    // The auto category deliberately omits "ram" (Dodge Ram) because
+    // "ram" already lives in the electronics keyword list as the memory
+    // unit. A misguided "tidy" PR that adds Dodge Ram by appending
+    // "ram" to the auto regex would silently flip every "16GB RAM"
+    // listing from electronics to a tied/wrong category. This fence
+    // catches that.
+    it("'ram' alone routes to electronics, not auto (memory vs Dodge Ram)", () => {
+      expect(detectCategory("Apple MacBook 16GB RAM 512GB SSD")).toBe("electronics");
+    });
+
+    // ---- Regression fence: existing "Vintage handcrafted" stays "other" ----
+    // The books keyword expansion deliberately omitted "vintage" because
+    // Vintage Books is a real publisher imprint but the word is also a
+    // common second-hand-listing adjective. Pin the no-collision contract.
+    it("'vintage' as a generic adjective does NOT trigger the books category", () => {
+      expect(detectCategory("Vintage handcrafted item")).toBe("other");
+    });
   });
 
   describe("generateListing — brand & model extraction", () => {

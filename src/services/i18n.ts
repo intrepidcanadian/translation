@@ -343,6 +343,40 @@ export function getUILocale(): UILocale {
 }
 
 /**
+ * Per-placeholder-name regex cache for `t()`'s interpolation pass. Building
+ * a `new RegExp("\\{name\\}", "g")` per call burns ~1µs per param on every
+ * render path that touches a label — fine in isolation, measurable on
+ * components that render dozens of labels per frame (HistoryList rows,
+ * onboarding swiper). The placeholder set is small and bounded by the
+ * number of unique `{name}` tokens across all locale tables, so an
+ * unbounded Map is safe.
+ *
+ * Exposed via `__resetInterpolationRegexCache` for unit tests that need
+ * deterministic isolation. Production code never calls it.
+ */
+const interpolationRegexCache = new Map<string, RegExp>();
+
+function getInterpolationRegex(name: string): RegExp {
+  let re = interpolationRegexCache.get(name);
+  if (!re) {
+    re = new RegExp(`\\{${name}\\}`, "g");
+    interpolationRegexCache.set(name, re);
+  }
+  // Reset lastIndex defensively — a /g regex's lastIndex is process-wide
+  // mutable state, and a previous `.exec`/`.test` call (not used here, but
+  // a future caller might) could leave it advanced. `.replace` itself
+  // resets lastIndex internally, but this guard makes the contract
+  // explicit so a future refactor that switches to `matchAll`/`exec`
+  // doesn't silently break.
+  re.lastIndex = 0;
+  return re;
+}
+
+export function __resetInterpolationRegexCache(): void {
+  interpolationRegexCache.clear();
+}
+
+/**
  * Look up a UI string. Falls back to English if the locale lacks the key,
  * then to the key itself.
  *
@@ -359,10 +393,12 @@ export function t(key: string, params?: Record<string, string | number>): string
   const fallback = LOCALES.en;
   let str = table[key] ?? fallback[key] ?? key;
   if (params) {
-    for (const [k, v] of Object.entries(params)) {
+    for (const k in params) {
+      const v = params[k];
+      if (v === undefined) continue;
       const value = String(v);
       // Function replacement bypasses special-token interpretation ($&, $1, …).
-      str = str.replace(new RegExp(`\\{${k}\\}`, "g"), () => value);
+      str = str.replace(getInterpolationRegex(k), () => value);
     }
   }
   return str;

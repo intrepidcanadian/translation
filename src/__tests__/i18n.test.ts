@@ -5,7 +5,13 @@ jest.mock("expo-localization", () => ({
   getLocales: () => [{ languageCode: "en" }],
 }));
 
-import { t, setUILocale, getUILocale, SUPPORTED_UI_LOCALES } from "../services/i18n";
+import {
+  t,
+  setUILocale,
+  getUILocale,
+  SUPPORTED_UI_LOCALES,
+  __resetInterpolationRegexCache,
+} from "../services/i18n";
 
 describe("i18n", () => {
   beforeEach(() => {
@@ -83,5 +89,66 @@ describe("i18n", () => {
     // contains a price marker like "$5". This must not be mangled.
     setUILocale("en");
     expect(t("err.screenFailed", { screen: "$5 promo" })).toBe("$5 promo failed to load");
+  });
+
+  // ---- Per-placeholder regex cache (#211) ----
+  // The interpolation regex is built once per placeholder *name* and
+  // reused. Repeated calls with the same name must produce identical
+  // results (no lastIndex bleed, no token interpretation regression),
+  // and a fresh cache must produce identical output to a warm one.
+  describe("interpolation regex cache (#211)", () => {
+    beforeEach(() => {
+      __resetInterpolationRegexCache();
+      setUILocale("en");
+    });
+
+    test("repeated calls with the same placeholder return identical output", () => {
+      // Three back-to-back calls — the second and third hit the warm cache.
+      // If a stale `lastIndex` survived between calls (it shouldn't — we
+      // defensively reset it in getInterpolationRegex), the second `replace`
+      // would skip ahead and miss the placeholder.
+      expect(t("err.screenFailed", { screen: "Translate" })).toBe("Translate failed to load");
+      expect(t("err.screenFailed", { screen: "Translate" })).toBe("Translate failed to load");
+      expect(t("err.screenFailed", { screen: "Translate" })).toBe("Translate failed to load");
+    });
+
+    test("warm cache still produces correct output after a $-special value", () => {
+      // Function replacement is the safety net for special tokens, but
+      // because the regex object is now reused across calls, this verifies
+      // the function-replacement contract isn't subtly broken by reuse.
+      expect(t("err.screenFailed", { screen: "$&" })).toBe("$& failed to load");
+      expect(t("err.screenFailed", { screen: "Translate" })).toBe("Translate failed to load");
+      expect(t("err.screenFailed", { screen: "$5 promo" })).toBe("$5 promo failed to load");
+    });
+
+    test("different placeholder names get distinct cache entries", () => {
+      // {n} and {screen} live in different cache slots — the {n} call
+      // mustn't accidentally pick up the {screen} regex (which would
+      // match nothing in "Go to step {n}" and silently leave the
+      // placeholder unfilled).
+      expect(t("a11y.goToStep", { n: 1 })).toBe("Go to step 1");
+      expect(t("err.screenFailed", { screen: "Scan" })).toBe("Scan failed to load");
+      expect(t("a11y.goToStep", { n: 2 })).toBe("Go to step 2");
+    });
+
+    test("undefined param value is skipped, not stringified to 'undefined'", () => {
+      // The new for-in loop guards against `params[k] === undefined` so a
+      // caller passing `{ screen: maybeName ?? undefined }` doesn't render
+      // "undefined failed to load". The placeholder stays untouched.
+      expect(t("err.screenFailed", { screen: undefined as unknown as string })).toBe(
+        "{screen} failed to load",
+      );
+    });
+
+    test("__resetInterpolationRegexCache produces identical output to a warm cache", () => {
+      // Cold-cache and warm-cache outputs must be byte-identical. A bug
+      // where the first call took a different code path (e.g. building
+      // the regex inline instead of reading from the cache) would show
+      // up as a divergence here.
+      const warm = t("err.screenFailed", { screen: "Translate" });
+      __resetInterpolationRegexCache();
+      const cold = t("err.screenFailed", { screen: "Translate" });
+      expect(cold).toBe(warm);
+    });
   });
 });

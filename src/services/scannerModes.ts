@@ -265,7 +265,11 @@ export function extractTextbookFields(text: string, translated: string): Extract
 
 // ---- General Document (existing) ----
 
-function extractDocumentFields(text: string, translated: string): ExtractedField[] {
+// Exported for unit tests (run 20). Same pure-extractor rationale as the
+// other extractFields helpers above — the document mode is the default
+// fallback and a regression in its money/date/email/phone routing would
+// silently degrade every "just scan something" capture.
+export function extractDocumentFields(text: string, translated: string): ExtractedField[] {
   const combined = `${text}\n${translated}`;
   const fields: ExtractedField[] = [];
 

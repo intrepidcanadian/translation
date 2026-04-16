@@ -37,6 +37,7 @@ import {
   extractMedicineFields,
   extractMenuFields,
   extractTextbookFields,
+  extractDocumentFields,
 } from "../services/scannerModes";
 
 describe("extractReceiptFields (run 16)", () => {
@@ -451,5 +452,82 @@ describe("extractTextbookFields (run 17)", () => {
     const fields = extractTextbookFields("", "");
     expect(fields.some((f) => f.label === "Words")).toBe(true);
     expect(fields.some((f) => f.label === "Sentences")).toBe(true);
+  });
+});
+
+describe("extractDocumentFields (run 20)", () => {
+  // Why this is a separate suite: the document mode is the *default*
+  // scanner mode — every "just point and capture" use lands here. Run 17
+  // covered the five specialized extractors but left the default
+  // un-tested, so a regex tweak to MONEY_PATTERN, DATE_PATTERN, or
+  // PHONE_PATTERN could silently break the most-used path. These tests
+  // pin the contract that the document extractor pulls amounts, dates,
+  // emails, and phones with the same actions/icons as the specialized
+  // extractors do.
+
+  it("pulls money amounts into Amount fields with the dollar icon", () => {
+    const fields = extractDocumentFields("Invoice total: $1,234.56", "");
+    const amounts = fields.filter((f) => f.label === "Amount");
+    expect(amounts.length).toBeGreaterThan(0);
+    // The icon is shared with the receipt extractor.
+    expect(amounts[0].icon).toBe("$");
+    expect(amounts[0].value).toContain("1,234.56");
+  });
+
+  it("extracts dates from text in slash, dash, and dot formats", () => {
+    // The shared DATE_PATTERN supports all three separators. Pin the
+    // contract so a refactor that splits them apart catches the regression.
+    const fields = extractDocumentFields(
+      "Issued 2024-03-15, due 04/15/2024, signed 15.04.2024",
+      ""
+    );
+    const dates = fields.filter((f) => f.label === "Date");
+    expect(dates.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("extracts an email and tags it with the email action verb", () => {
+    // The action verb wires up the mailto: tap target in the UI — a
+    // regression to "copy" would silently break the tap-to-email flow.
+    const fields = extractDocumentFields("Contact: info@example.com", "");
+    const email = fields.find((f) => f.label === "Email");
+    expect(email).toBeDefined();
+    expect(email!.value).toBe("info@example.com");
+    expect(email!.action).toBe("email");
+  });
+
+  it("extracts a phone number with at least 7 digits and tags it with the call action", () => {
+    // The 7-digit floor in the phone filter is shared with the business
+    // card extractor — pin it here so the document extractor stays in
+    // sync if the floor moves.
+    const fields = extractDocumentFields("Call us at +1 (415) 555-0123", "");
+    const phone = fields.find((f) => f.label === "Phone");
+    expect(phone).toBeDefined();
+    expect(phone!.action).toBe("call");
+    expect(phone!.value.replace(/\D/g, "").length).toBeGreaterThanOrEqual(7);
+  });
+
+  it("rejects short digit strings that don't meet the 7-digit phone floor", () => {
+    // "123-45" has only 5 digits — it must NOT become a phone field.
+    // This is the regression fence for someone "simplifying" the phone
+    // filter by dropping the digit-count guard.
+    const fields = extractDocumentFields("Order #123-45 placed", "");
+    const phones = fields.filter((f) => f.label === "Phone");
+    expect(phones).toHaveLength(0);
+  });
+
+  it("merges fields from both the original and translated text streams", () => {
+    // The extractor reads `${text}\n${translated}` so a money amount
+    // that only appears in the translated half still surfaces. Pin
+    // this so a refactor that drops one of the two halves doesn't
+    // silently lose data.
+    const fields = extractDocumentFields("Total:", "Total: $99.00");
+    const amounts = fields.filter((f) => f.label === "Amount");
+    expect(amounts.length).toBeGreaterThan(0);
+    expect(amounts.some((a) => a.value.includes("99.00"))).toBe(true);
+  });
+
+  it("returns an empty array for empty inputs without throwing", () => {
+    // Defensive baseline for the "OCR returned nothing" path.
+    expect(extractDocumentFields("", "")).toEqual([]);
   });
 });

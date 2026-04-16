@@ -87,15 +87,41 @@ export function getConditionOptions(): Array<{ key: ListingCondition; label: str
 export function detectCategory(text: string): ListingCategory {
   const lower = text.toLowerCase();
 
+  // Each list mixes generic product nouns with concrete brand names so that
+  // a photo of a Toyota emblem ("Toyota Camry") routes to auto even without
+  // the word "car", a KitchenAid stand mixer routes to home even without the
+  // word "kitchen", and so on. Brand additions are appended (never
+  // prepended) to keep array-order tie-breaks stable for the existing test
+  // fixtures. See #210 for the tuning rationale.
   const patterns: Array<{ category: ListingCategory; keywords: RegExp }> = [
     { category: "electronics", keywords: /\b(iphone|samsung|laptop|macbook|ipad|airpods|headphone|speaker|tv|monitor|camera|nintendo|playstation|xbox|pixel|galaxy|charger|cable|usb|bluetooth|wifi|battery|power bank|processor|gpu|ram|ssd|hard drive)\b/g },
     { category: "clothing", keywords: /\b(shirt|pants|dress|jacket|coat|shoes|boots|sneakers|jeans|hoodie|sweater|blazer|skirt|socks|hat|scarf|belt|handbag|purse|backpack|nike|adidas|zara|h&m|levi|gucci|prada)\b/g },
     { category: "furniture", keywords: /\b(chair|table|desk|sofa|couch|bed|mattress|shelf|bookcase|cabinet|drawer|lamp|mirror|rug|ikea|wayfair)\b/g },
-    { category: "books", keywords: /\b(book|novel|textbook|isbn|paperback|hardcover|edition|author|chapter|volume|manga|comic)\b/g },
+    // books: generic nouns + ISBN + major English-language trade publishers.
+    // "vintage" is deliberately omitted — Vintage Books is a real publisher
+    // but the word collides with the "Vintage handcrafted item" fixture
+    // and with second-hand listing language broadly. Same reasoning applies
+    // to "modern" / "classic" — adjectives that describe many other
+    // categories of object.
+    { category: "books", keywords: /\b(book|novel|textbook|isbn|paperback|hardcover|edition|author|chapter|volume|manga|comic|penguin|random house|harpercollins|simon & schuster|o'reilly|wiley|springer|scholastic|dover|tor books|del rey)\b/g },
     { category: "toys", keywords: /\b(toy|lego|doll|puzzle|game|board game|action figure|plush|stuffed|nerf|barbie|hot wheels|pokemon)\b/g },
     { category: "sports", keywords: /\b(bike|bicycle|yoga|gym|weights|dumbbell|racket|tennis|golf|soccer|football|basketball|helmet|skateboard|surfboard|camping|tent|fishing)\b/g },
-    { category: "home", keywords: /\b(kitchen|blender|mixer|pot|pan|plate|mug|vacuum|iron|washer|dryer|garden|plant|tool|drill|saw|hammer)\b/g },
-    { category: "auto", keywords: /\b(car|auto|tire|wheel|brake|engine|motor|bumper|headlight|taillight|wiper|oil|filter|spark plug|obd)\b/g },
+    // home: generic kitchen/garden/appliance nouns + major appliance brands.
+    // Brand-list overlap with `extractBrandModel` is intentional — a
+    // KitchenAid mixer photo gets BOTH a home-category vote (here) and a
+    // brand entry in the title (there).
+    { category: "home", keywords: /\b(kitchen|blender|mixer|pot|pan|plate|mug|vacuum|iron|washer|dryer|garden|plant|tool|drill|saw|hammer|kitchenaid|cuisinart|ninja|vitamix|keurig|nespresso|roomba|irobot|bissell|shark|hoover|whirlpool|frigidaire|maytag|crock[\-\s]?pot|instant pot|breville)\b/g },
+    // auto: generic car-part nouns + popular auto brands. Brand list is
+    // bounded to widely-recognized makes — adding obscure marques would
+    // burn regex bytes for marginal coverage. "ford" needs the \b on both
+    // sides (which it gets from the global `\b...\b` wrapper) so that
+    // "afford" / "Stanford" don't false-positive.
+    // "ram" is intentionally NOT in the auto keyword list even though Dodge
+    // Ram is a real model — it would collide with the electronics "ram"
+    // entry (memory). "dodge" alone is enough to vote auto for Ram trucks
+    // ("Dodge Ram 1500"); a 1500-word RAM upgrade product still routes to
+    // electronics correctly because "ram" is unambiguous-enough on its own.
+    { category: "auto", keywords: /\b(car|auto|tire|wheel|brake|engine|motor|bumper|headlight|taillight|wiper|oil|filter|spark plug|obd|toyota|honda|ford|chevy|chevrolet|tesla|bmw|mercedes|audi|porsche|volkswagen|nissan|mazda|subaru|hyundai|kia|lexus|jeep|volvo|dodge|gmc|cadillac|lincoln|infiniti|acura|fiat|peugeot|citroen|renault|mitsubishi|ferrari|lamborghini|bentley|aston martin|maserati)\b/g },
   ];
 
   let bestCategory: ListingCategory = "other";
