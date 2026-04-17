@@ -49,6 +49,7 @@ import DiagnosticsPanel from "./DiagnosticsPanel";
 import DebugPanel from "./DebugPanel";
 import { buildCrashReport } from "../utils/buildCrashReport";
 import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
+import { modalStyles } from "../styles/modalStyles";
 
 export type { TranslationProvider };
 
@@ -575,9 +576,9 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View accessibilityViewIsModal={true} style={[styles.overlay, dynamicStyles.overlay]}>
+      <View accessibilityViewIsModal={true} style={[modalStyles.overlay, dynamicStyles.overlay]}>
         <View style={[styles.content, dynamicStyles.content]}>
-          <Text style={[styles.title, dynamicStyles.title]}>Settings</Text>
+          <Text style={[modalStyles.title, dynamicStyles.title]}>Settings</Text>
 
           <ScrollView style={styles.list}>
             <View style={[styles.row, dynamicStyles.rowBorder]}>
@@ -973,21 +974,11 @@ const offlineStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
   content: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     maxHeight: "70%",
     paddingTop: 20,
-  },
-  title: {
-    fontSize: 20,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 16,
   },
   list: {
     paddingHorizontal: 20,

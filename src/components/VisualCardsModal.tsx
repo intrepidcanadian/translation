@@ -17,6 +17,7 @@ import {
 import * as Speech from "expo-speech";
 import { impactLight, notifySuccess } from "../services/haptics";
 import type { ThemeColors } from "../theme";
+import { modalStyles } from "../styles/modalStyles";
 
 // ---------- Card Data ----------
 
@@ -406,7 +407,7 @@ function VisualCardsModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View accessibilityViewIsModal={true} style={[styles.overlay, { backgroundColor: colors.overlayBg }]}>
+      <View accessibilityViewIsModal={true} style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]}>
         <View style={[styles.content, { backgroundColor: colors.modalBg }]}>
           {/* Header */}
           <View style={styles.header}>
@@ -492,10 +493,6 @@ function VisualCardsModal({
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
   content: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,

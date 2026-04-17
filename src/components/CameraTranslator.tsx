@@ -316,7 +316,7 @@ const OCR_OPTIONS_BASE = {
   useLightweightMode: true,
 };
 
-export default function CameraTranslator({
+function CameraTranslator({
   visible,
   onClose,
   sourceLangCode,
@@ -888,3 +888,5 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
 });
+
+export default React.memo(CameraTranslator);

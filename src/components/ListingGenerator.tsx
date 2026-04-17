@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from "react";
+import React, { useRef, useState, useCallback, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -206,6 +206,32 @@ function ListingGenerator({
     }
   }, []);
 
+  const handleAddBrand = useCallback(() => {
+    if (draft?.insights?.suggestedBrand && !editTitle.includes(draft.insights.suggestedBrand)) {
+      setEditTitle(draft.insights.suggestedBrand + " " + editTitle);
+    }
+  }, [draft, editTitle]);
+
+  const handleAddModel = useCallback(() => {
+    if (draft?.insights?.suggestedModel && !editTitle.includes(draft.insights.suggestedModel)) {
+      setEditTitle(editTitle + " " + draft.insights.suggestedModel);
+    }
+  }, [draft, editTitle]);
+
+  const handleSetPrice = useCallback((p: string) => {
+    const numericPrice = p.replace(/[^0-9.]/g, "");
+    if (numericPrice) setPrice(numericPrice);
+  }, []);
+
+  const handleCopyAll = useCallback(() => {
+    if (!draft) return;
+    const fullText = formatListingForShare(
+      { ...draft, title: editTitle, description: editDescription, price: price || undefined },
+      !!draft.translatedTitle
+    );
+    handleCopy(fullText, "fullListing");
+  }, [draft, editTitle, editDescription, price, handleCopy]);
+
   if (!visible) return null;
 
   if (!device || !hasPermission) {
@@ -311,11 +337,7 @@ function ListingGenerator({
                   {draft.insights.suggestedBrand && (
                     <TouchableOpacity
                       style={[styles.insightChip, { backgroundColor: colors.successBg }]}
-                      onPress={() => {
-                        if (draft.insights?.suggestedBrand && !editTitle.includes(draft.insights.suggestedBrand)) {
-                          setEditTitle(draft.insights.suggestedBrand + " " + editTitle);
-                        }
-                      }}
+                      onPress={handleAddBrand}
                       accessibilityRole="button"
                       accessibilityLabel={`Add brand: ${draft.insights.suggestedBrand}`}
                       accessibilityHint="Tap to add this brand to your listing title"
@@ -329,11 +351,7 @@ function ListingGenerator({
                   {draft.insights.suggestedModel && (
                     <TouchableOpacity
                       style={[styles.insightChip, { backgroundColor: colors.successBg }]}
-                      onPress={() => {
-                        if (draft.insights?.suggestedModel && !editTitle.includes(draft.insights.suggestedModel)) {
-                          setEditTitle(editTitle + " " + draft.insights.suggestedModel);
-                        }
-                      }}
+                      onPress={handleAddModel}
                       accessibilityRole="button"
                       accessibilityLabel={`Add model: ${draft.insights.suggestedModel}`}
                       accessibilityHint="Tap to add this model to your listing title"

@@ -15,6 +15,7 @@ import { type ThemeColors, getColors } from "../theme";
 import { type LanguageStatus } from "../../modules/apple-translation";
 import { notifySuccess } from "../services/haptics";
 import { logger } from "../services/logger";
+import { modalStyles } from "../styles/modalStyles";
 
 // Route presets for common airline routes
 const ROUTE_PRESETS = [
@@ -348,7 +349,7 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={[styles.overlay, { backgroundColor: colors.overlayBg }]}>
+      <View style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]}>
         <View style={[styles.content, { backgroundColor: colors.modalBg }]}>
           {/* Header */}
           <View style={styles.header}>
@@ -599,10 +600,6 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
 }
 
 const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
   content: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,

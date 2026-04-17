@@ -184,7 +184,7 @@ const OCR_OPTIONS_BASE = {
   useLightweightMode: true,
 };
 
-export default function DualStreamView({
+function DualStreamView({
   visible,
   onClose,
   sourceLangCode,
@@ -1081,3 +1081,5 @@ const styles = StyleSheet.create({
     maxWidth: 140,
   },
 });
+
+export default React.memo(DualStreamView);

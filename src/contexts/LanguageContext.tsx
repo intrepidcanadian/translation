@@ -102,10 +102,14 @@ function LanguagePairsProvider({ children }: { children: React.ReactNode }) {
           try {
             const parsed = JSON.parse(results[0][1]);
             if (Array.isArray(parsed)) {
-              // Filter to valid string language codes only
+              // Filter to valid language codes that exist in LANGUAGE_MAP
               const valid = parsed.filter(
-                (c: unknown): c is string => typeof c === "string" && c.length > 0
+                (c: unknown): c is string =>
+                  typeof c === "string" && c.length > 0 && LANGUAGE_MAP.has(c)
               );
+              if (valid.length < parsed.length) {
+                logger.warn("Settings", `Filtered ${parsed.length - valid.length} invalid recent language codes`);
+              }
               setRecentLangCodes(valid);
             }
           } catch (err) {
@@ -116,7 +120,7 @@ function LanguagePairsProvider({ children }: { children: React.ReactNode }) {
           try {
             const parsed = JSON.parse(results[1][1]);
             if (Array.isArray(parsed)) {
-              // Validate each entry has required string fields
+              // Validate each entry has required string fields and valid language codes
               const valid = parsed.filter(
                 (p: unknown): p is SavedPair =>
                   typeof p === "object" &&
@@ -124,7 +128,9 @@ function LanguagePairsProvider({ children }: { children: React.ReactNode }) {
                   typeof (p as SavedPair).sourceCode === "string" &&
                   typeof (p as SavedPair).targetCode === "string" &&
                   (p as SavedPair).sourceCode.length > 0 &&
-                  (p as SavedPair).targetCode.length > 0
+                  (p as SavedPair).targetCode.length > 0 &&
+                  LANGUAGE_MAP.has((p as SavedPair).sourceCode) &&
+                  LANGUAGE_MAP.has((p as SavedPair).targetCode)
               );
               if (valid.length < parsed.length) {
                 logger.warn("Settings", `Filtered ${parsed.length - valid.length} invalid saved pair entries`);

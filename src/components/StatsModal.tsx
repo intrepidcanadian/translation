@@ -248,8 +248,8 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
                 )}
 
                 {stats.totalTranslations === 0 && (
-                  <View style={styles.statsEmptyState}>
-                    <Text style={[{ color: colors.mutedText, fontSize: 40, marginBottom: 12 }]}>📭</Text>
+                  <View style={styles.statsEmptyState} accessible={true} accessibilityLabel="No translations yet. Start translating to see your stats!">
+                    <Text importantForAccessibility="no" style={[{ color: colors.mutedText, fontSize: 40, marginBottom: 12 }]}>📭</Text>
                     <Text style={[{ color: colors.mutedText, fontSize: 15, textAlign: "center" as const }]}>
                       No translations yet.{"\n"}Start translating to see your stats!
                     </Text>
