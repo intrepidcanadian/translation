@@ -106,7 +106,7 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
     return { days, maxCount };
   }, [validHistory]);
 
-  const renderCalendar = () => {
+  const calendarElement = useMemo(() => {
     if (!calendarData) return null;
     const { days, maxCount } = calendarData;
     const weekDays = ["S", "M", "T", "W", "T", "F", "S"];
@@ -159,7 +159,7 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
         </View>
       </View>
     );
-  };
+  }, [calendarData, colors.cardBg, colors.secondaryText, colors.dimText, colors.borderLight, colors.primary]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -201,15 +201,20 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
                   </View>
                 )}
 
-                {renderCalendar()}
+                {calendarElement}
 
                 {stats.avgConfidence != null && (
                   <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
                     <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Avg. Confidence</Text>
-                    <View style={styles.confidenceBarOuter}>
+                    <View
+                      style={styles.confidenceBarOuter}
+                      accessibilityRole="progressbar"
+                      accessibilityLabel="Average translation confidence"
+                      accessibilityValue={{ min: 0, max: 100, now: Math.round(stats.avgConfidence! * 100) }}
+                    >
                       <View style={[styles.confidenceBarInner, { width: `${Math.round(stats.avgConfidence! * 100)}%`, backgroundColor: colors.primary }]} />
                     </View>
-                    <Text style={[styles.confidencePercent, { color: colors.primary }]}>{Math.round(stats.avgConfidence! * 100)}%</Text>
+                    <Text style={[styles.confidencePercent, { color: colors.primary }]} importantForAccessibility="no">{Math.round(stats.avgConfidence! * 100)}%</Text>
                   </View>
                 )}
 

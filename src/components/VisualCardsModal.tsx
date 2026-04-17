@@ -360,9 +360,11 @@ function VisualCardsModal({
           onLongPress={() => speakCard(card)}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={`${card.label}. ${isExpanded ? "Tap again to speak." : "Tap to expand."}`}
+          accessibilityLabel={card.label}
+          accessibilityHint={isExpanded ? "Tap again to speak aloud. Long press to speak." : "Tap to expand and show translation. Long press to speak."}
+          accessibilityState={{ expanded: isExpanded }}
         >
-          <Text style={styles.cardIcon}>{card.icon}</Text>
+          <Text style={styles.cardIcon} importantForAccessibility="no">{card.icon}</Text>
           <Text
             style={[styles.cardLabel, { color: colors.primaryText }]}
             numberOfLines={isExpanded ? undefined : 2}
@@ -383,6 +385,9 @@ function VisualCardsModal({
             <TouchableOpacity
               style={[styles.speakBadge, { backgroundColor: currentCategory.color }]}
               onPress={() => speakCard(card)}
+              accessibilityRole="button"
+              accessibilityLabel={isSpeaking ? "Stop speaking" : `Speak ${card.label}`}
+              accessibilityHint={isSpeaking ? "Stops text-to-speech playback" : "Reads the translated phrase aloud"}
             >
               <Text style={styles.speakBadgeText}>
                 {isSpeaking ? "⏹ Stop" : "🔊 Speak"}
@@ -397,7 +402,7 @@ function VisualCardsModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={[styles.overlay, { backgroundColor: colors.overlayBg }]}>
+      <View accessibilityViewIsModal={true} style={[styles.overlay, { backgroundColor: colors.overlayBg }]}>
         <View style={[styles.content, { backgroundColor: colors.modalBg }]}>
           {/* Header */}
           <View style={styles.header}>
@@ -413,6 +418,8 @@ function VisualCardsModal({
             showsHorizontalScrollIndicator={false}
             style={styles.categoryScroll}
             contentContainerStyle={styles.categoryContent}
+            accessibilityRole="tablist"
+            accessibilityLabel="Card categories"
           >
             {CARD_CATEGORIES.map((cat) => (
               <TouchableOpacity
@@ -431,9 +438,11 @@ function VisualCardsModal({
                   impactLight();
                 }}
                 accessibilityRole="tab"
+                accessibilityLabel={`${cat.label} cards`}
+                accessibilityHint={`Shows ${cat.cards.length} ${cat.label.toLowerCase()} communication cards`}
                 accessibilityState={{ selected: selectedCategory === cat.id }}
               >
-                <Text style={styles.categoryIcon}>{cat.icon}</Text>
+                <Text style={styles.categoryIcon} importantForAccessibility="no">{cat.icon}</Text>
                 <Text
                   style={[
                     styles.categoryLabel,
@@ -468,6 +477,7 @@ function VisualCardsModal({
             }}
             accessibilityRole="button"
             accessibilityLabel="Close visual cards"
+            accessibilityHint="Stops any speech and closes the visual cards modal"
           >
             <Text style={[styles.closeText, { color: colors.primary }]}>Done</Text>
           </TouchableOpacity>

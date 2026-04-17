@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Modal,
   View,
@@ -82,6 +82,66 @@ function PhrasebookModal({
     return getPhrasesForCategory(phraseCategory as PhraseCategory);
   }, [phraseCategory, locationCtx]);
 
+  const categoryKeyExtractor = useCallback((item: { key: string }) => item.key, []);
+
+  const renderCategoryPill = useCallback(
+    ({ item }: { item: { key: string; label: string; icon: string } }) => (
+      <TouchableOpacity
+        style={[styles.phraseCategoryPill, { backgroundColor: phraseCategory === item.key ? colors.primary : colors.glassBg, borderColor: phraseCategory === item.key ? colors.primary : colors.glassBorder }]}
+        onPress={() => setPhraseCategory(item.key as PhraseCategory | "nearby")}
+        activeOpacity={0.85}
+        accessibilityRole="button"
+        accessibilityLabel={`${item.label} phrases`}
+        accessibilityState={{ selected: phraseCategory === item.key }}
+      >
+        <Text style={styles.phraseCategoryIcon}>{item.icon}</Text>
+        <Text style={[styles.phraseCategoryText, { color: phraseCategory === item.key ? "#ffffff" : colors.mutedText }]}>
+          {item.label}
+        </Text>
+      </TouchableOpacity>
+    ),
+    [phraseCategory, colors],
+  );
+
+  const phraseKeyExtractor = useCallback(
+    (_: OfflinePhrase, i: number) => `phrase-${phraseCategory}-${i}`,
+    [phraseCategory],
+  );
+
+  const renderPhrase = useCallback(
+    ({ item: phrase }: { item: OfflinePhrase }) => {
+      const srcText = (sourceLangCode in phrase ? phrase[sourceLangCode as PhraseLangCode] : phrase.en);
+      const tgtText = (targetLangCode in phrase ? phrase[targetLangCode as PhraseLangCode] : "");
+      return (
+        <TouchableOpacity
+          style={[styles.phraseItem, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
+          activeOpacity={0.85}
+          onPress={() => {
+            if (tgtText) {
+              onCopy(tgtText);
+              impactLight();
+            }
+          }}
+          onLongPress={() => {
+            if (tgtText) {
+              onSpeak(tgtText, targetLangCode);
+            }
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={`${srcText} translates to ${tgtText}. Tap to copy, long press to speak.`}
+        >
+          <Text style={[styles.phraseSrcText, { color: colors.secondaryText }]}>{srcText}</Text>
+          {tgtText ? (
+            <Text style={[styles.phraseTgtText, { color: colors.translatedText }]}>{tgtText}</Text>
+          ) : (
+            <Text style={[styles.phraseTgtText, { color: colors.dimText, fontStyle: "italic" }]}>Not available</Text>
+          )}
+        </TouchableOpacity>
+      );
+    },
+    [sourceLangCode, targetLangCode, onCopy, onSpeak, colors],
+  );
+
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View accessibilityViewIsModal={true} style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
@@ -93,14 +153,24 @@ function PhrasebookModal({
 
           {/* Location banner */}
           {locationLoading && (
-            <View style={[styles.locationBanner, { backgroundColor: colors.cardBg }]}>
+            <View
+              style={[styles.locationBanner, { backgroundColor: colors.cardBg }]}
+              accessibilityRole="progressbar"
+              accessibilityLabel="Detecting your location to show relevant phrases"
+              accessibilityLiveRegion="polite"
+            >
               <ActivityIndicator size="small" color={colors.primary} />
               <Text style={[styles.locationText, { color: colors.dimText }]}>Detecting location...</Text>
             </View>
           )}
           {locationCtx?.isAbroad && !locationLoading && (
-            <View style={[styles.locationBanner, { backgroundColor: colors.primary + "15" }]}>
-              <Text style={styles.locationIcon}>📍</Text>
+            <View
+              style={[styles.locationBanner, { backgroundColor: colors.primary + "15" }]}
+              accessibilityRole="summary"
+              accessibilityLabel={`You're in ${locationCtx.countryName}, showing relevant phrases`}
+              accessibilityLiveRegion="polite"
+            >
+              <Text style={styles.locationIcon} importantForAccessibility="no">📍</Text>
               <Text style={[styles.locationText, { color: colors.primary }]}>
                 You're in {locationCtx.countryName} — showing relevant phrases
               </Text>
@@ -111,58 +181,15 @@ function PhrasebookModal({
             horizontal
             showsHorizontalScrollIndicator={false}
             data={categories}
-            keyExtractor={(item) => item.key}
+            keyExtractor={categoryKeyExtractor}
             style={styles.phraseCategoryRow}
-            renderItem={({ item }) => (
-              <TouchableOpacity
-                style={[styles.phraseCategoryPill, { backgroundColor: phraseCategory === item.key ? colors.primary : colors.glassBg, borderColor: phraseCategory === item.key ? colors.primary : colors.glassBorder }]}
-                onPress={() => setPhraseCategory(item.key as PhraseCategory | "nearby")}
-                activeOpacity={0.85}
-                accessibilityRole="button"
-                accessibilityLabel={`${item.label} phrases`}
-                accessibilityState={{ selected: phraseCategory === item.key }}
-              >
-                <Text style={styles.phraseCategoryIcon}>{item.icon}</Text>
-                <Text style={[styles.phraseCategoryText, { color: phraseCategory === item.key ? "#ffffff" : colors.mutedText }]}>
-                  {item.label}
-                </Text>
-              </TouchableOpacity>
-            )}
+            renderItem={renderCategoryPill}
           />
           <FlatList
             data={phrases}
-            keyExtractor={(_, i) => `phrase-${phraseCategory}-${i}`}
+            keyExtractor={phraseKeyExtractor}
             style={styles.phraseList}
-            renderItem={({ item: phrase }) => {
-              const srcText = (sourceLangCode in phrase ? phrase[sourceLangCode as PhraseLangCode] : phrase.en);
-              const tgtText = (targetLangCode in phrase ? phrase[targetLangCode as PhraseLangCode] : "");
-              return (
-                <TouchableOpacity
-                  style={[styles.phraseItem, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
-                  activeOpacity={0.85}
-                  onPress={() => {
-                    if (tgtText) {
-                      onCopy(tgtText);
-                      impactLight();
-                    }
-                  }}
-                  onLongPress={() => {
-                    if (tgtText) {
-                      onSpeak(tgtText, targetLangCode);
-                    }
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${srcText} translates to ${tgtText}. Tap to copy, long press to speak.`}
-                >
-                  <Text style={[styles.phraseSrcText, { color: colors.secondaryText }]}>{srcText}</Text>
-                  {tgtText ? (
-                    <Text style={[styles.phraseTgtText, { color: colors.translatedText }]}>{tgtText}</Text>
-                  ) : (
-                    <Text style={[styles.phraseTgtText, { color: colors.dimText, fontStyle: "italic" }]}>Not available</Text>
-                  )}
-                </TouchableOpacity>
-              );
-            }}
+            renderItem={renderPhrase}
           />
           <TouchableOpacity
             style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
