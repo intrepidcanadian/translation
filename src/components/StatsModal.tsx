@@ -82,16 +82,27 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
     if (validHistory.length === 0) return null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+    const windowStart = new Date(today);
+    windowStart.setDate(windowStart.getDate() - 27);
+    const windowStartMs = windowStart.getTime();
+    const todayMs = today.getTime();
+
+    // Single-pass bucket: count items per day offset instead of filtering 28x
+    const buckets = new Int32Array(28);
+    for (const h of validHistory) {
+      if (!h.timestamp || h.timestamp < windowStartMs) continue;
+      const offset = Math.floor((h.timestamp - windowStartMs) / 86400000);
+      if (offset >= 0 && offset < 28) buckets[offset]++;
+    }
+
+    let maxCount = 1;
     const days: { date: Date; count: number; label: string }[] = [];
-    for (let i = 27; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
-      const dayStart = d.getTime();
-      const dayEnd = dayStart + 86400000;
-      const count = validHistory.filter((h) => h.timestamp && h.timestamp >= dayStart && h.timestamp < dayEnd).length;
+    for (let i = 0; i < 28; i++) {
+      const d = new Date(windowStartMs + i * 86400000);
+      const count = buckets[i];
+      if (count > maxCount) maxCount = count;
       days.push({ date: d, count, label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) });
     }
-    const maxCount = Math.max(...days.map((d) => d.count), 1);
     return { days, maxCount };
   }, [validHistory]);
 

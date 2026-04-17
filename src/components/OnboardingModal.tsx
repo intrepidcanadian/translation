@@ -52,6 +52,14 @@ function OnboardingModalBase({ visible, onComplete, colors }: OnboardingModalPro
     <Modal visible={visible} animationType="fade" transparent>
       <View accessibilityViewIsModal={true} style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
         <View style={[styles.onboardingContent, { backgroundColor: colors.modalBg }]}>
+          {/* Step counter — announces current position to screen readers */}
+          <Text
+            style={[styles.stepCounter, { color: colors.dimText }]}
+            accessibilityRole="text"
+            accessibilityLiveRegion="polite"
+          >
+            Step {step + 1} of {steps.length}
+          </Text>
           <View style={styles.onboardingDots}>
             {steps.map((_, i) => (
               <TouchableOpacity
@@ -59,7 +67,8 @@ function OnboardingModalBase({ visible, onComplete, colors }: OnboardingModalPro
                 onPress={() => setStep(i)}
                 style={styles.onboardingDotTouchable}
                 accessibilityRole="button"
-                accessibilityLabel={`Go to step ${i + 1}`}
+                accessibilityLabel={`Go to step ${i + 1} of ${steps.length}: ${steps[i].title}`}
+                accessibilityState={{ selected: i === step }}
               >
                 <View
                   style={[
@@ -70,7 +79,7 @@ function OnboardingModalBase({ visible, onComplete, colors }: OnboardingModalPro
               </TouchableOpacity>
             ))}
           </View>
-          <Text style={styles.onboardingIcon}>{current.icon}</Text>
+          <Text style={styles.onboardingIcon} importantForAccessibility="no">{current.icon}</Text>
           <Text style={[styles.onboardingTitle, { color: colors.titleText }]}>{current.title}</Text>
           <Text style={[styles.onboardingDesc, { color: colors.secondaryText }]}>{current.desc}</Text>
           <View style={styles.onboardingButtons}>
@@ -108,6 +117,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     marginHorizontal: 24,
     alignItems: "center" as const,
+  },
+  stepCounter: {
+    fontSize: 12,
+    fontWeight: "600" as const,
+    textTransform: "uppercase" as const,
+    letterSpacing: 1,
+    marginBottom: 8,
   },
   onboardingDots: {
     flexDirection: "row" as const,

@@ -498,17 +498,28 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
 
                 {/* Status / Action */}
                 {lp.status === "installed" && (
-                  <View style={[styles.statusBadge, { backgroundColor: colors.successBg }]}>
+                  <View
+                    style={[styles.statusBadge, { backgroundColor: colors.successBg }]}
+                    accessibilityLabel={`${lp.name} is installed and ready`}
+                  >
                     <Text style={[styles.statusBadgeText, { color: colors.successText }]}>Ready</Text>
                   </View>
                 )}
 
                 {lp.status === "checking" && (
-                  <ActivityIndicator size="small" color={colors.dimText} />
+                  <ActivityIndicator
+                    size="small"
+                    color={colors.dimText}
+                    accessibilityLabel={`Checking ${lp.name} status`}
+                  />
                 )}
 
                 {lp.status === "downloading" && (
-                  <View style={styles.downloadingRow}>
+                  <View
+                    style={styles.downloadingRow}
+                    accessibilityRole="progressbar"
+                    accessibilityLabel={`Downloading ${lp.name}`}
+                  >
                     <ActivityIndicator size="small" color={colors.primary} />
                     <Text style={[styles.downloadingText, { color: colors.primary }]}>...</Text>
                   </View>
@@ -528,13 +539,22 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
                 )}
 
                 {lp.status === "error" && (
-                  <TouchableOpacity onPress={() => downloadSingleLanguage(lp.code)}>
+                  <TouchableOpacity
+                    onPress={() => downloadSingleLanguage(lp.code)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Retry downloading ${lp.name}`}
+                  >
                     <Text style={[styles.errorText, { color: colors.errorText }]}>Retry</Text>
                   </TouchableOpacity>
                 )}
 
                 {lp.status === "unsupported" && (
-                  <Text style={[styles.unsupportedText, { color: colors.dimText }]}>N/A</Text>
+                  <Text
+                    style={[styles.unsupportedText, { color: colors.dimText }]}
+                    accessibilityLabel={`${lp.name} is not available on this device`}
+                  >
+                    N/A
+                  </Text>
                 )}
               </View>
             ))}

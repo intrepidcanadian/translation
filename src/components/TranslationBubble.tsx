@@ -71,7 +71,7 @@ function TranslationBubble({
       const cleaned = segment.replace(/[^\p{L}\p{N}]/gu, "");
       return { key: si, text: segment, isWord: true as const, cleaned };
     });
-  }, [item.translated, item.status === "error", item.status === "pending", item.sourceLangCode, item.targetLangCode]);
+  }, [item.translated, item.status, item.sourceLangCode, item.targetLangCode]);
 
   const handleShare = useCallback(() => {
     const srcName = item.sourceLangCode ? LANGUAGE_MAP.get(item.sourceLangCode)?.name : null;
@@ -96,13 +96,27 @@ function TranslationBubble({
     setShowMoreActions((prev) => !prev);
   }, []);
 
+  // Memoize inline closures so TouchableOpacity children receive stable onPress
+  // identity — avoids re-rendering every button when the parent re-renders for
+  // copiedText/speakingText changes.
+  const handleDismiss = useCallback(() => onDismiss?.(realIndex), [onDismiss, realIndex]);
+  const handleCopyOriginal = useCallback(() => onCopy(item.original), [onCopy, item.original]);
+  const handleCopyTranslated = useCallback(() => onCopy(item.translated), [onCopy, item.translated]);
+  const handleSpeak = useCallback(() => onSpeak(item.translated, targetSpeechCode), [onSpeak, item.translated, targetSpeechCode]);
+  const handleToggleFavorite = useCallback(() => onToggleFavorite(realIndex), [onToggleFavorite, realIndex]);
+  const handleRetry = useCallback(() => onRetry(realIndex), [onRetry, realIndex]);
+  const handleCompare = useCallback(() => onCompare(item.original, item.translated), [onCompare, item.original, item.translated]);
+  const handleCorrection = useCallback(() => onCorrection({ index: realIndex, original: item.original, translated: item.translated }), [onCorrection, realIndex, item.original, item.translated]);
+  const handleShowPassenger = useCallback(() => onShowPassenger?.(realIndex), [onShowPassenger, realIndex]);
+  const handleShareCard = useCallback(() => onShareCard ? onShareCard(realIndex) : handleShare(), [onShareCard, realIndex, handleShare]);
+
   return (
     <View style={styles.historyItem}>
       {/* Dismiss button in top-right corner */}
       {onDismiss && (
         <TouchableOpacity
           style={styles.dismissButton}
-          onPress={() => onDismiss(realIndex)}
+          onPress={handleDismiss}
           accessibilityRole="button"
           accessibilityLabel="Remove this translation"
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -111,7 +125,7 @@ function TranslationBubble({
         </TouchableOpacity>
       )}
       <TouchableOpacity
-        onPress={() => onCopy(item.original)}
+        onPress={handleCopyOriginal}
         style={[styles.bubble, { backgroundColor: colors.bubbleBg }]}
         accessibilityRole="button"
         accessibilityLabel={`Original: ${item.original}. Tap to copy.`}
@@ -138,7 +152,7 @@ function TranslationBubble({
       </TouchableOpacity>
       <View style={[styles.bubble, styles.translatedBubble, { backgroundColor: colors.translatedBubbleBg, borderLeftColor: item.status === "error" ? colors.errorBorder : item.status === "pending" ? colors.offlineText : colors.primary }]}>
         <TouchableOpacity
-          onPress={() => item.status !== "pending" && item.status !== "error" && onCopy(item.translated)}
+          onPress={handleCopyTranslated}
           accessibilityRole="button"
           accessibilityLabel={item.status === "error" ? `Translation failed: ${item.translated}` : item.status === "pending" ? `Queued for translation when online` : `Translation: ${item.translated}. Tap to copy. Long-press a word for alternatives.`}
           disabled={item.status === "pending" || item.status === "error"}
@@ -198,7 +212,7 @@ function TranslationBubble({
           {item.status === "error" ? (
             <TouchableOpacity
               style={styles.retryButton}
-              onPress={() => onRetry(realIndex)}
+              onPress={handleRetry}
               accessibilityRole="button"
               accessibilityLabel="Retry translation"
             >
@@ -208,7 +222,7 @@ function TranslationBubble({
           ) : (
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() => onSpeak(item.translated, targetSpeechCode)}
+              onPress={handleSpeak}
               accessibilityRole="button"
               accessibilityLabel={speakingText === item.translated ? "Stop speaking" : `Speak translation`}
             >
@@ -219,7 +233,7 @@ function TranslationBubble({
           )}
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={() => onToggleFavorite(realIndex)}
+            onPress={handleToggleFavorite}
             accessibilityRole="button"
             accessibilityLabel={item.favorited ? "Remove from favorites" : "Add to favorites"}
           >
@@ -244,7 +258,7 @@ function TranslationBubble({
           <View style={[styles.secondaryActions, { borderTopColor: colors.border }]}>
             <TouchableOpacity
               style={styles.secondaryButton}
-              onPress={() => onCompare(item.original, item.translated)}
+              onPress={handleCompare}
               accessibilityRole="button"
               accessibilityLabel="Compare translations"
             >
@@ -253,7 +267,7 @@ function TranslationBubble({
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.secondaryButton}
-              onPress={() => onCorrection({ index: realIndex, original: item.original, translated: item.translated })}
+              onPress={handleCorrection}
               accessibilityRole="button"
               accessibilityLabel="Suggest correction"
             >
@@ -263,7 +277,7 @@ function TranslationBubble({
             {onShowPassenger && (
               <TouchableOpacity
                 style={styles.secondaryButton}
-                onPress={() => onShowPassenger(realIndex)}
+                onPress={handleShowPassenger}
                 accessibilityRole="button"
                 accessibilityLabel="Show to passenger"
               >
@@ -273,7 +287,7 @@ function TranslationBubble({
             )}
             <TouchableOpacity
               style={styles.secondaryButton}
-              onPress={onShareCard ? () => onShareCard(realIndex) : handleShare}
+              onPress={handleShareCard}
               accessibilityRole="button"
               accessibilityLabel="Share translation"
             >
