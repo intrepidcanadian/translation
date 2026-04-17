@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { modalStyles } from "../styles/modalStyles";
 import {
   Modal,
   View,
@@ -67,9 +68,9 @@ export default function GlossaryModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View accessibilityViewIsModal={true} style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-        <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
-          <Text style={[styles.compareTitle, { color: colors.titleText }]}>My Glossary</Text>
+      <View accessibilityViewIsModal={true} style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]}>
+        <View style={[modalStyles.content, { backgroundColor: colors.modalBg }]}>
+          <Text style={[modalStyles.title, { color: colors.titleText }]}>My Glossary</Text>
           <Text
             style={{
               color: colors.dimText,
@@ -300,7 +301,7 @@ export default function GlossaryModal({
           )}
 
           <TouchableOpacity
-            style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
+            style={[modalStyles.closeButton, { borderTopColor: colors.borderLight }]}
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="Close glossary"
@@ -316,29 +317,6 @@ export default function GlossaryModal({
 }
 
 const styles = StyleSheet.create({
-  compareOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  compareContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "70%",
-    paddingTop: 20,
-    paddingHorizontal: 20,
-  },
-  compareTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  compareClose: {
-    padding: 18,
-    alignItems: "center",
-    borderTopWidth: 1,
-    marginHorizontal: -20,
-  },
   apiKeyInput: {
     borderRadius: 12,
     paddingVertical: 10,

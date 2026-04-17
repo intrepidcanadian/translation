@@ -1,6 +1,7 @@
 import React from "react";
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import type { ThemeColors } from "../theme";
+import { modalStyles } from "../styles/modalStyles";
 
 interface ComparisonModalProps {
   visible: boolean;
@@ -17,18 +18,18 @@ interface ComparisonModalProps {
 export default function ComparisonModal({ visible, data, onClose, onCopy, copiedText, colors }: ComparisonModalProps) {
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]} accessibilityViewIsModal={true}>
-        <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
-          <Text style={[styles.compareTitle, { color: colors.titleText }]}>Compare Translations</Text>
+      <View style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]} accessibilityViewIsModal={true}>
+        <View style={[modalStyles.content, { backgroundColor: colors.modalBg }]}>
+          <Text style={[modalStyles.title, { color: colors.titleText }]}>Compare Translations</Text>
           {data && (
             <>
-              <View style={[styles.compareOriginal, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
-                <Text style={[styles.compareLabel, { color: colors.dimText }]}>ORIGINAL</Text>
+              <View style={[modalStyles.infoBox, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
+                <Text style={[modalStyles.label, { color: colors.dimText }]}>ORIGINAL</Text>
                 <Text style={[{ color: colors.primaryText, fontSize: 15 }]}>{data.original}</Text>
               </View>
               {data.results.map((r) => (
                 <View key={r.provider} style={[styles.compareResult, { backgroundColor: colors.translatedBubbleBg, borderColor: colors.border }]}>
-                  <Text style={[styles.compareLabel, { color: colors.primary }]}>{r.provider.toUpperCase()}</Text>
+                  <Text style={[modalStyles.label, { color: colors.primary }]}>{r.provider.toUpperCase()}</Text>
                   {r.loading ? (
                     <Text style={[{ color: colors.dimText, fontStyle: "italic", fontSize: 15 }]}>Loading...</Text>
                   ) : (
@@ -42,7 +43,7 @@ export default function ComparisonModal({ visible, data, onClose, onCopy, copied
             </>
           )}
           <TouchableOpacity
-            style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
+            style={[modalStyles.closeButton, { borderTopColor: colors.borderLight }]}
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="Close comparison"
@@ -56,46 +57,11 @@ export default function ComparisonModal({ visible, data, onClose, onCopy, copied
 }
 
 const styles = StyleSheet.create({
-  compareOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  compareContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "70%",
-    paddingTop: 20,
-    paddingHorizontal: 20,
-  },
-  compareTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  compareOriginal: {
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
   compareResult: {
     borderRadius: 12,
     padding: 12,
     marginBottom: 10,
     borderWidth: 1,
-  },
-  compareLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1,
-    marginBottom: 6,
-  },
-  compareClose: {
-    padding: 18,
-    alignItems: "center",
-    borderTopWidth: 1,
-    marginHorizontal: -20,
   },
   copiedBadge: {
     color: "#4ade80",

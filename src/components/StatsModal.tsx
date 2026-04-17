@@ -1,4 +1,5 @@
 import React, { useMemo } from "react";
+import { modalStyles } from "../styles/modalStyles";
 import {
   Modal,
   View,
@@ -163,40 +164,40 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View accessibilityViewIsModal={true} style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-        <View style={[styles.statsContent, { backgroundColor: colors.modalBg }]}>
-          <Text style={[styles.compareTitle, { color: colors.titleText }]}>Translation Statistics</Text>
+      <View accessibilityViewIsModal={true} style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]}>
+        <View style={[modalStyles.contentWide, { backgroundColor: colors.modalBg }]}>
+          <Text style={[modalStyles.title, { color: colors.titleText }]}>Translation Statistics</Text>
           <FlatList
             data={[{ key: "stats" }]}
             renderItem={() => (
               <View>
                 {/* Summary cards */}
-                <View style={styles.statsGrid}>
-                  <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
-                    <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.totalTranslations}</Text>
-                    <Text style={[styles.statLabel, { color: colors.mutedText }]}>Translations</Text>
+                <View style={styles.statsGrid} accessibilityRole="summary">
+                  <View style={[styles.statCard, { backgroundColor: colors.cardBg }]} accessible={true} accessibilityLabel={`${stats.totalTranslations} translations`}>
+                    <Text style={[styles.statNumber, { color: colors.primary }]} importantForAccessibility="no">{stats.totalTranslations}</Text>
+                    <Text style={[styles.statLabel, { color: colors.mutedText }]} importantForAccessibility="no">Translations</Text>
                   </View>
-                  <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
-                    <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.totalFavorites}</Text>
-                    <Text style={[styles.statLabel, { color: colors.mutedText }]}>Favorites</Text>
+                  <View style={[styles.statCard, { backgroundColor: colors.cardBg }]} accessible={true} accessibilityLabel={`${stats.totalFavorites} favorites`}>
+                    <Text style={[styles.statNumber, { color: colors.primary }]} importantForAccessibility="no">{stats.totalFavorites}</Text>
+                    <Text style={[styles.statLabel, { color: colors.mutedText }]} importantForAccessibility="no">Favorites</Text>
                   </View>
-                  <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
-                    <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.totalSourceWords}</Text>
-                    <Text style={[styles.statLabel, { color: colors.mutedText }]}>Words In</Text>
+                  <View style={[styles.statCard, { backgroundColor: colors.cardBg }]} accessible={true} accessibilityLabel={`${stats.totalSourceWords} words in`}>
+                    <Text style={[styles.statNumber, { color: colors.primary }]} importantForAccessibility="no">{stats.totalSourceWords}</Text>
+                    <Text style={[styles.statLabel, { color: colors.mutedText }]} importantForAccessibility="no">Words In</Text>
                   </View>
-                  <View style={[styles.statCard, { backgroundColor: colors.cardBg }]}>
-                    <Text style={[styles.statNumber, { color: colors.primary }]}>{stats.totalTranslatedWords}</Text>
-                    <Text style={[styles.statLabel, { color: colors.mutedText }]}>Words Out</Text>
+                  <View style={[styles.statCard, { backgroundColor: colors.cardBg }]} accessible={true} accessibilityLabel={`${stats.totalTranslatedWords} words out`}>
+                    <Text style={[styles.statNumber, { color: colors.primary }]} importantForAccessibility="no">{stats.totalTranslatedWords}</Text>
+                    <Text style={[styles.statLabel, { color: colors.mutedText }]} importantForAccessibility="no">Words Out</Text>
                   </View>
                 </View>
 
                 {streak.current > 0 && (
-                  <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
-                    <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Daily Streak</Text>
+                  <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]} accessible={true} accessibilityLabel={`Daily streak: ${streak.current} ${streak.current === 1 ? "day" : "days"} in a row`}>
+                    <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]} importantForAccessibility="no">Daily Streak</Text>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <Text style={{ fontSize: 32 }}>🔥</Text>
-                      <Text style={[styles.statNumber, { color: colors.primary, fontSize: 28 }]}>{streak.current}</Text>
-                      <Text style={[{ color: colors.mutedText, fontSize: 14 }]}>{streak.current === 1 ? "day" : "days"} in a row</Text>
+                      <Text style={{ fontSize: 32 }} importantForAccessibility="no">🔥</Text>
+                      <Text style={[styles.statNumber, { color: colors.primary, fontSize: 28 }]} importantForAccessibility="no">{streak.current}</Text>
+                      <Text style={[{ color: colors.mutedText, fontSize: 14 }]} importantForAccessibility="no">{streak.current === 1 ? "day" : "days"} in a row</Text>
                     </View>
                   </View>
                 )}
@@ -222,10 +223,10 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
                   <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
                     <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Top Language Pairs</Text>
                     {topPairs.map((p, i) => (
-                      <View key={i} style={styles.statsRow}>
-                        <Text style={[styles.statsRowLabel, { color: colors.primaryText }]}>{p.label}</Text>
+                      <View key={i} style={styles.statsRow} accessible={true} accessibilityLabel={`${p.label}, ${p.count} translations`}>
+                        <Text style={[styles.statsRowLabel, { color: colors.primaryText }]} importantForAccessibility="no">{p.label}</Text>
                         <View style={[styles.statsCountBadge, { backgroundColor: colors.primary + "22" }]}>
-                          <Text style={[styles.statsCountText, { color: colors.primary }]}>{p.count}</Text>
+                          <Text style={[styles.statsCountText, { color: colors.primary }]} importantForAccessibility="no">{p.count}</Text>
                         </View>
                       </View>
                     ))}
@@ -236,10 +237,10 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
                   <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
                     <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Most Translated To</Text>
                     {topTargets.map((t, i) => (
-                      <View key={i} style={styles.statsRow}>
-                        <Text style={[styles.statsRowLabel, { color: colors.primaryText }]}>{t.label}</Text>
+                      <View key={i} style={styles.statsRow} accessible={true} accessibilityLabel={`${t.label}, ${t.count} translations`}>
+                        <Text style={[styles.statsRowLabel, { color: colors.primaryText }]} importantForAccessibility="no">{t.label}</Text>
                         <View style={[styles.statsCountBadge, { backgroundColor: colors.primary + "22" }]}>
-                          <Text style={[styles.statsCountText, { color: colors.primary }]}>{t.count}</Text>
+                          <Text style={[styles.statsCountText, { color: colors.primary }]} importantForAccessibility="no">{t.count}</Text>
                         </View>
                       </View>
                     ))}
@@ -259,7 +260,7 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
             keyExtractor={(item) => item.key}
           />
           <TouchableOpacity
-            style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
+            style={[modalStyles.closeButton, { borderTopColor: colors.borderLight }]}
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="Close statistics"
@@ -273,29 +274,6 @@ export default function StatsModal({ visible, onClose, history, streak, colors }
 }
 
 const styles = StyleSheet.create({
-  compareOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  compareTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  compareClose: {
-    padding: 18,
-    alignItems: "center",
-    borderTopWidth: 1,
-    marginHorizontal: -20,
-  },
-  statsContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "80%",
-    paddingTop: 20,
-    paddingHorizontal: 20,
-  },
   statsGrid: {
     flexDirection: "row" as const,
     flexWrap: "wrap" as const,

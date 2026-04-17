@@ -447,7 +447,9 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
                 onPress={downloadAllMissing}
                 disabled={isDownloadingAll}
                 accessibilityRole="button"
-                accessibilityLabel={`Download ${downloadableCount} language packs`}
+                accessibilityLabel={isDownloadingAll ? "Downloading language packs" : `Download ${downloadableCount} language packs`}
+                accessibilityHint={isDownloadingAll ? "Download in progress, please wait" : `Downloads all ${downloadableCount} available language packs for offline use`}
+                accessibilityState={{ disabled: isDownloadingAll }}
               >
                 {isDownloadingAll ? (
                   <Animated.View style={{ opacity: pulseAnim, flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -475,7 +477,12 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
                 LANGUAGE PACKS
               </Text>
               {selectedRoute && (
-                <TouchableOpacity onPress={() => setShowAllLanguages(!showAllLanguages)}>
+                <TouchableOpacity
+                  onPress={() => setShowAllLanguages(!showAllLanguages)}
+                  accessibilityRole="button"
+                  accessibilityLabel={showAllLanguages ? "Show route languages only" : "Show all languages"}
+                  accessibilityHint={showAllLanguages ? "Filters to only languages on your route" : "Shows all available language packs"}
+                >
                   <Text style={[styles.showAllText, { color: colors.primary }]}>
                     {showAllLanguages ? "Show route only" : "Show all"}
                   </Text>
@@ -488,7 +495,7 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
                 key={lp.code}
                 style={[styles.langRow, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
               >
-                <Text style={styles.langFlag}>{lp.flag}</Text>
+                <Text style={styles.langFlag} importantForAccessibility="no">{lp.flag}</Text>
                 <View style={styles.langTextCol}>
                   <Text style={[styles.langName, { color: colors.primaryText }]}>{lp.name}</Text>
                   <Text style={[styles.langCode, { color: colors.dimText }]}>
@@ -500,6 +507,7 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
                 {lp.status === "installed" && (
                   <View
                     style={[styles.statusBadge, { backgroundColor: colors.successBg }]}
+                    accessibilityRole="text"
                     accessibilityLabel={`${lp.name} is installed and ready`}
                   >
                     <Text style={[styles.statusBadgeText, { color: colors.successText }]}>Ready</Text>
@@ -531,6 +539,7 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
                     onPress={() => downloadSingleLanguage(lp.code)}
                     accessibilityRole="button"
                     accessibilityLabel={`Download ${lp.name}`}
+                    accessibilityHint={`Downloads the ${lp.name} language pack for offline translation`}
                   >
                     <Text style={[styles.downloadButtonText, { color: colors.destructiveText }]}>
                       Download
@@ -543,6 +552,7 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
                     onPress={() => downloadSingleLanguage(lp.code)}
                     accessibilityRole="button"
                     accessibilityLabel={`Retry downloading ${lp.name}`}
+                    accessibilityHint="Previous download failed, tap to try again"
                   >
                     <Text style={[styles.errorText, { color: colors.errorText }]}>Retry</Text>
                   </TouchableOpacity>
@@ -551,6 +561,7 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
                 {lp.status === "unsupported" && (
                   <Text
                     style={[styles.unsupportedText, { color: colors.dimText }]}
+                    accessibilityRole="text"
                     accessibilityLabel={`${lp.name} is not available on this device`}
                   >
                     N/A

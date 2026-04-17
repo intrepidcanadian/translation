@@ -69,6 +69,7 @@ interface Props {
   onClearCache: () => void;
   onResetTelemetry: () => void;
   onClearProviderCache: (provider: string) => void;
+  onClearWordAltCache?: () => void;
 }
 
 function DiagnosticsPanel({
@@ -99,6 +100,7 @@ function DiagnosticsPanel({
   onClearCache,
   onResetTelemetry,
   onClearProviderCache,
+  onClearWordAltCache,
 }: Props) {
   const dynamicStyles = useMemo(() => ({
     infoText: { color: colors.dimText },
@@ -134,9 +136,22 @@ function DiagnosticsPanel({
               </Text>
             )}
             {wordAltCacheStats && wordAltCacheStats.size > 0 && (
-              <Text style={[styles.infoText, dynamicStyles.infoText]}>
-                Word alt cache: {wordAltCacheStats.size}/{wordAltCacheStats.max}
-              </Text>
+              <View style={styles.cacheProviderRow}>
+                <Text style={[styles.infoText, dynamicStyles.infoText, styles.cacheProviderLabel]}>
+                  Word alt cache: {wordAltCacheStats.size}/{wordAltCacheStats.max}
+                </Text>
+                {onClearWordAltCache && (
+                  <TouchableOpacity
+                    style={[styles.cacheProviderClear, { backgroundColor: colors.cardBg }]}
+                    onPress={onClearWordAltCache}
+                    accessibilityRole="button"
+                    accessibilityLabel="Clear word alternatives cache"
+                    accessibilityHint={`Removes ${wordAltCacheStats.size} cached word alternative lookups`}
+                  >
+                    <Text style={[styles.cacheProviderClearText, { color: colors.dimText }]}>Clear</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
             {Object.entries(cacheStats.byProvider).map(([provider, count]) => (
               <View key={provider} style={styles.cacheProviderRow}>

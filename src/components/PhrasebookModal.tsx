@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { modalStyles } from "../styles/modalStyles";
 import {
   Modal,
   View,
@@ -144,12 +145,12 @@ function PhrasebookModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View accessibilityViewIsModal={true} style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-        <View style={[styles.phrasebookContent, glassSurface, { backgroundColor: colors.glassBgStrong, borderColor: colors.glassBorder }]}>
+      <View accessibilityViewIsModal={true} style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]}>
+        <View style={[modalStyles.contentWide, styles.phrasebookContentOverride, glassSurface, { backgroundColor: colors.glassBgStrong, borderColor: colors.glassBorder }]}>
           {/* Aurora bleed-through inside the sheet so the glass surface has
               something colored to refract. Honors Reduce Transparency. */}
           <GlassBackdrop />
-          <Text style={[styles.compareTitle, { color: colors.titleText }]}>Phrasebook</Text>
+          <Text style={[modalStyles.title, { color: colors.titleText }]}>Phrasebook</Text>
 
           {/* Location banner */}
           {locationLoading && (
@@ -192,7 +193,7 @@ function PhrasebookModal({
             renderItem={renderPhrase}
           />
           <TouchableOpacity
-            style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
+            style={[modalStyles.closeButton, { borderTopColor: colors.borderLight }]}
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="Close phrasebook"
@@ -208,28 +209,7 @@ function PhrasebookModal({
 export default React.memo(PhrasebookModal);
 
 const styles = StyleSheet.create({
-  compareOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  compareTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  compareClose: {
-    padding: 18,
-    alignItems: "center",
-    borderTopWidth: 1,
-    marginHorizontal: -20,
-  },
-  phrasebookContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "80%",
-    paddingTop: 20,
-    paddingHorizontal: 20,
+  phrasebookContentOverride: {
     // Clip aurora blobs to the rounded sheet outline.
     overflow: "hidden",
   },

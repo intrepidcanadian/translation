@@ -1,6 +1,7 @@
 import React from "react";
 import { Modal, View, Text, TouchableOpacity, FlatList, StyleSheet } from "react-native";
 import type { ThemeColors } from "../theme";
+import { modalStyles } from "../styles/modalStyles";
 
 interface WordAlternativesModalProps {
   visible: boolean;
@@ -18,13 +19,13 @@ interface WordAlternativesModalProps {
 export default function WordAlternativesModal({ visible, data, onClose, onCopy, copiedText, colors }: WordAlternativesModalProps) {
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View accessibilityViewIsModal={true} style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
-        <View style={[styles.compareContent, { backgroundColor: colors.modalBg }]}>
+      <View accessibilityViewIsModal={true} style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]}>
+        <View style={[modalStyles.content, { backgroundColor: colors.modalBg }]}>
           {data && (
             <>
-              <Text style={[styles.compareTitle, { color: colors.titleText }]}>Word Lookup</Text>
-              <View style={[styles.compareOriginal, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
-                <Text style={[styles.compareLabel, { color: colors.dimText }]}>WORD</Text>
+              <Text style={[modalStyles.title, { color: colors.titleText }]}>Word Lookup</Text>
+              <View style={[modalStyles.infoBox, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
+                <Text style={[modalStyles.label, { color: colors.dimText }]}>WORD</Text>
                 <Text style={[{ color: colors.primaryText, fontSize: 20, fontWeight: "700" as const }]}>{data.word}</Text>
               </View>
               {data.loading ? (
@@ -62,7 +63,7 @@ export default function WordAlternativesModal({ visible, data, onClose, onCopy, 
             </>
           )}
           <TouchableOpacity
-            style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
+            style={[modalStyles.closeButton, { borderTopColor: colors.borderLight }]}
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="Close word lookup"
@@ -76,41 +77,6 @@ export default function WordAlternativesModal({ visible, data, onClose, onCopy, 
 }
 
 const styles = StyleSheet.create({
-  compareOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  compareContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "70%",
-    paddingTop: 20,
-    paddingHorizontal: 20,
-  },
-  compareTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  compareOriginal: {
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-  compareLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 1,
-    marginBottom: 6,
-  },
-  compareClose: {
-    padding: 18,
-    alignItems: "center",
-    borderTopWidth: 1,
-    marginHorizontal: -20,
-  },
   copiedBadge: {
     color: "#4ade80",
     fontSize: 12,

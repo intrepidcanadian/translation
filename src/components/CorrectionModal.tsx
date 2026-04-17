@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Modal, View, Text, TouchableOpacity, TextInput, StyleSheet } from "react-native";
 import type { ThemeColors } from "../theme";
+import { modalStyles } from "../styles/modalStyles";
 
 interface CorrectionModalProps {
   visible: boolean;
@@ -34,9 +35,9 @@ export default function CorrectionModal({ visible, data, onClose, onSubmit, colo
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]} accessibilityViewIsModal={true}>
-        <View style={[styles.compareContent, { backgroundColor: colors.modalBg, maxHeight: "70%" }]}>
-          <Text style={[styles.compareTitle, { color: colors.titleText }]}>Suggest Correction</Text>
+      <View style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]} accessibilityViewIsModal={true}>
+        <View style={[modalStyles.content, { backgroundColor: colors.modalBg }]}>
+          <Text style={[modalStyles.title, { color: colors.titleText }]}>Suggest Correction</Text>
           <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
             <Text style={[{ color: colors.dimText, fontSize: 13, marginBottom: 12 }]}>
               Original: "{data?.original}"
@@ -66,7 +67,7 @@ export default function CorrectionModal({ visible, data, onClose, onSubmit, colo
             </TouchableOpacity>
           </View>
           <TouchableOpacity
-            style={[styles.compareClose, { borderTopColor: colors.borderLight }]}
+            style={[modalStyles.closeButton, { borderTopColor: colors.borderLight }]}
             onPress={handleClose}
             accessibilityRole="button"
             accessibilityLabel="Cancel correction"
@@ -80,29 +81,6 @@ export default function CorrectionModal({ visible, data, onClose, onSubmit, colo
 }
 
 const styles = StyleSheet.create({
-  compareOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
-  compareContent: {
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    maxHeight: "70%",
-    paddingTop: 20,
-    paddingHorizontal: 20,
-  },
-  compareTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  compareClose: {
-    padding: 18,
-    alignItems: "center",
-    borderTopWidth: 1,
-    marginHorizontal: -20,
-  },
   glossaryInput: {
     borderRadius: 12,
     paddingVertical: 10,

@@ -360,7 +360,7 @@ function VisualCardsModal({
           onLongPress={() => speakCard(card)}
           activeOpacity={0.7}
           accessibilityRole="button"
-          accessibilityLabel={card.label}
+          accessibilityLabel={isExpanded && translatedText ? `${card.label}. Translation: ${translatedText}` : card.label}
           accessibilityHint={isExpanded ? "Tap again to speak aloud. Long press to speak." : "Tap to expand and show translation. Long press to speak."}
           accessibilityState={{ expanded: isExpanded }}
         >
@@ -374,7 +374,11 @@ function VisualCardsModal({
 
           {/* Show translated text when expanded */}
           {isExpanded && translatedText && (
-            <View style={[styles.translatedSection, { borderTopColor: colors.borderLight }]}>
+            <View
+              style={[styles.translatedSection, { borderTopColor: colors.borderLight }]}
+              accessibilityLabel={`Translation: ${translatedText}`}
+              accessibilityRole="text"
+            >
               <Text style={[styles.translatedLabel, { color: currentCategory.color }]}>
                 {translatedText}
               </Text>

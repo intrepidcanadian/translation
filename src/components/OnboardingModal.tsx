@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { modalStyles } from "../styles/modalStyles";
 import {
   Modal,
   View,
@@ -50,7 +51,7 @@ function OnboardingModalBase({ visible, onComplete, colors }: OnboardingModalPro
 
   return (
     <Modal visible={visible} animationType="fade" transparent>
-      <View accessibilityViewIsModal={true} style={[styles.compareOverlay, { backgroundColor: colors.overlayBg }]}>
+      <View accessibilityViewIsModal={true} style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]}>
         <View style={[styles.onboardingContent, { backgroundColor: colors.modalBg }]}>
           {/* Step counter — announces current position to screen readers */}
           <Text
@@ -107,10 +108,6 @@ function OnboardingModalBase({ visible, onComplete, colors }: OnboardingModalPro
 }
 
 const styles = StyleSheet.create({
-  compareOverlay: {
-    flex: 1,
-    justifyContent: "flex-end",
-  },
   onboardingContent: {
     borderRadius: 24,
     paddingVertical: 32,

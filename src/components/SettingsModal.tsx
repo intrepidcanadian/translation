@@ -470,6 +470,12 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     notifySuccess();
   }, [refreshDiagnostics]);
 
+  const handleClearWordAltCache = useCallback(() => {
+    clearWordAltCache();
+    refreshDiagnostics();
+    notifySuccess();
+  }, [refreshDiagnostics]);
+
   // Per-provider eviction — dumps just one provider's cached entries so users
   // switching providers can drop stale cloud results without nuking the whole
   // cache. Uses the new clearTranslationCache(provider) overload.
@@ -856,6 +862,7 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
                 onClearCache={handleClearTranslationCache}
                 onResetTelemetry={handleResetTelemetry}
                 onClearProviderCache={handleClearProviderCache}
+                onClearWordAltCache={handleClearWordAltCache}
               />
             )}
 
