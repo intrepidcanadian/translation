@@ -15,7 +15,7 @@ interface CorrectionModalProps {
   colors: ThemeColors;
 }
 
-export default function CorrectionModal({ visible, data, onClose, onSubmit, colors }: CorrectionModalProps) {
+function CorrectionModal({ visible, data, onClose, onSubmit, colors }: CorrectionModalProps) {
   const [correctionText, setCorrectionText] = useState("");
 
   useEffect(() => {
@@ -55,6 +55,7 @@ export default function CorrectionModal({ visible, data, onClose, onSubmit, colo
               autoCapitalize="none"
               autoCorrect={false}
               accessibilityLabel="Correction input"
+              accessibilityHint="Type the correct translation to replace the current one"
             />
             <TouchableOpacity
               style={[styles.glossaryAddButton, { backgroundColor: correctionText.trim() ? colors.primary : colors.border }]}
@@ -62,6 +63,8 @@ export default function CorrectionModal({ visible, data, onClose, onSubmit, colo
               disabled={!correctionText.trim()}
               accessibilityRole="button"
               accessibilityLabel="Submit correction"
+              accessibilityHint="Saves the corrected translation and adds it to your glossary"
+              accessibilityState={{ disabled: !correctionText.trim() }}
             >
               <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Save & Add to Glossary</Text>
             </TouchableOpacity>
@@ -79,6 +82,8 @@ export default function CorrectionModal({ visible, data, onClose, onSubmit, colo
     </Modal>
   );
 }
+
+export default React.memo(CorrectionModal);
 
 const styles = StyleSheet.create({
   glossaryInput: {

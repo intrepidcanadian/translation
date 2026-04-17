@@ -16,7 +16,7 @@ interface WordAlternativesModalProps {
   colors: ThemeColors;
 }
 
-export default function WordAlternativesModal({ visible, data, onClose, onCopy, copiedText, colors }: WordAlternativesModalProps) {
+function WordAlternativesModal({ visible, data, onClose, onCopy, copiedText, colors }: WordAlternativesModalProps) {
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View accessibilityViewIsModal={true} style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]}>
@@ -45,13 +45,19 @@ export default function WordAlternativesModal({ visible, data, onClose, onCopy, 
                     <TouchableOpacity
                       style={[styles.altRow, { borderBottomColor: colors.borderLight }]}
                       onPress={() => onCopy(alt.translation)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Alternative: ${alt.translation}${alt.quality > 0 ? `, ${alt.quality}% quality` : ""}`}
+                      accessibilityHint="Tap to copy this alternative translation"
                     >
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.altTranslation, { color: colors.translatedText }]}>{alt.translation}</Text>
                         <Text style={[styles.altSource, { color: colors.dimText }]}>{alt.source}</Text>
                       </View>
                       {alt.quality > 0 && (
-                        <View style={[styles.altQualityBadge, { backgroundColor: colors.primary + "22" }]}>
+                        <View
+                          style={[styles.altQualityBadge, { backgroundColor: colors.primary + "22" }]}
+                          importantForAccessibility="no-hide-descendants"
+                        >
                           <Text style={[styles.altQualityText, { color: colors.primary }]}>{alt.quality}%</Text>
                         </View>
                       )}
@@ -59,7 +65,7 @@ export default function WordAlternativesModal({ visible, data, onClose, onCopy, 
                   )}
                 />
               )}
-              {copiedText && <Text style={[styles.copiedBadge, { textAlign: "center" as const }]}>Copied!</Text>}
+              {copiedText && <Text style={[styles.copiedBadge, { textAlign: "center" as const }]} accessibilityLiveRegion="polite">Copied!</Text>}
             </>
           )}
           <TouchableOpacity
@@ -75,6 +81,8 @@ export default function WordAlternativesModal({ visible, data, onClose, onCopy, 
     </Modal>
   );
 }
+
+export default React.memo(WordAlternativesModal);
 
 const styles = StyleSheet.create({
   copiedBadge: {

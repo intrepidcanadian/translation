@@ -38,7 +38,7 @@ interface GlossaryModalProps {
   colors: ThemeColors;
 }
 
-export default function GlossaryModal({
+function GlossaryModal({
   visible,
   onClose,
   glossary,
@@ -102,6 +102,7 @@ export default function GlossaryModal({
               autoCapitalize="none"
               autoCorrect={false}
               accessibilityLabel="Glossary source phrase"
+              accessibilityHint={`Enter a word or phrase in ${sourceLangName}`}
             />
             <TextInput
               style={[
@@ -120,6 +121,7 @@ export default function GlossaryModal({
               autoCapitalize="none"
               autoCorrect={false}
               accessibilityLabel="Glossary target translation"
+              accessibilityHint={`Enter the custom translation in ${targetLangName}`}
             />
             <TouchableOpacity
               style={[
@@ -135,6 +137,8 @@ export default function GlossaryModal({
               disabled={!glossarySource.trim() || !glossaryTarget.trim()}
               accessibilityRole="button"
               accessibilityLabel="Add glossary entry"
+              accessibilityHint="Saves the source phrase and translation as a custom glossary entry"
+              accessibilityState={{ disabled: !glossarySource.trim() || !glossaryTarget.trim() }}
             >
               <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Add Entry</Text>
             </TouchableOpacity>
@@ -164,6 +168,8 @@ export default function GlossaryModal({
                     styles.glossaryEntry,
                     { backgroundColor: colors.cardBg, borderColor: colors.border },
                   ]}
+                  accessible={true}
+                  accessibilityLabel={`Glossary entry: ${item.source} translates to ${item.target}`}
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={{ color: colors.secondaryText, fontSize: 14 }}>
@@ -224,6 +230,7 @@ export default function GlossaryModal({
                   }}
                   accessibilityRole="button"
                   accessibilityLabel="Export glossary as CSV"
+                  accessibilityHint="Opens the share sheet with all glossary entries formatted as CSV"
                 >
                   <Text
                     style={{ color: colors.primary, fontSize: 13, fontWeight: "600" as const }}
@@ -289,6 +296,7 @@ export default function GlossaryModal({
                   }}
                   accessibilityRole="button"
                   accessibilityLabel="Import glossary from clipboard CSV"
+                  accessibilityHint="Reads CSV data from your clipboard and adds new glossary entries"
                 >
                   <Text
                     style={{ color: colors.primary, fontSize: 13, fontWeight: "600" as const }}
@@ -315,6 +323,8 @@ export default function GlossaryModal({
     </Modal>
   );
 }
+
+export default React.memo(GlossaryModal);
 
 const styles = StyleSheet.create({
   apiKeyInput: {

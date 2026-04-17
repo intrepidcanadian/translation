@@ -26,7 +26,7 @@ interface TranslationShareCardProps {
   colors: ThemeColors;
 }
 
-export default function TranslationShareCard({
+function TranslationShareCard({
   visible,
   onClose,
   original,
@@ -95,7 +95,7 @@ export default function TranslationShareCard({
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
+      <View style={styles.overlay} accessibilityViewIsModal={true}>
         <View style={[styles.modalContainer, { backgroundColor: colors.cardBg }]}>
           {/* Preview of the share card */}
           <ViewShot
@@ -158,18 +158,29 @@ export default function TranslationShareCard({
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: colors.primary }]}
               onPress={handleShareImage}
+              accessibilityRole="button"
+              accessibilityLabel="Share as image"
+              accessibilityHint="Creates a branded image card and opens the share sheet"
             >
               <Text style={styles.actionBtnText}>Share as Image</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.border }]}
               onPress={handleShareText}
+              accessibilityRole="button"
+              accessibilityLabel="Share as text"
+              accessibilityHint="Opens the share sheet with a formatted text quote"
             >
               <Text style={[styles.actionBtnText, { color: colors.primaryText }]}>Share as Text</Text>
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+          <TouchableOpacity
+            style={styles.closeBtn}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel sharing"
+          >
             <Text style={[styles.closeBtnText, { color: colors.mutedText }]}>Cancel</Text>
           </TouchableOpacity>
         </View>
@@ -177,6 +188,8 @@ export default function TranslationShareCard({
     </Modal>
   );
 }
+
+export default React.memo(TranslationShareCard);
 
 const styles = StyleSheet.create({
   overlay: {

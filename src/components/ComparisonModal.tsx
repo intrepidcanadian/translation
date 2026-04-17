@@ -15,7 +15,7 @@ interface ComparisonModalProps {
   colors: ThemeColors;
 }
 
-export default function ComparisonModal({ visible, data, onClose, onCopy, copiedText, colors }: ComparisonModalProps) {
+function ComparisonModal({ visible, data, onClose, onCopy, copiedText, colors }: ComparisonModalProps) {
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]} accessibilityViewIsModal={true}>
@@ -33,7 +33,12 @@ export default function ComparisonModal({ visible, data, onClose, onCopy, copied
                   {r.loading ? (
                     <Text style={[{ color: colors.dimText, fontStyle: "italic", fontSize: 15 }]}>Loading...</Text>
                   ) : (
-                    <TouchableOpacity onPress={() => onCopy(r.text)}>
+                    <TouchableOpacity
+                      onPress={() => onCopy(r.text)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Copy ${r.provider} translation: ${r.text}`}
+                      accessibilityHint="Tap to copy this translation to clipboard"
+                    >
                       <Text style={[{ color: colors.translatedText, fontSize: 15 }]}>{r.text}</Text>
                       {copiedText === r.text && <Text style={styles.copiedBadge}>Copied!</Text>}
                     </TouchableOpacity>
@@ -55,6 +60,8 @@ export default function ComparisonModal({ visible, data, onClose, onCopy, copied
     </Modal>
   );
 }
+
+export default React.memo(ComparisonModal);
 
 const styles = StyleSheet.create({
   compareResult: {
