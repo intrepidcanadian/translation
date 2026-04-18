@@ -404,7 +404,7 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
 
             {/* Route Presets */}
             <Text style={[styles.sectionLabel, { color: colors.mutedText }]}>SELECT ROUTE</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.routeScroll} contentContainerStyle={styles.routeScrollContent}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.routeScroll} contentContainerStyle={styles.routeScrollContent} accessibilityRole="tablist">
               {ROUTE_PRESETS.map((preset) => (
                 <TouchableOpacity
                   key={preset.id}
@@ -417,8 +417,9 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
                     setSelectedRoute(selectedRoute === preset.id ? null : preset.id);
                     setShowAllLanguages(false);
                   }}
-                  accessibilityRole="button"
+                  accessibilityRole="tab"
                   accessibilityLabel={preset.label}
+                  accessibilityHint={selectedRoute === preset.id ? "Tap to deselect this route" : "Selects this route and filters languages"}
                   accessibilityState={{ selected: selectedRoute === preset.id }}
                 >
                   <Text style={styles.routeIcon}>{preset.icon}</Text>
@@ -495,6 +496,8 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
               <View
                 key={lp.code}
                 style={[styles.langRow, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
+                accessibilityRole="summary"
+                accessibilityLabel={`${lp.name}, ${lp.status === "installed" ? "ready for offline use" : lp.status === "supported" ? "available for download" : lp.status === "downloading" ? "downloading" : lp.status === "checking" ? "checking status" : lp.status === "error" ? "download failed" : "not available on this device"}`}
               >
                 <Text style={styles.langFlag} importantForAccessibility="no">{lp.flag}</Text>
                 <View style={styles.langTextCol}>
@@ -590,6 +593,7 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="Close flight prep"
+            accessibilityHint="Returns to the settings screen"
           >
             <Text style={[styles.closeText, { color: colors.primary }]}>Done</Text>
           </TouchableOpacity>

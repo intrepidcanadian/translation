@@ -33,7 +33,7 @@ interface Props {
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.25;
 
-export default function PassengerView({
+function PassengerView({
   visible,
   onClose,
   history,
@@ -164,6 +164,7 @@ export default function PassengerView({
           }}
           accessibilityRole="button"
           accessibilityLabel="Close passenger view"
+          accessibilityHint="Returns to the translation screen"
         >
           <Text style={styles.closeIcon}>X</Text>
         </TouchableOpacity>
@@ -217,6 +218,8 @@ export default function PassengerView({
             disabled={currentIndex === 0}
             accessibilityRole="button"
             accessibilityLabel="Previous translation"
+            accessibilityHint={currentIndex === 0 ? "No previous translations" : "Swipe or tap to show the previous translation"}
+            accessibilityState={{ disabled: currentIndex === 0 }}
           >
             <Text style={[styles.navIcon, currentIndex === 0 && styles.navIconDisabled]}>
               ‹
@@ -229,6 +232,7 @@ export default function PassengerView({
             onPress={speakTranslation}
             accessibilityRole="button"
             accessibilityLabel={isSpeaking ? "Stop speaking" : "Speak translation aloud"}
+            accessibilityHint={isSpeaking ? "Stops the current speech playback" : "Reads the translated text aloud"}
           >
             <Text style={styles.speakIcon}>{isSpeaking ? "⏹" : "🔊"}</Text>
             <Text style={styles.speakLabel}>{isSpeaking ? "Stop" : "Speak"}</Text>
@@ -241,6 +245,8 @@ export default function PassengerView({
             disabled={currentIndex >= validHistory.length - 1}
             accessibilityRole="button"
             accessibilityLabel="Next translation"
+            accessibilityHint={currentIndex >= validHistory.length - 1 ? "No more translations" : "Shows the next translation"}
+            accessibilityState={{ disabled: currentIndex >= validHistory.length - 1 }}
           >
             <Text style={[styles.navIcon, currentIndex >= validHistory.length - 1 && styles.navIconDisabled]}>
               ›
@@ -250,7 +256,13 @@ export default function PassengerView({
 
         {/* Swipe hint — only on first view */}
         {validHistory.length > 1 && (
-          <Text style={styles.swipeHint}>Swipe to browse translations</Text>
+          <Text
+            style={styles.swipeHint}
+            accessibilityRole="text"
+            accessibilityLabel={`Swipe to browse ${validHistory.length} translations`}
+          >
+            Swipe to browse translations
+          </Text>
         )}
       </View>
     </Modal>
@@ -399,3 +411,5 @@ const styles = StyleSheet.create({
     paddingTop: 8,
   },
 });
+
+export default React.memo(PassengerView);

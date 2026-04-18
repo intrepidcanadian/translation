@@ -28,7 +28,7 @@ import * as Speech from "expo-speech";
 import { copyWithAutoClear } from "../services/clipboard";
 import { logger } from "../services/logger";
 
-export default function SettingsScreen() {
+function SettingsScreen() {
   const { settings, updateSettings, showOnboarding, setShowOnboarding, completeOnboarding } = useSettings();
   const { sourceLang, targetLang } = useLanguage();
   const { glossary, addGlossaryEntry, removeGlossaryEntry, importGlossaryEntries } = useGlossary();
@@ -82,13 +82,14 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {menuItems.map((item, i) => (
+        {menuItems.map((item) => (
           <TouchableOpacity
-            key={i}
+            key={item.label}
             style={[styles.menuRow, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
             onPress={item.onPress}
             accessibilityRole="button"
             accessibilityLabel={item.label}
+            accessibilityHint={item.subtitle}
           >
             <Text style={styles.menuIcon}>{item.icon}</Text>
             <View style={styles.menuText}>
@@ -218,3 +219,5 @@ const styles = StyleSheet.create({
   infoSection: { alignItems: "center", paddingTop: 24, gap: 4 },
   infoText: { fontSize: 13 },
 });
+
+export default React.memo(SettingsScreen);

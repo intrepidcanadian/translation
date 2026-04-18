@@ -44,7 +44,7 @@ const MODE_ITEMS: ModeItem[] = [
   ...SCANNER_MODES.map((m) => ({ key: m.key as ScanMode, label: m.label, icon: m.icon })),
 ];
 
-export default function ScanScreen({ route }: Props) {
+function ScanScreen({ route }: Props) {
   const isFocused = useIsFocused();
   const { settings } = useSettings();
   const { sourceLang, targetLang } = useLanguage();
@@ -59,35 +59,44 @@ export default function ScanScreen({ route }: Props) {
     setSelectedMode(mode);
   }, []);
 
+  const handleCloseScanMode = useCallback(() => {
+    setSelectedMode("live");
+  }, []);
+
+  const modeKeyExtractor = useCallback((item: ModeItem) => item.key, []);
+
+  const renderModeItem = useCallback(({ item }: { item: ModeItem }) => {
+    const isActive = item.key === selectedMode;
+    return (
+      <TouchableOpacity
+        style={[
+          styles.modePill,
+          {
+            backgroundColor: isActive ? colors.primary : colors.glassBg,
+            borderColor: isActive ? colors.primary : colors.glassBorder,
+          },
+        ]}
+        onPress={() => handleModeSelect(item.key)}
+        accessibilityRole="tab"
+        accessibilityLabel={`${item.label} scanner mode`}
+        accessibilityHint={`Switches to ${item.label} scanning mode`}
+        accessibilityState={{ selected: isActive }}
+      >
+        <Text style={styles.modePillIcon}>{item.icon}</Text>
+        <Text style={[styles.modePillLabel, { color: isActive ? colors.destructiveText : colors.primaryText }]}>{item.label}</Text>
+      </TouchableOpacity>
+    );
+  }, [selectedMode, colors, handleModeSelect]);
+
   const renderModeStrip = () => (
-    <View style={styles.modeStripContainer}>
+    <View style={styles.modeStripContainer} accessibilityRole="tablist">
       <FlatList
         horizontal
         showsHorizontalScrollIndicator={false}
         data={MODE_ITEMS}
-        keyExtractor={(item) => item.key}
+        keyExtractor={modeKeyExtractor}
         contentContainerStyle={styles.modeStripContent}
-        renderItem={({ item }) => {
-          const isActive = item.key === selectedMode;
-          return (
-            <TouchableOpacity
-              style={[
-                styles.modePill,
-                {
-                  backgroundColor: isActive ? colors.primary : colors.glassBg,
-                  borderColor: isActive ? colors.primary : colors.glassBorder,
-                },
-              ]}
-              onPress={() => handleModeSelect(item.key)}
-              accessibilityRole="button"
-              accessibilityLabel={`${item.label} scanner mode`}
-              accessibilityState={{ selected: isActive }}
-            >
-              <Text style={styles.modePillIcon}>{item.icon}</Text>
-              <Text style={[styles.modePillLabel, { color: isActive ? colors.destructiveText : colors.primaryText }]}>{item.label}</Text>
-            </TouchableOpacity>
-          );
-        }}
+        renderItem={renderModeItem}
       />
     </View>
   );
@@ -116,7 +125,7 @@ export default function ScanScreen({ route }: Props) {
         return (
           <DualStreamView
             visible={true}
-            onClose={() => setSelectedMode("live")}
+            onClose={handleCloseScanMode}
             sourceLangCode={sourceLangCode}
             sourceSpeechCode={sourceLang.speechCode}
             targetLangCode={targetLang.code}
@@ -131,7 +140,7 @@ export default function ScanScreen({ route }: Props) {
         return (
           <DutyFreeCatalogScanner
             visible={true}
-            onClose={() => setSelectedMode("live")}
+            onClose={handleCloseScanMode}
             sourceLangCode={sourceLangCode}
             targetLangCode={targetLang.code}
             translationProvider={settings.translationProvider}
@@ -142,7 +151,7 @@ export default function ScanScreen({ route }: Props) {
         return (
           <PriceTagConverter
             visible={true}
-            onClose={() => setSelectedMode("live")}
+            onClose={handleCloseScanMode}
             colors={colors}
             sourceLangCode={sourceLangCode}
           />
@@ -151,7 +160,7 @@ export default function ScanScreen({ route }: Props) {
         return (
           <ProductScanner
             visible={true}
-            onClose={() => setSelectedMode("live")}
+            onClose={handleCloseScanMode}
             colors={colors}
           />
         );
@@ -159,7 +168,7 @@ export default function ScanScreen({ route }: Props) {
         return (
           <ListingGenerator
             visible={true}
-            onClose={() => setSelectedMode("live")}
+            onClose={handleCloseScanMode}
             targetLangCode={targetLang.code}
             translationProvider={settings.translationProvider}
             colors={colors}
@@ -169,7 +178,7 @@ export default function ScanScreen({ route }: Props) {
         return (
           <DocumentScanner
             visible={true}
-            onClose={() => setSelectedMode("live")}
+            onClose={handleCloseScanMode}
             sourceLangCode={sourceLangCode}
             targetLangCode={targetLang.code}
             translationProvider={settings.translationProvider}
@@ -218,3 +227,5 @@ const styles = StyleSheet.create({
   modePillIcon: { fontSize: 16 },
   modePillLabel: { fontSize: 13, fontWeight: "700" },
 });
+
+export default React.memo(ScanScreen);

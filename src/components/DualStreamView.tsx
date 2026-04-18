@@ -685,7 +685,9 @@ function DualStreamView({
         <TouchableOpacity
           style={styles.topButton}
           onPress={onClose}
+          accessibilityRole="button"
           accessibilityLabel="Close dual-stream view"
+          accessibilityHint="Returns to the scanner mode selection"
         >
           <Text style={styles.topButtonText}>✕</Text>
         </TouchableOpacity>
@@ -701,7 +703,10 @@ function DualStreamView({
         <TouchableOpacity
           style={[styles.topButton, isPaused && styles.topButtonActive]}
           onPress={() => setIsPaused((p) => !p)}
+          accessibilityRole="button"
           accessibilityLabel={isPaused ? "Resume OCR" : "Pause OCR"}
+          accessibilityHint={isPaused ? "Resumes live text detection from camera" : "Pauses live text detection"}
+          accessibilityState={{ selected: isPaused }}
         >
           <Text style={styles.topButtonText}>{isPaused ? "▶" : "⏸"}</Text>
         </TouchableOpacity>
@@ -792,8 +797,10 @@ function DualStreamView({
               isMicActive && styles.micButtonActive,
             ]}
             onPress={toggleMic}
-            accessibilityLabel={isMicActive ? "Turn off speech recognition" : "Turn on speech recognition"}
             accessibilityRole="button"
+            accessibilityLabel={isMicActive ? "Turn off speech recognition" : "Turn on speech recognition"}
+            accessibilityHint={isMicActive ? "Stops listening for speech and hides subtitles" : "Starts listening for speech and shows live subtitles"}
+            accessibilityState={{ selected: isMicActive }}
           >
             <Text style={styles.micButtonIcon}>
               {isMicActive ? "🎙️" : "🔇"}
