@@ -20,7 +20,7 @@ interface StatsModalProps {
   colors: ThemeColors;
 }
 
-export default function StatsModal({ visible, onClose, history, streak, colors }: StatsModalProps) {
+function StatsModal({ visible, onClose, history, streak, colors }: StatsModalProps) {
   const validHistory = useMemo(() => history.filter((h) => h.status === "ok"), [history]);
 
   const stats = useMemo(() => {
@@ -377,3 +377,5 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
 });
+
+export default React.memo(StatsModal);

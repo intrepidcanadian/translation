@@ -669,7 +669,7 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
       <View style={[styles.container, { backgroundColor: colors.containerBg }]}>
         {/* Header */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <TouchableOpacity onPress={onClose} style={styles.headerClose} accessibilityRole="button" accessibilityLabel="Close culture guide">
+          <TouchableOpacity onPress={onClose} style={styles.headerClose} accessibilityRole="button" accessibilityLabel="Close culture guide" accessibilityHint="Closes the passenger culture guide modal">
             <Text style={[styles.headerCloseText, { color: colors.primary }]}>Done</Text>
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.titleText }]}>Passenger Culture Guide</Text>
@@ -688,8 +688,9 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
                 accessibilityRole="tab"
                 accessibilityState={{ selected: isActive }}
                 accessibilityLabel={`${group.label} route`}
+                accessibilityHint={isActive ? "Currently selected route" : `Switch to ${group.label} passenger profiles`}
               >
-                <Text style={styles.routePillIcon}>{group.icon}</Text>
+                <Text style={styles.routePillIcon} importantForAccessibility="no">{group.icon}</Text>
                 <Text style={[styles.routePillLabel, { color: isActive ? "#fff" : colors.mutedText }]}>{group.label}</Text>
               </TouchableOpacity>
             );
@@ -709,8 +710,9 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
                   accessibilityRole="tab"
                   accessibilityState={{ selected: isActive }}
                   accessibilityLabel={`${profile.groupName} passenger profile`}
+                  accessibilityHint={isActive ? "Currently selected profile" : `View cultural tips for ${profile.groupName} passengers`}
                 >
-                  <Text style={styles.profilePillFlag}>{profile.flag}</Text>
+                  <Text style={styles.profilePillFlag} importantForAccessibility="no">{profile.flag}</Text>
                   <Text style={[styles.profilePillLabel, { color: isActive ? colors.primary : colors.secondaryText }]}>{profile.groupName}</Text>
                 </TouchableOpacity>
               );
@@ -741,8 +743,9 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
                 accessibilityRole="tab"
                 accessibilityState={{ selected: isActive }}
                 accessibilityLabel={`${tab.label} section`}
+                accessibilityHint={isActive ? `Viewing ${tab.label.toLowerCase()} information` : `Switch to ${tab.label.toLowerCase()} information`}
               >
-                <Text style={styles.sectionTabIcon}>{tab.icon}</Text>
+                <Text style={styles.sectionTabIcon} importantForAccessibility="no">{tab.icon}</Text>
                 <Text style={[styles.sectionTabLabel, { color: isActive ? colors.primary : colors.mutedText }]}>{tab.label}</Text>
               </TouchableOpacity>
             );

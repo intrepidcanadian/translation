@@ -23,6 +23,7 @@ import { getColors, type ThemeColors } from "../theme";
 import { logger } from "../services/logger";
 import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 import GlassBackdrop from "./../components/GlassBackdrop";
+import { formatRelativeTime } from "../utils/formatRelativeTime";
 
 interface NoteCardProps {
   item: SavedNote;
@@ -44,7 +45,7 @@ const NoteCard = memo(function NoteCard({ item, colors, onPress, onDelete }: Not
         <View style={styles.noteCardMeta}>
           <Text style={[styles.noteCardTitle, { color: colors.titleText }]} numberOfLines={1}>{item.title}</Text>
           <Text style={[styles.noteCardSub, { color: colors.dimText }]}>
-            {mode.label} · {item.sourceLang.toUpperCase()} → {item.targetLang.toUpperCase()} · {formatTime(item.timestamp)}
+            {mode.label} · {item.sourceLang.toUpperCase()} → {item.targetLang.toUpperCase()} · {formatRelativeTime(item.timestamp) ?? "Unknown"}
           </Text>
         </View>
         <TouchableOpacity
@@ -76,17 +77,7 @@ const NoteCard = memo(function NoteCard({ item, colors, onPress, onDelete }: Not
   );
 });
 
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  const now = Date.now();
-  const diff = now - ts;
-  if (diff < 60000) return "Just now";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-export default function NotesScreen() {
+function NotesScreen() {
   const { settings } = useSettings();
   const colors = getColors(settings.theme);
 
@@ -424,3 +415,5 @@ const styles = StyleSheet.create({
   deleteButton: { backgroundColor: "#ef4444", borderRadius: 12, paddingVertical: 14, alignItems: "center", marginTop: 8 },
   deleteButtonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 });
+
+export default React.memo(NotesScreen);

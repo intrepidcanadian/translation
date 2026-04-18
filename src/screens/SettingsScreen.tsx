@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -45,11 +45,21 @@ function SettingsScreen() {
   const [showCultureGuide, setShowCultureGuide] = useState(false);
   const [showPassengerCard, setShowPassengerCard] = useState(false);
 
-  const speakText = (text: string) => {
-    Speech.speak(text, { language: targetLang.speechCode, rate: settings.speechRate });
-  };
+  // Stable onClose callbacks so React.memo'd modals skip re-renders (#245)
+  const closeSettingsModal = useCallback(() => setShowSettingsModal(false), []);
+  const closePhrasebook = useCallback(() => setShowPhrasebook(false), []);
+  const closeGlossary = useCallback(() => setShowGlossary(false), []);
+  const closeStats = useCallback(() => setShowStats(false), []);
+  const closeFlightPrep = useCallback(() => setShowFlightPrep(false), []);
+  const closeVisualCards = useCallback(() => setShowVisualCards(false), []);
+  const closeCultureGuide = useCallback(() => setShowCultureGuide(false), []);
+  const closePassengerCard = useCallback(() => setShowPassengerCard(false), []);
 
-  const copyToClipboard = async (text: string) => {
+  const speakText = useCallback((text: string) => {
+    Speech.speak(text, { language: targetLang.speechCode, rate: settings.speechRate });
+  }, [targetLang.speechCode, settings.speechRate]);
+
+  const copyToClipboard = useCallback(async (text: string) => {
     try {
       // #164: go through copyWithAutoClear so phrasebook copies inherit the
       // 60s privacy ladder that history/chat copies already use. Phrasebook
@@ -59,7 +69,7 @@ function SettingsScreen() {
     } catch (err) {
       logger.warn("Storage", "Phrasebook copy failed", err);
     }
-  };
+  }, []);
 
   const menuItems = useMemo(() => [
     { label: "Flight Prep", icon: "✈️", subtitle: "Download language packs for offline use", onPress: () => setShowFlightPrep(true) },
@@ -115,14 +125,14 @@ function SettingsScreen() {
       {/* Modals */}
       <SettingsModal
         visible={showSettingsModal}
-        onClose={() => setShowSettingsModal(false)}
+        onClose={closeSettingsModal}
         settings={settings}
         onUpdate={updateSettings}
       />
 
       <PhrasebookModal
         visible={showPhrasebook}
-        onClose={() => setShowPhrasebook(false)}
+        onClose={closePhrasebook}
         sourceLangCode={sourceLang.code === "autodetect" ? "en" : sourceLang.code}
         targetLangCode={targetLang.code}
         onCopy={copyToClipboard}
@@ -133,7 +143,7 @@ function SettingsScreen() {
 
       <GlossaryModal
         visible={showGlossary}
-        onClose={() => setShowGlossary(false)}
+        onClose={closeGlossary}
         glossary={glossary}
         onAdd={addGlossaryEntry}
         onRemove={removeGlossaryEntry}
@@ -148,7 +158,7 @@ function SettingsScreen() {
 
       <StatsModal
         visible={showStats}
-        onClose={() => setShowStats(false)}
+        onClose={closeStats}
         history={history}
         streak={streak}
         colors={colors}
@@ -163,14 +173,14 @@ function SettingsScreen() {
 
       <FlightPrepModal
         visible={showFlightPrep}
-        onClose={() => setShowFlightPrep(false)}
+        onClose={closeFlightPrep}
         colors={colors}
         crewBaseLang={sourceLang.code === "autodetect" ? "en" : sourceLang.code}
       />
 
       <VisualCardsModal
         visible={showVisualCards}
-        onClose={() => setShowVisualCards(false)}
+        onClose={closeVisualCards}
         colors={colors}
         passengerLang={targetLang.code === "autodetect" ? undefined : targetLang.code}
         speechRate={settings.speechRate}
@@ -178,13 +188,13 @@ function SettingsScreen() {
 
       <CultureBriefingModal
         visible={showCultureGuide}
-        onClose={() => setShowCultureGuide(false)}
+        onClose={closeCultureGuide}
         colors={colors}
       />
 
       <PassengerPreferenceCard
         visible={showPassengerCard}
-        onClose={() => setShowPassengerCard(false)}
+        onClose={closePassengerCard}
         colors={colors}
         initialLang={targetLang.code === "autodetect" ? undefined : targetLang.code}
       />
