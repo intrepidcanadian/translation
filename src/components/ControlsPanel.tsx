@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -86,6 +86,9 @@ function ControlsPanel({
   onCopyToClipboard,
 }: ControlsPanelProps) {
   const wordCount = useMemo(() => typedText.trim().split(/\s+/).filter(Boolean).length, [typedText]);
+  const handleStartListeningA = useCallback(() => onStartListeningAs("A"), [onStartListeningAs]);
+  const handleStartListeningB = useCallback(() => onStartListeningAs("B"), [onStartListeningAs]);
+  const handleCopyPreview = useCallback(() => onCopyToClipboard(typedPreview), [onCopyToClipboard, typedPreview]);
 
   return (
     <View style={[styles.controls, isLandscape && styles.controlsLandscape]}>
@@ -152,7 +155,7 @@ function ControlsPanel({
                 )}
                 <TouchableOpacity
                   style={[styles.micButton, styles.micButtonSmall, { backgroundColor: colors.primary, shadowColor: colors.primary }, isListening && activeSpeaker === "A" && { backgroundColor: colors.destructiveBg, shadowColor: colors.destructiveBg }]}
-                  onPress={isListening ? onStopListening : () => onStartListeningAs("A")}
+                  onPress={isListening ? onStopListening : handleStartListeningA}
                   activeOpacity={0.7}
                   disabled={isListening && activeSpeaker !== "A"}
                   accessibilityRole="button"
@@ -172,7 +175,7 @@ function ControlsPanel({
                 )}
                 <TouchableOpacity
                   style={[styles.micButton, styles.micButtonSmall, { backgroundColor: colors.primary, shadowColor: colors.primary }, isListening && activeSpeaker === "B" && { backgroundColor: colors.destructiveBg, shadowColor: colors.destructiveBg }]}
-                  onPress={isListening ? onStopListening : () => onStartListeningAs("B")}
+                  onPress={isListening ? onStopListening : handleStartListeningB}
                   activeOpacity={0.7}
                   disabled={isListening && activeSpeaker !== "B"}
                   accessibilityRole="button"
@@ -271,7 +274,7 @@ function ControlsPanel({
           {typedPreview ? (
             <TouchableOpacity
               style={[styles.typedPreview, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder, borderLeftColor: colors.primary, borderLeftWidth: 3 }]}
-              onPress={() => onCopyToClipboard(typedPreview)}
+              onPress={handleCopyPreview}
               activeOpacity={0.85}
               accessibilityLiveRegion="polite"
               accessibilityLabel={`Preview: ${typedPreview}. Tap to copy.`}

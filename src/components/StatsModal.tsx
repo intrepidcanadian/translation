@@ -5,7 +5,7 @@ import {
   View,
   Text,
   TouchableOpacity,
-  FlatList,
+  ScrollView,
   StyleSheet,
 } from "react-native";
 import { LANGUAGE_MAP } from "../services/translation";
@@ -167,9 +167,7 @@ function StatsModal({ visible, onClose, history, streak, colors }: StatsModalPro
       <View accessibilityViewIsModal={true} style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]}>
         <View style={[modalStyles.contentWide, { backgroundColor: colors.modalBg }]}>
           <Text style={[modalStyles.title, { color: colors.titleText }]}>Translation Statistics</Text>
-          <FlatList
-            data={[{ key: "stats" }]}
-            renderItem={() => (
+          <ScrollView>
               <View>
                 {/* Summary cards */}
                 <View style={styles.statsGrid} accessibilityRole="summary">
@@ -256,9 +254,7 @@ function StatsModal({ visible, onClose, history, streak, colors }: StatsModalPro
                   </View>
                 )}
               </View>
-            )}
-            keyExtractor={(item) => item.key}
-          />
+          </ScrollView>
           <TouchableOpacity
             style={[modalStyles.closeButton, { borderTopColor: colors.borderLight }]}
             onPress={onClose}

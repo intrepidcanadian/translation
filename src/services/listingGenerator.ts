@@ -64,18 +64,18 @@ const CATEGORY_LABELS: Record<ListingCategory, { label: string; icon: string }> 
   other: { label: "Other", icon: "📦" },
 };
 
-export function getCategoryOptions(): Array<{ key: ListingCategory; label: string; icon: string }> {
-  return Object.entries(CATEGORY_LABELS).map(([key, val]) => ({
-    key: key as ListingCategory,
-    ...val,
-  }));
+const CATEGORY_OPTIONS: ReadonlyArray<{ key: ListingCategory; label: string; icon: string }> =
+  Object.entries(CATEGORY_LABELS).map(([key, val]) => ({ key: key as ListingCategory, ...val }));
+
+const CONDITION_OPTIONS: ReadonlyArray<{ key: ListingCondition; label: string }> =
+  Object.entries(CONDITION_LABELS).map(([key, label]) => ({ key: key as ListingCondition, label }));
+
+export function getCategoryOptions(): ReadonlyArray<{ key: ListingCategory; label: string; icon: string }> {
+  return CATEGORY_OPTIONS;
 }
 
-export function getConditionOptions(): Array<{ key: ListingCondition; label: string }> {
-  return Object.entries(CONDITION_LABELS).map(([key, label]) => ({
-    key: key as ListingCondition,
-    label,
-  }));
+export function getConditionOptions(): ReadonlyArray<{ key: ListingCondition; label: string }> {
+  return CONDITION_OPTIONS;
 }
 
 // Detect likely category from OCR text.

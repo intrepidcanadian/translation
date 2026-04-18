@@ -240,7 +240,7 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
     return (
       <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
         <Text style={[styles.permText, { color: colors.primaryText }]}>Camera permission required</Text>
-        <TouchableOpacity onPress={requestPermission} style={[styles.permBtn, { backgroundColor: colors.primary }]}>
+        <TouchableOpacity onPress={requestPermission} style={[styles.permBtn, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Grant camera permission" accessibilityHint="Opens system permission dialog for camera access">
           <Text style={{ color: colors.destructiveText, fontWeight: "700" }}>Grant Permission</Text>
         </TouchableOpacity>
       </View>
@@ -278,6 +278,7 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
               style={[styles.fallbackBtn, { backgroundColor: colors.primary }]}
               accessibilityRole="button"
               accessibilityLabel="Identify product by text on packaging"
+              accessibilityHint="Switches to OCR mode to read product name from packaging"
             >
               <Text style={[styles.fallbackBtnText, { color: colors.destructiveText }]}>
                 No barcode? Identify by text →
@@ -321,7 +322,9 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
               <TouchableOpacity
                 onPress={resetScan}
                 style={[styles.actionBtn, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder, borderWidth: 1 }]}
+                accessibilityRole="button"
                 accessibilityLabel="Back to barcode scanning"
+                accessibilityHint="Returns to the barcode scanner view"
               >
                 <Text style={[styles.actionBtnText, { color: colors.primary }]}>Back to Barcode</Text>
               </TouchableOpacity>
@@ -332,7 +335,10 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
                   styles.actionBtn,
                   { backgroundColor: ocrText.trim() ? colors.primary : colors.cardBg },
                 ]}
+                accessibilityRole="button"
                 accessibilityLabel="Search for this product"
+                accessibilityHint="Looks up the detected text to find product information"
+                accessibilityState={{ disabled: !ocrText.trim() }}
               >
                 <Text style={[styles.actionBtnText, { color: ocrText.trim() ? colors.destructiveText : colors.mutedText }]}>
                   Search
@@ -385,11 +391,13 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
             <TouchableOpacity
               onPress={enterOCRPhase}
               style={[styles.actionBtn, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder, borderWidth: 1 }]}
+              accessibilityRole="button"
               accessibilityLabel="Identify by text on packaging"
+              accessibilityHint="Switches to OCR mode to read product name from packaging"
             >
               <Text style={[styles.actionBtnText, { color: colors.primary }]}>Identify by Text</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={resetScan} style={[styles.actionBtn, { backgroundColor: colors.primary }]}>
+            <TouchableOpacity onPress={resetScan} style={[styles.actionBtn, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Scan another product" accessibilityHint="Returns to the barcode scanner to scan a different product">
               <Text style={[styles.actionBtnText, { color: colors.destructiveText }]}>Scan Again</Text>
             </TouchableOpacity>
           </View>
@@ -416,7 +424,7 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
               </Text>
             )}
             {product.barcode && (
-              <TouchableOpacity onPress={() => copyText(product.barcode!)}>
+              <TouchableOpacity onPress={() => copyText(product.barcode!)} accessibilityRole="button" accessibilityLabel={`Copy barcode ${product.barcode}`} accessibilityHint="Copies the barcode number to clipboard">
                 <Text style={[styles.barcodeText, { color: colors.dimText }]}>
                   {copiedText === product.barcode ? "Copied!" : `Barcode: ${product.barcode}`}
                 </Text>
@@ -481,10 +489,10 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
 
           {/* Actions */}
           <View style={styles.actionsRow}>
-            <TouchableOpacity onPress={shareProduct} style={[styles.actionBtn, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder, borderWidth: 1 }]}>
+            <TouchableOpacity onPress={shareProduct} style={[styles.actionBtn, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder, borderWidth: 1 }]} accessibilityRole="button" accessibilityLabel="Share product details" accessibilityHint="Opens the share sheet with product information">
               <Text style={[styles.actionBtnText, { color: colors.primary }]}>Share</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={resetScan} style={[styles.actionBtn, { backgroundColor: colors.primary }]}>
+            <TouchableOpacity onPress={resetScan} style={[styles.actionBtn, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Scan another product" accessibilityHint="Returns to the barcode scanner to scan a different product">
               <Text style={[styles.actionBtnText, { color: colors.destructiveText }]}>Scan Again</Text>
             </TouchableOpacity>
           </View>
@@ -496,7 +504,9 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
       <TouchableOpacity
         style={[styles.backBtn, { backgroundColor: colors.cardBg + "CC" }]}
         onPress={phase === "scanning" ? onClose : resetScan}
+        accessibilityRole="button"
         accessibilityLabel={phase === "scanning" ? "Close product scanner" : "Back to scanning"}
+        accessibilityHint={phase === "scanning" ? "Closes the product scanner" : "Returns to the scanner view"}
         hitSlop={10}
       >
         <Text style={[styles.backBtnText, { color: colors.primaryText }]}>

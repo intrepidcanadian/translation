@@ -94,6 +94,16 @@ function ListingGenerator({
     setIsTranslating(false);
   }, []);
 
+  const handleConditionPress = useCallback((key: ListingCondition) => {
+    setCondition(key);
+    impactLight();
+  }, []);
+
+  const handleCategoryPress = useCallback((key: ListingCategory) => {
+    setCategory(key);
+    impactLight();
+  }, []);
+
   const captureAndProcess = useCallback(async () => {
     if (!cameraRef.current) return;
     impactMedium();
@@ -271,7 +281,7 @@ function ListingGenerator({
                     styles.conditionPill,
                     { backgroundColor: condition === opt.key ? colors.primary : "rgba(0,0,0,0.5)", borderColor: condition === opt.key ? colors.primary : "rgba(255,255,255,0.3)" },
                   ]}
-                  onPress={() => { setCondition(opt.key); impactLight(); }}
+                  onPress={() => handleConditionPress(opt.key)}
                   accessibilityRole="radio"
                   accessibilityLabel={`Condition: ${opt.label}`}
                   accessibilityState={{ selected: condition === opt.key }}
@@ -416,7 +426,7 @@ function ListingGenerator({
                     styles.categoryPill,
                     { backgroundColor: category === opt.key ? colors.primary : colors.cardBg, borderColor: category === opt.key ? colors.primary : colors.border },
                   ]}
-                  onPress={() => { setCategory(opt.key); impactLight(); }}
+                  onPress={() => handleCategoryPress(opt.key)}
                   accessibilityRole="radio"
                   accessibilityLabel={`Category: ${opt.label}`}
                   accessibilityState={{ selected: category === opt.key }}

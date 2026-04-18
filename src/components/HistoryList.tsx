@@ -558,6 +558,7 @@ function HistoryList({
               onPress={() => onCopyToClipboard(translatedText)}
               accessibilityRole="button"
               accessibilityLabel={`Live translation: ${translatedText}. Tap to copy.`}
+              accessibilityHint="Copies the live translation to clipboard"
             >
               <Text
                 style={[
@@ -592,6 +593,7 @@ function HistoryList({
                   ? "Stop speaking"
                   : `Speak translation: ${translatedText}`
               }
+              accessibilityHint={speakingText === translatedText ? "Stops text-to-speech playback" : "Reads the translation aloud"}
             >
               <Text
                 style={[
@@ -656,12 +658,12 @@ function HistoryList({
   const listEmpty = useMemo(() => {
     if (isListening || liveText) return null;
     return (
-      <View style={styles.emptyState}>
-        <Text style={styles.emptyIcon}>🎙️</Text>
-        <Text style={[styles.emptyTitle, { color: colors.titleText }]}>
+      <View style={styles.emptyState} accessible={true} accessibilityRole="summary" accessibilityLabel="No translations yet. Tap the microphone to start translating. Speak naturally and see translations appear in real time.">
+        <Text style={styles.emptyIcon} importantForAccessibility="no">🎙️</Text>
+        <Text style={[styles.emptyTitle, { color: colors.titleText }]} importantForAccessibility="no">
           Tap to start translating
         </Text>
-        <Text style={[styles.emptySubtitle, { color: colors.dimText }]}>
+        <Text style={[styles.emptySubtitle, { color: colors.dimText }]} importantForAccessibility="no">
           Speak naturally and see translations appear in real time
         </Text>
         {phraseOfTheDay && (
@@ -690,8 +692,8 @@ function HistoryList({
             </Text>
           </View>
         )}
-        <View style={styles.gestureHints}>
-          <Text style={[styles.gestureHintText, { color: colors.dimText }]}>
+        <View style={styles.gestureHints} accessible={true} accessibilityLabel="Swipe up for phrasebook, swipe down to speak">
+          <Text style={[styles.gestureHintText, { color: colors.dimText }]} importantForAccessibility="no">
             Swipe up for phrasebook  ·  Swipe down to speak
           </Text>
         </View>
