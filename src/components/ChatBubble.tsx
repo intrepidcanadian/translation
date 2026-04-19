@@ -1,8 +1,9 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useMemo } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Share } from "react-native";
 import AlignedRomanization from "./AlignedRomanization";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
 import { highlightMatches } from "../utils/highlightText";
+import { countWords } from "../utils/wordCount";
 import { LANGUAGE_MAP } from "../services/translation";
 import { logger } from "../services/logger";
 import type { ThemeColors } from "../theme";
@@ -46,8 +47,8 @@ function ChatBubble({
   searchQuery,
 }: ChatBubbleProps) {
   const isB = item.speaker === "B";
-  const originalWordCount = React.useMemo(() => item.original.trim().split(/\s+/).filter(Boolean).length, [item.original]);
-  const translatedWordCount = React.useMemo(() => item.translated.trim().split(/\s+/).filter(Boolean).length, [item.translated]);
+  const originalWordCount = useMemo(() => countWords(item.original), [item.original]);
+  const translatedWordCount = useMemo(() => countWords(item.translated), [item.translated]);
 
   const handleShare = useCallback(() => {
     const speakerLabel = isB ? targetLangName : sourceLangName;

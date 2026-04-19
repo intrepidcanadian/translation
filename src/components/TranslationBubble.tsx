@@ -1,8 +1,9 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, Share, LayoutAnimation, Platform, UIManager } from "react-native";
 import AlignedRomanization from "./AlignedRomanization";
 import { formatRelativeTime } from "../utils/formatRelativeTime";
 import { highlightMatches } from "../utils/highlightText";
+import { countWords } from "../utils/wordCount";
 import { LANGUAGE_MAP } from "../services/translation";
 import { logger } from "../services/logger";
 import type { ThemeColors } from "../theme";
@@ -88,8 +89,8 @@ function TranslationBubble({
 }: TranslationBubbleProps) {
   const [showMoreActions, setShowMoreActions] = useState(false);
   const timeStr = formatRelativeTime(item.timestamp);
-  const originalWordCount = React.useMemo(() => item.original.trim().split(/\s+/).filter(Boolean).length, [item.original]);
-  const translatedWordCount = React.useMemo(() => item.translated.trim().split(/\s+/).filter(Boolean).length, [item.translated]);
+  const originalWordCount = useMemo(() => countWords(item.original), [item.original]);
+  const translatedWordCount = useMemo(() => countWords(item.translated), [item.translated]);
 
   // Memoize word-split segments to avoid re-creating arrays on every render
   const translatedWordSegments = React.useMemo(() => {

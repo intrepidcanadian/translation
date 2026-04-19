@@ -58,8 +58,8 @@ const NoteCard = memo(function NoteCard({ item, colors, onPress, onDelete }: Not
       </View>
       {item.fields.length > 0 && (
         <View style={styles.noteCardFields}>
-          {item.fields.slice(0, 3).map((f, i) => (
-            <View key={i} style={[styles.fieldChip, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
+          {item.fields.slice(0, 3).map((f) => (
+            <View key={`${f.label}-${f.value}`} style={[styles.fieldChip, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
               <Text style={[styles.fieldChipText, { color: colors.primaryText }]} numberOfLines={1}>
                 {f.label}: {f.value}
               </Text>
@@ -246,14 +246,17 @@ function NotesScreen() {
                 {selectedNote.fields.length > 0 && (
                   <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
                     <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Key Information</Text>
-                    {selectedNote.fields.map((f, i) => (
-                      <TouchableOpacity key={i} style={styles.fieldRow} onPress={() => handleCopy(f.value, `field_${i}`)}>
-                        <Text style={[styles.fieldLabel, { color: colors.dimText }]}>{f.label}</Text>
-                        <Text style={[styles.fieldValue, { color: colors.primaryText }]}>
-                          {copiedId === `field_${i}` ? "Copied!" : f.value}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                    {selectedNote.fields.map((f) => {
+                      const fieldKey = `${f.label}-${f.value}`;
+                      return (
+                        <TouchableOpacity key={fieldKey} style={styles.fieldRow} onPress={() => handleCopy(f.value, fieldKey)}>
+                          <Text style={[styles.fieldLabel, { color: colors.dimText }]}>{f.label}</Text>
+                          <Text style={[styles.fieldValue, { color: colors.primaryText }]}>
+                            {copiedId === fieldKey ? "Copied!" : f.value}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 )}
 

@@ -62,6 +62,8 @@ function LanguagePicker({ label, selected, onSelect, showAutoDetect, recentCodes
     ];
   }, [search, allLanguages, recentCodes]);
 
+  const openModal = useCallback(() => setVisible(true), []);
+
   const closeModal = useCallback(() => {
     setVisible(false);
     setSearch("");
@@ -124,7 +126,7 @@ function LanguagePicker({ label, selected, onSelect, showAutoDetect, recentCodes
       <Text style={[styles.label, { color: colors.mutedText }]}>{label}</Text>
       <TouchableOpacity
         style={[styles.button, { backgroundColor: colors.cardBg }]}
-        onPress={() => setVisible(true)}
+        onPress={openModal}
         accessibilityRole="button"
         accessibilityLabel={`${label} language: ${selected.name}. Tap to change.`}
         accessibilityHint="Opens a list to choose a different language"

@@ -9,6 +9,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { LANGUAGE_MAP } from "../services/translation";
+import { countWords } from "../utils/wordCount";
 import { primaryAlpha, type ThemeColors } from "../theme";
 import type { HistoryItem } from "../types";
 
@@ -32,8 +33,8 @@ function StatsModal({ visible, onClose, history, streak, colors }: StatsModalPro
     let confidenceCount = 0;
 
     for (const h of validHistory) {
-      totalSourceWords += h.original.trim().split(/\s+/).filter(Boolean).length;
-      totalTranslatedWords += h.translated.trim().split(/\s+/).filter(Boolean).length;
+      totalSourceWords += countWords(h.original);
+      totalTranslatedWords += countWords(h.translated);
       if (h.confidence != null) {
         confidenceSum += h.confidence;
         confidenceCount++;
@@ -220,8 +221,8 @@ function StatsModal({ visible, onClose, history, streak, colors }: StatsModalPro
                 {topPairs.length > 0 && (
                   <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
                     <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Top Language Pairs</Text>
-                    {topPairs.map((p, i) => (
-                      <View key={i} style={styles.statsRow} accessible={true} accessibilityLabel={`${p.label}, ${p.count} translations`}>
+                    {topPairs.map((p) => (
+                      <View key={p.label} style={styles.statsRow} accessible={true} accessibilityLabel={`${p.label}, ${p.count} translations`}>
                         <Text style={[styles.statsRowLabel, { color: colors.primaryText }]} importantForAccessibility="no">{p.label}</Text>
                         <View style={[styles.statsCountBadge, { backgroundColor: colors.primary + "22" }]}>
                           <Text style={[styles.statsCountText, { color: colors.primary }]} importantForAccessibility="no">{p.count}</Text>
@@ -234,8 +235,8 @@ function StatsModal({ visible, onClose, history, streak, colors }: StatsModalPro
                 {topTargets.length > 0 && (
                   <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]}>
                     <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]}>Most Translated To</Text>
-                    {topTargets.map((t, i) => (
-                      <View key={i} style={styles.statsRow} accessible={true} accessibilityLabel={`${t.label}, ${t.count} translations`}>
+                    {topTargets.map((t) => (
+                      <View key={t.label} style={styles.statsRow} accessible={true} accessibilityLabel={`${t.label}, ${t.count} translations`}>
                         <Text style={[styles.statsRowLabel, { color: colors.primaryText }]} importantForAccessibility="no">{t.label}</Text>
                         <View style={[styles.statsCountBadge, { backgroundColor: colors.primary + "22" }]}>
                           <Text style={[styles.statsCountText, { color: colors.primary }]} importantForAccessibility="no">{t.count}</Text>

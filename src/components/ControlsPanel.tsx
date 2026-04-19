@@ -9,6 +9,7 @@ import {
   Animated,
   Keyboard,
 } from "react-native";
+import { countWords } from "../utils/wordCount";
 import { glassSurface, type ThemeColors } from "../theme";
 
 interface ControlsPanelProps {
@@ -85,7 +86,7 @@ function ControlsPanel({
   onSubmitTypedText,
   onCopyToClipboard,
 }: ControlsPanelProps) {
-  const wordCount = useMemo(() => typedText.trim().split(/\s+/).filter(Boolean).length, [typedText]);
+  const wordCount = useMemo(() => countWords(typedText), [typedText]);
   const handleStartListeningA = useCallback(() => onStartListeningAs("A"), [onStartListeningAs]);
   const handleStartListeningB = useCallback(() => onStartListeningAs("B"), [onStartListeningAs]);
   const handleCopyPreview = useCallback(() => onCopyToClipboard(typedPreview), [onCopyToClipboard, typedPreview]);

@@ -39,12 +39,15 @@ interface NoteListCardProps {
 
 const NoteListCard = React.memo(function NoteListCard({ item, colors, onSelect, onDelete }: NoteListCardProps) {
   const mode = getScannerMode(item.scanMode);
+  const handleSelect = useCallback(() => onSelect(item), [onSelect, item]);
+  const handleDelete = useCallback(() => onDelete(item.id), [onDelete, item.id]);
   return (
     <TouchableOpacity
       style={[styles.noteCard, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
       activeOpacity={0.85}
-      onPress={() => onSelect(item)}
+      onPress={handleSelect}
       accessibilityLabel={`Note: ${item.title}`}
+      accessibilityHint="Open this note"
     >
       <View style={styles.noteCardHeader}>
         <Text style={styles.noteCardIcon}>{mode.icon}</Text>
@@ -57,17 +60,19 @@ const NoteListCard = React.memo(function NoteListCard({ item, colors, onSelect, 
           </Text>
         </View>
         <TouchableOpacity
-          onPress={() => onDelete(item.id)}
+          onPress={handleDelete}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-          accessibilityLabel="Delete note"
+          accessibilityRole="button"
+          accessibilityLabel={`Delete note: ${item.title}`}
+          accessibilityHint="Permanently delete this note"
         >
           <Text style={[styles.deleteIcon, { color: colors.dimText }]}>X</Text>
         </TouchableOpacity>
       </View>
       {item.fields.length > 0 && (
         <View style={styles.noteCardFields}>
-          {item.fields.slice(0, 3).map((f, i) => (
-            <View key={i} style={[styles.fieldChip, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
+          {item.fields.slice(0, 3).map((f) => (
+            <View key={`${f.label}-${f.value}`} style={[styles.fieldChip, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
               <Text style={[styles.fieldChipText, { color: colors.primaryText }]} numberOfLines={1}>
                 {f.label}: {f.value}
               </Text>
@@ -277,21 +282,24 @@ function NotesViewer({
                 {selectedNote.fields.length > 0 && (
                   <View style={[styles.section, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}>
                     <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Key Information</Text>
-                    {selectedNote.fields.map((f, i) => (
-                      <TouchableOpacity
-                        key={i}
-                        style={styles.fieldRow}
-                        onPress={() => handleCopy(f.value, `field_${i}`)}
-                        accessibilityRole="button"
-                        accessibilityLabel={`${f.label}: ${f.value}`}
-                        accessibilityHint="Tap to copy this field value"
-                      >
-                        <Text style={[styles.fieldLabel, { color: colors.dimText }]}>{f.label}</Text>
-                        <Text style={[styles.fieldValue, { color: colors.primaryText }]}>
-                          {copiedId === `field_${i}` ? "Copied!" : f.value}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                    {selectedNote.fields.map((f) => {
+                      const fieldKey = `${f.label}-${f.value}`;
+                      return (
+                        <TouchableOpacity
+                          key={fieldKey}
+                          style={styles.fieldRow}
+                          onPress={() => handleCopy(f.value, fieldKey)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${f.label}: ${f.value}`}
+                          accessibilityHint="Tap to copy this field value"
+                        >
+                          <Text style={[styles.fieldLabel, { color: colors.dimText }]}>{f.label}</Text>
+                          <Text style={[styles.fieldValue, { color: colors.primaryText }]}>
+                            {copiedId === fieldKey ? "Copied!" : f.value}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 )}
 
