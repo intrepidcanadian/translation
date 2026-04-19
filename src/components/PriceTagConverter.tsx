@@ -57,6 +57,38 @@ interface DetectedPrice {
   conversions: ConvertedPrice[];
 }
 
+const ConversionCell = React.memo(function ConversionCell({
+  conv,
+  colors,
+  copiedText,
+  onCopy,
+}: {
+  conv: ConvertedPrice;
+  colors: ThemeColors;
+  copiedText: string | null;
+  onCopy: (text: string) => void;
+}) {
+  const copyLabel = `${conv.formatted} ${conv.currency}`;
+  const handleCopy = useCallback(() => onCopy(copyLabel), [onCopy, copyLabel]);
+
+  return (
+    <TouchableOpacity
+      style={[styles.conversionCell, { backgroundColor: colors.containerBg, borderColor: colors.borderLight }]}
+      onPress={handleCopy}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${conv.flag} ${conv.formatted} ${conv.currency}`}
+      accessibilityHint="Tap to copy this conversion to clipboard"
+    >
+      <Text style={styles.convFlag}>{conv.flag}</Text>
+      <Text style={[styles.convAmount, { color: colors.primaryText }]} numberOfLines={1} adjustsFontSizeToFit>
+        {copiedText === copyLabel ? "Copied!" : conv.formatted}
+      </Text>
+      <Text style={[styles.convCode, { color: colors.mutedText }]}>{conv.currency}</Text>
+    </TouchableOpacity>
+  );
+});
+
 const PriceCard = React.memo(function PriceCard({
   price,
   idx,
@@ -111,21 +143,13 @@ const PriceCard = React.memo(function PriceCard({
       {isExpanded && (
         <View style={styles.conversionsGrid}>
           {price.conversions.map((conv) => (
-            <TouchableOpacity
+            <ConversionCell
               key={conv.currency}
-              style={[styles.conversionCell, { backgroundColor: colors.containerBg, borderColor: colors.borderLight }]}
-              onPress={() => onCopyConversion(`${conv.formatted} ${conv.currency}`)}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel={`${conv.flag} ${conv.formatted} ${conv.currency}`}
-              accessibilityHint="Tap to copy this conversion to clipboard"
-            >
-              <Text style={styles.convFlag}>{conv.flag}</Text>
-              <Text style={[styles.convAmount, { color: colors.primaryText }]} numberOfLines={1} adjustsFontSizeToFit>
-                {copiedText === `${conv.formatted} ${conv.currency}` ? "Copied!" : conv.formatted}
-              </Text>
-              <Text style={[styles.convCode, { color: colors.mutedText }]}>{conv.currency}</Text>
-            </TouchableOpacity>
+              conv={conv}
+              colors={colors}
+              copiedText={copiedText}
+              onCopy={onCopyConversion}
+            />
           ))}
         </View>
       )}

@@ -69,13 +69,13 @@ export default function ResultsPhase({
     <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
       {/* Header */}
       <View style={[styles.resultsHeader, { backgroundColor: colors.cardBg, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={onRescan} accessibilityLabel="Scan again">
+        <TouchableOpacity onPress={onRescan} accessibilityRole="button" accessibilityLabel="Scan again" accessibilityHint="Returns to camera to scan another document">
           <Text style={[styles.headerAction, { color: colors.primary }]}>Rescan</Text>
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.titleText }]}>
           {modeIcon} {modeLabel}
         </Text>
-        <TouchableOpacity onPress={onClose} accessibilityLabel="Close scanner">
+        <TouchableOpacity onPress={onClose} accessibilityRole="button" accessibilityLabel="Close scanner" accessibilityHint="Returns to the translation screen">
           <Text style={[styles.headerAction, { color: colors.primary }]}>Done</Text>
         </TouchableOpacity>
       </View>
@@ -138,7 +138,7 @@ export default function ResultsPhase({
         <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Translation</Text>
-            <TouchableOpacity onPress={() => onCopy(translatedText)} accessibilityLabel="Copy translation">
+            <TouchableOpacity onPress={() => onCopy(translatedText)} accessibilityRole="button" accessibilityLabel="Copy translation" accessibilityHint="Copies translated text to clipboard">
               <Text style={[styles.copyAction, { color: colors.primary }]}>
                 {copiedText === translatedText ? "Copied!" : "Copy"}
               </Text>
@@ -153,7 +153,7 @@ export default function ResultsPhase({
         <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Original Text</Text>
-            <TouchableOpacity onPress={() => onCopy(originalText)} accessibilityLabel="Copy original text">
+            <TouchableOpacity onPress={() => onCopy(originalText)} accessibilityRole="button" accessibilityLabel="Copy original text" accessibilityHint="Copies original scanned text to clipboard">
               <Text style={[styles.copyAction, { color: colors.primary }]}>
                 {copiedText === originalText ? "Copied!" : "Copy"}
               </Text>
@@ -169,7 +169,10 @@ export default function ResultsPhase({
           <TouchableOpacity
             style={[styles.actionButton, { backgroundColor: noteSaved ? "#4ade80" : colors.primary }]}
             onPress={onSaveNote}
-            accessibilityLabel="Save as note"
+            accessibilityRole="button"
+            accessibilityLabel={noteSaved ? "Note saved" : "Save as note"}
+            accessibilityHint={noteSaved ? undefined : "Saves the scanned document as a Markdown note"}
+            accessibilityState={{ disabled: noteSaved }}
           >
             <Text style={styles.actionButtonText}>
               {noteSaved ? "Saved!" : "Save as Note"}
@@ -178,7 +181,9 @@ export default function ResultsPhase({
           <TouchableOpacity
             style={[styles.actionButton, { backgroundColor: colors.primary }]}
             onPress={onShare}
+            accessibilityRole="button"
             accessibilityLabel="Share report"
+            accessibilityHint="Opens share sheet with the full scan report"
           >
             <Text style={styles.actionButtonText}>Share Report</Text>
           </TouchableOpacity>
@@ -205,7 +210,9 @@ function FieldRow({
     <TouchableOpacity
       style={entityStyles.row}
       onPress={() => onCopy(field.value)}
-      accessibilityLabel={`${field.label}: ${field.value}. Tap to copy`}
+      accessibilityRole="button"
+      accessibilityLabel={`${field.label}: ${field.value}`}
+      accessibilityHint="Tap to copy this value to clipboard"
     >
       <View style={[entityStyles.iconBadge, { backgroundColor: field.color + "22" }]}>
         <Text style={[entityStyles.iconText, { color: field.color }]}>{field.icon}</Text>

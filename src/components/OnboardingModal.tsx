@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { modalStyles } from "../styles/modalStyles";
 import {
   Modal,
@@ -34,12 +34,12 @@ function OnboardingModalBase({ visible, onComplete, colors }: OnboardingModalPro
   const current = steps[step];
   const isLast = step === steps.length - 1;
 
-  const handleSkip = () => {
+  const handleSkip = useCallback(() => {
     setStep(0);
     onComplete();
-  };
+  }, [onComplete]);
 
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     if (isLast) {
       setStep(0);
       onComplete();
@@ -47,7 +47,7 @@ function OnboardingModalBase({ visible, onComplete, colors }: OnboardingModalPro
     } else {
       setStep((s) => s + 1);
     }
-  };
+  }, [isLast, onComplete]);
 
   return (
     <Modal visible={visible} animationType="fade" transparent>
@@ -89,6 +89,7 @@ function OnboardingModalBase({ visible, onComplete, colors }: OnboardingModalPro
               onPress={handleSkip}
               accessibilityRole="button"
               accessibilityLabel="Skip tutorial"
+              accessibilityHint="Closes the tutorial and starts using the app"
             >
               <Text style={[styles.onboardingSkipText, { color: colors.dimText }]}>Skip</Text>
             </TouchableOpacity>
@@ -96,7 +97,8 @@ function OnboardingModalBase({ visible, onComplete, colors }: OnboardingModalPro
               style={[styles.onboardingNext, { backgroundColor: colors.primary }]}
               onPress={handleNext}
               accessibilityRole="button"
-              accessibilityLabel={isLast ? "Get started" : "Next tip"}
+              accessibilityLabel={isLast ? "Get started" : `Next tip, step ${step + 2} of ${steps.length}`}
+              accessibilityHint={isLast ? "Closes the tutorial and starts using the app" : `Shows the next feature: ${steps[step + 1]?.title ?? ""}`}
             >
               <Text style={styles.onboardingNextText}>{isLast ? "Get Started" : "Next"}</Text>
             </TouchableOpacity>

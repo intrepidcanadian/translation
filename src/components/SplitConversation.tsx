@@ -385,7 +385,7 @@ function SplitConversation({ visible, onClose }: SplitConversationProps) {
         ]}
         accessibilityRole="button"
         accessibilityLabel={isSpeaking ? `Stop speaking ${langName}` : `Speak ${langName}`}
-        accessibilityHint="Tap anywhere on this half to start or stop speaking"
+        accessibilityHint={isSpeaking ? "Stops listening and translates your speech" : `Starts the microphone for ${langName} speech recognition`}
       >
         <View style={styles.halfHeaderRow}>
           <Text style={[styles.langLabel, { color: colors.primary }]}>{langName}</Text>
@@ -399,7 +399,8 @@ function SplitConversation({ visible, onClose }: SplitConversationProps) {
               }}
               style={[styles.replayBtn, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
               accessibilityRole="button"
-              accessibilityLabel="Replay last translation"
+              accessibilityLabel={`Replay ${langName} translation`}
+              accessibilityHint="Speaks the last translation aloud again"
               hitSlop={10}
             >
               <Text style={[styles.replayIcon, { color: colors.primary }]}>↻</Text>
@@ -488,6 +489,7 @@ function SplitConversation({ visible, onClose }: SplitConversationProps) {
           onPress={onClose}
           accessibilityRole="button"
           accessibilityLabel="Close split screen"
+          accessibilityHint="Ends the face-to-face conversation and returns to the main screen"
           hitSlop={12}
         >
           <Text style={[styles.closeText, { color: colors.primaryText }]}>✕</Text>

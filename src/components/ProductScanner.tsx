@@ -379,7 +379,9 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
                 key={link.name}
                 style={[styles.linkPill, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
                 onPress={() => Linking.openURL(link.url)}
+                accessibilityRole="link"
                 accessibilityLabel={`Search on ${link.name}`}
+                accessibilityHint={`Opens ${link.name} in browser`}
               >
                 <Text style={styles.linkIcon}>{link.icon}</Text>
                 <Text style={[styles.linkText, { color: colors.primary }]}>{link.name}</Text>
@@ -442,6 +444,9 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
                   style={[styles.priceRow, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
                   onPress={() => price.url && Linking.openURL(price.url)}
                   disabled={!price.url}
+                  accessibilityRole={price.url ? "link" : "text"}
+                  accessibilityLabel={`${price.source}: ${price.price}`}
+                  accessibilityHint={price.url ? `Opens ${price.source} in browser` : undefined}
                 >
                   <Text style={[styles.priceSource, { color: colors.primaryText }]}>{price.source}</Text>
                   <Text style={[styles.priceValue, { color: colors.successText }]}>{price.price}</Text>
@@ -459,6 +464,9 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
                   key={`${attr.label}-${i}`}
                   style={[styles.attrRow, { borderBottomColor: colors.borderLight }]}
                   onPress={() => copyText(attr.value)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${attr.label}: ${attr.value}`}
+                  accessibilityHint="Tap to copy this value to clipboard"
                 >
                   <Text style={[styles.attrLabel, { color: colors.mutedText }]}>{attr.label}</Text>
                   <Text style={[styles.attrValue, { color: colors.primaryText }]} numberOfLines={2}>
@@ -478,7 +486,9 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
                   key={link.name}
                   style={[styles.linkPill, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
                   onPress={() => Linking.openURL(link.url)}
+                  accessibilityRole="link"
                   accessibilityLabel={`Search on ${link.name}`}
+                  accessibilityHint={`Opens ${link.name} in browser to search for this product`}
                 >
                   <Text style={styles.linkIcon}>{link.icon}</Text>
                   <Text style={[styles.linkText, { color: colors.primary }]}>{link.name}</Text>
