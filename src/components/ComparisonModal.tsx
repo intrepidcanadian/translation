@@ -1,13 +1,53 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import type { ThemeColors } from "../theme";
 import { modalStyles } from "../styles/modalStyles";
+
+interface ComparisonResult {
+  provider: string;
+  text: string;
+  loading?: boolean;
+}
+
+interface ResultRowProps {
+  result: ComparisonResult;
+  onCopy: (text: string) => void;
+  copiedText: string | null;
+  colors: ThemeColors;
+}
+
+const ResultRow = React.memo(function ResultRow({
+  result,
+  onCopy,
+  copiedText,
+  colors,
+}: ResultRowProps) {
+  const handleCopy = useCallback(() => onCopy(result.text), [onCopy, result.text]);
+  return (
+    <View style={[styles.compareResult, { backgroundColor: colors.translatedBubbleBg, borderColor: colors.border }]}>
+      <Text style={[modalStyles.label, { color: colors.primary }]}>{result.provider.toUpperCase()}</Text>
+      {result.loading ? (
+        <Text style={[{ color: colors.dimText, fontStyle: "italic", fontSize: 15 }]}>Loading...</Text>
+      ) : (
+        <TouchableOpacity
+          onPress={handleCopy}
+          accessibilityRole="button"
+          accessibilityLabel={`Copy ${result.provider} translation: ${result.text}`}
+          accessibilityHint="Tap to copy this translation to clipboard"
+        >
+          <Text style={[{ color: colors.translatedText, fontSize: 15 }]}>{result.text}</Text>
+          {copiedText === result.text && <Text style={styles.copiedBadge}>Copied!</Text>}
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+});
 
 interface ComparisonModalProps {
   visible: boolean;
   data: {
     original: string;
-    results: Array<{ provider: string; text: string; loading?: boolean }>;
+    results: ComparisonResult[];
   } | null;
   onClose: () => void;
   onCopy: (text: string) => void;
@@ -28,22 +68,13 @@ function ComparisonModal({ visible, data, onClose, onCopy, copiedText, colors }:
                 <Text style={[{ color: colors.primaryText, fontSize: 15 }]}>{data.original}</Text>
               </View>
               {data.results.map((r) => (
-                <View key={r.provider} style={[styles.compareResult, { backgroundColor: colors.translatedBubbleBg, borderColor: colors.border }]}>
-                  <Text style={[modalStyles.label, { color: colors.primary }]}>{r.provider.toUpperCase()}</Text>
-                  {r.loading ? (
-                    <Text style={[{ color: colors.dimText, fontStyle: "italic", fontSize: 15 }]}>Loading...</Text>
-                  ) : (
-                    <TouchableOpacity
-                      onPress={() => onCopy(r.text)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Copy ${r.provider} translation: ${r.text}`}
-                      accessibilityHint="Tap to copy this translation to clipboard"
-                    >
-                      <Text style={[{ color: colors.translatedText, fontSize: 15 }]}>{r.text}</Text>
-                      {copiedText === r.text && <Text style={styles.copiedBadge}>Copied!</Text>}
-                    </TouchableOpacity>
-                  )}
-                </View>
+                <ResultRow
+                  key={r.provider}
+                  result={r}
+                  onCopy={onCopy}
+                  copiedText={copiedText}
+                  colors={colors}
+                />
               ))}
             </>
           )}
@@ -52,6 +83,7 @@ function ComparisonModal({ visible, data, onClose, onCopy, copiedText, colors }:
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="Close comparison"
+            accessibilityHint="Returns to the translation screen"
           >
             <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" }]}>Done</Text>
           </TouchableOpacity>
