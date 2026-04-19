@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Modal, View, Text, TouchableOpacity, TextInput, StyleSheet } from "react-native";
 import type { ThemeColors } from "../theme";
 import { modalStyles } from "../styles/modalStyles";
@@ -24,14 +24,14 @@ function CorrectionModal({ visible, data, onClose, onSubmit, colors }: Correctio
     }
   }, [visible]);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setCorrectionText("");
     onClose();
-  };
+  }, [onClose]);
 
-  const handleSubmit = () => {
+  const handleSubmit = useCallback(() => {
     onSubmit(correctionText);
-  };
+  }, [onSubmit, correctionText]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -74,6 +74,7 @@ function CorrectionModal({ visible, data, onClose, onSubmit, colors }: Correctio
             onPress={handleClose}
             accessibilityRole="button"
             accessibilityLabel="Cancel correction"
+            accessibilityHint="Discards the correction and returns to the translation screen"
           >
             <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Cancel</Text>
           </TouchableOpacity>
