@@ -86,9 +86,9 @@ describe("parseGlossaryCSV", () => {
 });
 
 describe("glossaryToCSV", () => {
-  it("produces a header row", () => {
+  it("produces a header row with no trailing newline for empty entries", () => {
     const csv = glossaryToCSV([]);
-    expect(csv.trim()).toBe("source,target,sourceLang,targetLang");
+    expect(csv).toBe("source,target,sourceLang,targetLang");
   });
 
   it("quotes every field", () => {

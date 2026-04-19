@@ -164,6 +164,20 @@ function CameraTranslator({
     [targetLangCode]
   );
 
+  const handleSetLabelMode = useCallback(() => {
+    setOverlayMode((prev) => {
+      if (prev !== "label") { blockOpacities.clear(); return "label"; }
+      return prev;
+    });
+  }, [blockOpacities]);
+
+  const handleSetBubbleMode = useCallback(() => {
+    setOverlayMode((prev) => {
+      if (prev !== "bubble") { blockOpacities.clear(); return "bubble"; }
+      return prev;
+    });
+  }, [blockOpacities]);
+
   // Track screen dimensions for overlay mapping
   useEffect(() => {
     const sub = Dimensions.addEventListener("change", ({ window }) => {
@@ -365,12 +379,7 @@ function CameraTranslator({
             <View style={styles.overlayToggle}>
               <TouchableOpacity
                 style={[styles.overlayToggleSegment, overlayMode === "label" && styles.overlayToggleSegmentActive]}
-                onPress={() => {
-                  if (overlayMode !== "label") {
-                    setOverlayMode("label");
-                    blockOpacities.clear();
-                  }
-                }}
+                onPress={handleSetLabelMode}
                 accessibilityRole="button"
                 accessibilityState={{ selected: overlayMode === "label" }}
                 accessibilityLabel="Label overlay: show translations as a horizontal label next to each line of text"
@@ -379,12 +388,7 @@ function CameraTranslator({
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.overlayToggleSegment, overlayMode === "bubble" && styles.overlayToggleSegmentActive]}
-                onPress={() => {
-                  if (overlayMode !== "bubble") {
-                    setOverlayMode("bubble");
-                    blockOpacities.clear();
-                  }
-                }}
+                onPress={handleSetBubbleMode}
                 accessibilityRole="button"
                 accessibilityState={{ selected: overlayMode === "bubble" }}
                 accessibilityLabel="Bubble overlay: show translations in floating bubbles"

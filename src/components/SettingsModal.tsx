@@ -896,7 +896,53 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
   );
 }
 
-// Reusable option picker row — eliminates 5 repeated patterns in settings
+const OptionItem = React.memo(function OptionItem({
+  value,
+  isSelected,
+  onSelect,
+  label,
+  accessibilityPrefix,
+  cardBg,
+  primary,
+  mutedText,
+  destructiveText,
+}: {
+  value: string | number;
+  isSelected: boolean;
+  onSelect: (v: string | number) => void;
+  label: string;
+  accessibilityPrefix: string;
+  cardBg: string;
+  primary: string;
+  mutedText: string;
+  destructiveText: string;
+}) {
+  const handlePress = useCallback(() => onSelect(value), [onSelect, value]);
+  return (
+    <TouchableOpacity
+      style={[
+        styles.fontSizeOption,
+        { backgroundColor: cardBg },
+        isSelected && { backgroundColor: primary },
+      ]}
+      onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={`${accessibilityPrefix}: ${label}`}
+      accessibilityState={{ selected: isSelected }}
+    >
+      <Text
+        style={[
+          styles.fontSizeLabel,
+          { color: mutedText },
+          isSelected && { color: destructiveText },
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
 function OptionPicker<T extends string | number>({
   options,
   selected,
@@ -912,31 +958,22 @@ function OptionPicker<T extends string | number>({
   accessibilityPrefix: string;
   colors: ReturnType<typeof getColors>;
 }) {
+  const typedOnSelect = onSelect as (v: string | number) => void;
   return (
     <View style={styles.fontSizeRow}>
       {options.map((option) => (
-        <TouchableOpacity
+        <OptionItem
           key={String(option)}
-          style={[
-            styles.fontSizeOption,
-            { backgroundColor: colors.cardBg },
-            selected === option && { backgroundColor: colors.primary },
-          ]}
-          onPress={() => onSelect(option)}
-          accessibilityRole="button"
-          accessibilityLabel={`${accessibilityPrefix}: ${labelFn(option)}`}
-          accessibilityState={{ selected: selected === option }}
-        >
-          <Text
-            style={[
-              styles.fontSizeLabel,
-              { color: colors.mutedText },
-              selected === option && { color: colors.destructiveText },
-            ]}
-          >
-            {labelFn(option)}
-          </Text>
-        </TouchableOpacity>
+          value={option}
+          isSelected={selected === option}
+          onSelect={typedOnSelect}
+          label={labelFn(option)}
+          accessibilityPrefix={accessibilityPrefix}
+          cardBg={colors.cardBg}
+          primary={colors.primary}
+          mutedText={colors.mutedText}
+          destructiveText={colors.destructiveText}
+        />
       ))}
     </View>
   );

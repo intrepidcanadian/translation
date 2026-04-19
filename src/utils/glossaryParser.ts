@@ -6,15 +6,15 @@ export interface GlossaryParseResult {
 }
 
 export function glossaryToCSV(entries: readonly GlossaryEntry[]): string {
-  return (
-    "source,target,sourceLang,targetLang\n" +
-    entries
-      .map(
-        (g) =>
-          `"${g.source.replace(/"/g, '""')}","${g.target.replace(/"/g, '""')}","${g.sourceLang}","${g.targetLang}"`
-      )
-      .join("\n")
-  );
+  const header = "source,target,sourceLang,targetLang";
+  if (entries.length === 0) return header;
+  const body = entries
+    .map(
+      (g) =>
+        `"${g.source.replace(/"/g, '""')}","${g.target.replace(/"/g, '""')}","${g.sourceLang}","${g.targetLang}"`
+    )
+    .join("\n");
+  return header + "\n" + body;
 }
 
 function parseCSVRow(line: string): string[] | null {
