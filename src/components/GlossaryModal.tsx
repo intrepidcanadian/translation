@@ -14,14 +14,9 @@ import {
 import * as Clipboard from "expo-clipboard";
 import { notifySuccess } from "../services/haptics";
 import { logger } from "../services/logger";
+import { parseGlossaryCSV } from "../utils/glossaryParser";
+import type { GlossaryEntry } from "../utils/glossaryValidation";
 import type { ThemeColors } from "../theme";
-
-interface GlossaryEntry {
-  source: string;
-  target: string;
-  sourceLang: string;
-  targetLang: string;
-}
 
 interface GlossaryEntryRowProps {
   item: GlossaryEntry;
@@ -159,37 +154,9 @@ function GlossaryModal({
         );
         return;
       }
-      const lines = clip.split("\n").filter((l) => l.trim());
-      const start = lines[0]?.toLowerCase().startsWith("source") ? 1 : 0;
-      let imported = 0;
-      const newEntries: GlossaryEntry[] = [...glossary];
-      for (let i = start; i < lines.length; i++) {
-        const match = lines[i].match(
-          /^"?([^"]*)"?\s*,\s*"?([^"]*)"?\s*,\s*"?([^"]*)"?\s*,\s*"?([^"]*)"?$/
-        );
-        if (match) {
-          const [, src, tgt, sLang, tLang] = match;
-          if (src && tgt && sLang && tLang) {
-            const exists = newEntries.some(
-              (g) =>
-                g.source.toLowerCase() === src.toLowerCase() &&
-                g.sourceLang === sLang &&
-                g.targetLang === tLang
-            );
-            if (!exists) {
-              newEntries.push({
-                source: src,
-                target: tgt,
-                sourceLang: sLang,
-                targetLang: tLang,
-              });
-              imported++;
-            }
-          }
-        }
-      }
+      const { entries, imported } = parseGlossaryCSV(clip, glossary);
       if (imported > 0) {
-        onImport(newEntries);
+        onImport(entries);
         notifySuccess();
       }
       Alert.alert(

@@ -81,6 +81,137 @@ const ConversationItemRow = React.memo(function ConversationItemRow({
   );
 });
 
+function formatSessionDate(ts: number): string {
+  const d = new Date(ts);
+  return d.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatSessionDuration(startMs: number, endMs: number): string {
+  const diffSec = Math.round((endMs - startMs) / 1000);
+  if (diffSec < 60) return `${diffSec}s`;
+  const mins = Math.floor(diffSec / 60);
+  const secs = diffSec % 60;
+  return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+}
+
+interface SessionCardProps {
+  session: ConversationSession;
+  expandedSessionId: string | null;
+  playingSessionId: string | null;
+  isPlaying: boolean;
+  currentItemIdx: number;
+  exporting: boolean;
+  colors: ReturnType<typeof useTheme>["colors"];
+  onToggleExpand: (id: string) => void;
+  onPlay: (session: ConversationSession) => void;
+  onStop: () => void;
+  onExportPdf: (session: ConversationSession) => void;
+}
+
+const SessionCard = React.memo(function SessionCard({
+  session,
+  expandedSessionId,
+  playingSessionId,
+  isPlaying,
+  currentItemIdx,
+  exporting,
+  colors,
+  onToggleExpand,
+  onPlay,
+  onStop,
+  onExportPdf,
+}: SessionCardProps) {
+  const isExpanded = expandedSessionId === session.id;
+  const isSessionPlaying = playingSessionId === session.id;
+
+  const handleToggle = useCallback(() => onToggleExpand(session.id), [onToggleExpand, session.id]);
+  const handlePlaySession = useCallback(() => onPlay(session), [onPlay, session]);
+  const handleExport = useCallback(() => onExportPdf(session), [onExportPdf, session]);
+
+  return (
+    <View style={[styles.sessionCard, { backgroundColor: colors.cardBg }]}>
+      <TouchableOpacity
+        style={styles.sessionHeader}
+        onPress={handleToggle}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: isExpanded }}
+        accessibilityLabel={`Conversation session from ${formatSessionDate(session.startTime)}, ${session.items.length} items`}
+        accessibilityHint="Tap to expand or collapse session details"
+      >
+        <View style={styles.sessionInfo}>
+          <Text style={[styles.sessionDate, { color: colors.primaryText }]}>
+            {formatSessionDate(session.startTime)}
+          </Text>
+          <Text style={[styles.sessionMeta, { color: colors.dimText }]}>
+            {session.items.length} items &bull;{" "}
+            {formatSessionDuration(session.startTime, session.endTime)}
+          </Text>
+          <View
+            style={[styles.langBadge, { backgroundColor: colors.primary + "22" }]}
+          >
+            <Text style={[styles.langBadgeText, { color: colors.primary }]}>
+              {session.sourceLang} &rarr; {session.targetLang}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.sessionActions}>
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: colors.primary }]}
+            onPress={handlePlaySession}
+            accessibilityRole="button"
+            accessibilityLabel={isSessionPlaying && isPlaying ? "Pause playback" : "Play conversation"}
+          >
+            <Text style={{ fontSize: 16, color: "#fff" }}>{isSessionPlaying && isPlaying ? "⏸" : "▶"}</Text>
+          </TouchableOpacity>
+          {isSessionPlaying && isPlaying && (
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: "#D94A4A" }]}
+              onPress={onStop}
+              accessibilityRole="button"
+              accessibilityLabel="Stop playback"
+            >
+              <Text style={{ fontSize: 16, color: "#fff" }}>⏹</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: colors.primary + "33" }]}
+            onPress={handleExport}
+            disabled={exporting}
+            accessibilityRole="button"
+            accessibilityLabel="Export conversation as PDF"
+          >
+            {exporting ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Text style={{ fontSize: 16, color: colors.primary }}>PDF</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+
+      {isExpanded && (
+        <View style={styles.itemList}>
+          {session.items.map((item, idx) => (
+            <ConversationItemRow
+              key={`${session.id}-${idx}`}
+              item={item}
+              isActive={isSessionPlaying && isPlaying && idx === currentItemIdx}
+              colors={colors}
+            />
+          ))}
+        </View>
+      )}
+    </View>
+  );
+});
+
 interface ConversationPlaybackProps {
   visible: boolean;
   onClose: () => void;
@@ -107,25 +238,6 @@ function ConversationPlayback({
   const currentIdxRef = useRef(0);
 
   const sessions = useMemo(() => groupIntoSessions(history), [history]);
-
-  const formatDate = useCallback((ts: number) => {
-    const d = new Date(ts);
-    return d.toLocaleDateString(undefined, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }, []);
-
-  const formatDuration = useCallback((startMs: number, endMs: number) => {
-    const diffSec = Math.round((endMs - startMs) / 1000);
-    if (diffSec < 60) return `${diffSec}s`;
-    const mins = Math.floor(diffSec / 60);
-    const secs = diffSec % 60;
-    return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
-  }, []);
 
   const toggleExpand = useCallback(
     (sessionId: string) => {
@@ -262,104 +374,30 @@ function ConversationPlayback({
     onClose();
   }, [handleStop, onClose]);
 
+  const sessionKeyExtractor = useCallback((s: ConversationSession) => s.id, []);
+
   const renderSessionItem = useCallback(
-    ({ item: session }: { item: ConversationSession }) => {
-      const isExpanded = expandedSessionId === session.id;
-      const isSessionPlaying = playingSessionId === session.id;
-
-      return (
-        <View
-          style={[styles.sessionCard, { backgroundColor: colors.cardBg }]}
-        >
-          <TouchableOpacity
-            style={styles.sessionHeader}
-            onPress={() => toggleExpand(session.id)}
-            activeOpacity={0.7}
-            accessibilityRole="button"
-            accessibilityState={{ expanded: isExpanded }}
-            accessibilityLabel={`Conversation session from ${formatDate(session.startTime)}, ${session.items.length} items`}
-            accessibilityHint="Tap to expand or collapse session details"
-          >
-            <View style={styles.sessionInfo}>
-              <Text style={[styles.sessionDate, { color: colors.primaryText }]}>
-                {formatDate(session.startTime)}
-              </Text>
-              <Text style={[styles.sessionMeta, { color: colors.dimText }]}>
-                {session.items.length} items &bull;{" "}
-                {formatDuration(session.startTime, session.endTime)}
-              </Text>
-              <View
-                style={[
-                  styles.langBadge,
-                  { backgroundColor: colors.primary + "22" },
-                ]}
-              >
-                <Text style={[styles.langBadgeText, { color: colors.primary }]}>
-                  {session.sourceLang} &rarr; {session.targetLang}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.sessionActions}>
-              <TouchableOpacity
-                style={[styles.actionBtn, { backgroundColor: colors.primary }]}
-                onPress={() => handlePlay(session)}
-                accessibilityRole="button"
-                accessibilityLabel={isSessionPlaying && isPlaying ? "Pause playback" : "Play conversation"}
-              >
-                <Text style={{ fontSize: 16, color: "#fff" }}>{isSessionPlaying && isPlaying ? "⏸" : "▶"}</Text>
-              </TouchableOpacity>
-              {isSessionPlaying && isPlaying && (
-                <TouchableOpacity
-                  style={[styles.actionBtn, { backgroundColor: "#D94A4A" }]}
-                  onPress={handleStop}
-                  accessibilityRole="button"
-                  accessibilityLabel="Stop playback"
-                >
-                  <Text style={{ fontSize: 16, color: "#fff" }}>⏹</Text>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                style={[
-                  styles.actionBtn,
-                  { backgroundColor: colors.primary + "33" },
-                ]}
-                onPress={() => handleExportPdf(session)}
-                disabled={exporting}
-                accessibilityRole="button"
-                accessibilityLabel="Export conversation as PDF"
-              >
-                {exporting ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <Text style={{ fontSize: 16, color: colors.primary }}>PDF</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-
-          {isExpanded && (
-            <View style={styles.itemList}>
-              {session.items.map((item, idx) => (
-                <ConversationItemRow
-                  key={`${session.id}-${idx}`}
-                  item={item}
-                  isActive={isSessionPlaying && isPlaying && idx === currentItemIdx}
-                  colors={colors}
-                />
-              ))}
-            </View>
-          )}
-        </View>
-      );
-    },
+    ({ item: session }: { item: ConversationSession }) => (
+      <SessionCard
+        session={session}
+        expandedSessionId={expandedSessionId}
+        playingSessionId={playingSessionId}
+        isPlaying={isPlaying}
+        currentItemIdx={currentItemIdx}
+        exporting={exporting}
+        colors={colors}
+        onToggleExpand={toggleExpand}
+        onPlay={handlePlay}
+        onStop={handleStop}
+        onExportPdf={handleExportPdf}
+      />
+    ),
     [
       expandedSessionId,
       playingSessionId,
       isPlaying,
       currentItemIdx,
       colors,
-      formatDate,
-      formatDuration,
       toggleExpand,
       handlePlay,
       handleStop,
@@ -396,7 +434,7 @@ function ConversationPlayback({
         ) : (
           <FlatList
             data={sessions}
-            keyExtractor={(s) => s.id}
+            keyExtractor={sessionKeyExtractor}
             renderItem={renderSessionItem}
             contentContainerStyle={styles.list}
             showsVerticalScrollIndicator={false}

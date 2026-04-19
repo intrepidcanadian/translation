@@ -465,6 +465,8 @@ function VisualCardsModal({
     [expandedCard, currentCategory, colors, tapCard, speakCard, getTranslatedText, isSpeaking]
   );
 
+  const cardKeyExtractor = useCallback((item: VisualCard) => item.id, []);
+
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View accessibilityViewIsModal={true} style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]}>
@@ -502,7 +504,7 @@ function VisualCardsModal({
           <FlatList
             data={currentCategory.cards}
             renderItem={renderCard}
-            keyExtractor={(item) => item.id}
+            keyExtractor={cardKeyExtractor}
             numColumns={expandedCard ? 1 : 2}
             columnWrapperStyle={expandedCard ? undefined : styles.cardRow}
             contentContainerStyle={styles.cardGrid}

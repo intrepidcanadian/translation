@@ -8,6 +8,34 @@ import { logger } from "../services/logger";
 import type { ThemeColors } from "../theme";
 import type { HistoryItem } from "../types";
 
+interface WordSegmentProps {
+  segment: { key: number; text: string; isWord: true; cleaned?: string };
+  targetLangCode: string;
+  sourceLangCode: string;
+  onWordLongPress: (word: string, targetLang: string, sourceLang: string) => void;
+}
+
+const WordSegment = React.memo(function WordSegment({
+  segment,
+  targetLangCode,
+  sourceLangCode,
+  onWordLongPress,
+}: WordSegmentProps) {
+  const handleLongPress = useCallback(() => {
+    if (segment.cleaned) onWordLongPress(segment.cleaned, targetLangCode, sourceLangCode);
+  }, [segment.cleaned, targetLangCode, sourceLangCode, onWordLongPress]);
+
+  return (
+    <Text
+      key={segment.key}
+      onLongPress={handleLongPress}
+      style={styles.tappableWord}
+    >
+      {segment.text}
+    </Text>
+  );
+});
+
 interface TranslationBubbleProps {
   item: HistoryItem;
   realIndex: number;
@@ -171,15 +199,13 @@ function TranslationBubble({
             {translatedWordSegments
               ? translatedWordSegments.map((seg) =>
                   !seg.isWord ? seg.text : (
-                    <Text
+                    <WordSegment
                       key={seg.key}
-                      onLongPress={() => {
-                        if (seg.cleaned) onWordLongPress(seg.cleaned, item.targetLangCode!, item.sourceLangCode!);
-                      }}
-                      style={styles.tappableWord}
-                    >
-                      {seg.text}
-                    </Text>
+                      segment={seg}
+                      targetLangCode={item.targetLangCode!}
+                      sourceLangCode={item.sourceLangCode!}
+                      onWordLongPress={onWordLongPress}
+                    />
                   )
                 )
               : item.translated
