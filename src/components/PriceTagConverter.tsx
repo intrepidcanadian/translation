@@ -3,7 +3,7 @@
 // shows instant conversion to HKD, CNY, TWD, JPY, USD, KRW, EUR and more.
 // Uses cached or live exchange rates with offline fallback.
 
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -56,6 +56,82 @@ interface DetectedPrice {
   amount: number;
   conversions: ConvertedPrice[];
 }
+
+const PriceCard = React.memo(function PriceCard({
+  price,
+  idx,
+  isExpanded,
+  canToggle,
+  colors,
+  copiedText,
+  onToggleExpand,
+  onCopyConversion,
+}: {
+  price: DetectedPrice;
+  idx: number;
+  isExpanded: boolean;
+  canToggle: boolean;
+  colors: ThemeColors;
+  copiedText: string | null;
+  onToggleExpand: (idx: number) => void;
+  onCopyConversion: (text: string) => void;
+}) {
+  const meta = CURRENCIES[price.currency];
+  const handleToggle = useCallback(() => onToggleExpand(idx), [onToggleExpand, idx]);
+
+  return (
+    <View style={[styles.priceCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+      <TouchableOpacity
+        style={styles.priceCardHeader}
+        onPress={handleToggle}
+        activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={`${meta?.symbol ?? ""}${price.amount} ${price.currency}${meta?.name ? `, ${meta.name}` : ""}`}
+        accessibilityHint={canToggle ? (isExpanded ? "Collapse currency conversions" : "Expand to see currency conversions") : "Shows currency conversions"}
+        accessibilityState={canToggle ? { expanded: isExpanded } : undefined}
+      >
+        <View style={styles.originalPriceRow}>
+          <Text style={styles.originalFlag}>{meta?.flag ?? "🏷️"}</Text>
+          <View>
+            <Text style={[styles.originalAmount, { color: colors.primaryText }]}>
+              {meta?.symbol}{price.amount.toLocaleString(undefined, { minimumFractionDigits: meta?.decimals ?? 2, maximumFractionDigits: meta?.decimals ?? 2 })}
+            </Text>
+            <Text style={[styles.originalCurrency, { color: colors.mutedText }]}>
+              {price.currency} {meta?.name ? `· ${meta.name}` : ""}
+            </Text>
+          </View>
+        </View>
+        {canToggle && (
+          <Text style={[styles.expandArrow, { color: colors.mutedText }]}>
+            {isExpanded ? "▼" : "▶"}
+          </Text>
+        )}
+      </TouchableOpacity>
+
+      {isExpanded && (
+        <View style={styles.conversionsGrid}>
+          {price.conversions.map((conv) => (
+            <TouchableOpacity
+              key={conv.currency}
+              style={[styles.conversionCell, { backgroundColor: colors.containerBg, borderColor: colors.borderLight }]}
+              onPress={() => onCopyConversion(`${conv.formatted} ${conv.currency}`)}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`${conv.flag} ${conv.formatted} ${conv.currency}`}
+              accessibilityHint="Tap to copy this conversion to clipboard"
+            >
+              <Text style={styles.convFlag}>{conv.flag}</Text>
+              <Text style={[styles.convAmount, { color: colors.primaryText }]} numberOfLines={1} adjustsFontSizeToFit>
+                {copiedText === `${conv.formatted} ${conv.currency}` ? "Copied!" : conv.formatted}
+              </Text>
+              <Text style={[styles.convCode, { color: colors.mutedText }]}>{conv.currency}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+});
 
 function PriceTagConverter({
   visible,
@@ -177,6 +253,11 @@ function PriceTagConverter({
     }
   }, [sourceLangCode]);
 
+  const handleToggleExpand = useCallback((idx: number) => {
+    impactLight();
+    setExpandedIdx((prev) => prev === idx ? null : idx);
+  }, []);
+
   const copyConversion = useCallback(async (text: string) => {
     try {
       // copyWithAutoClear: converted-price outputs mirror receipt content;
@@ -222,11 +303,22 @@ function PriceTagConverter({
             {!device ? "No camera found" : "Camera permission required"}
           </Text>
           {!hasPermission && (
-            <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.primary }]} onPress={requestPermission}>
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: colors.primary }]}
+              onPress={requestPermission}
+              accessibilityRole="button"
+              accessibilityLabel="Grant camera permission"
+              accessibilityHint="Opens system dialog to allow camera access for price tag scanning"
+            >
               <Text style={styles.actionBtnText}>Grant Permission</Text>
             </TouchableOpacity>
           )}
-          <TouchableOpacity onPress={onClose} style={styles.closeLink}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.closeLink}
+            accessibilityRole="button"
+            accessibilityLabel="Close price tag converter"
+          >
             <Text style={[styles.closeLinkText, { color: colors.primary }]}>Close</Text>
           </TouchableOpacity>
         </View>
@@ -256,7 +348,13 @@ function PriceTagConverter({
 
         {/* Top bar */}
         <View style={styles.topBar}>
-          <TouchableOpacity style={styles.topButton} onPress={onClose}>
+          <TouchableOpacity
+            style={styles.topButton}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close price tag scanner"
+            accessibilityHint="Returns to scanner mode selection"
+          >
             <Text style={styles.topButtonText}>✕</Text>
           </TouchableOpacity>
           <View style={styles.badge}>
@@ -274,7 +372,14 @@ function PriceTagConverter({
         {/* Bottom */}
         <View style={styles.bottomArea}>
           <Text style={styles.instructionText}>Point at a price tag</Text>
-          <TouchableOpacity style={styles.captureButton} onPress={captureAndConvert} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.captureButton}
+            onPress={captureAndConvert}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel="Capture price tag"
+            accessibilityHint="Takes a photo and converts all detected prices to multiple currencies"
+          >
             <View style={styles.captureInner}>
               <Text style={styles.captureIcon}>💱</Text>
             </View>
@@ -336,73 +441,37 @@ function PriceTagConverter({
       </View>
 
       {/* Price cards */}
-      {detectedPrices.map((price, idx) => {
-        const meta = CURRENCIES[price.currency];
-        const isExpanded = expandedIdx === idx || detectedPrices.length === 1;
-
-        return (
-          <View key={`${price.raw}-${idx}`} style={[styles.priceCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-            {/* Original price header */}
-            <TouchableOpacity
-              style={styles.priceCardHeader}
-              onPress={() => {
-                impactLight();
-                setExpandedIdx(isExpanded && detectedPrices.length > 1 ? null : idx);
-              }}
-              activeOpacity={0.7}
-            >
-              <View style={styles.originalPriceRow}>
-                <Text style={styles.originalFlag}>{meta?.flag ?? "🏷️"}</Text>
-                <View>
-                  <Text style={[styles.originalAmount, { color: colors.primaryText }]}>
-                    {meta?.symbol}{price.amount.toLocaleString(undefined, { minimumFractionDigits: meta?.decimals ?? 2, maximumFractionDigits: meta?.decimals ?? 2 })}
-                  </Text>
-                  <Text style={[styles.originalCurrency, { color: colors.mutedText }]}>
-                    {price.currency} {meta?.name ? `· ${meta.name}` : ""}
-                  </Text>
-                </View>
-              </View>
-              {detectedPrices.length > 1 && (
-                <Text style={[styles.expandArrow, { color: colors.mutedText }]}>
-                  {isExpanded ? "▼" : "▶"}
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            {/* Conversion grid */}
-            {isExpanded && (
-              <View style={styles.conversionsGrid}>
-                {price.conversions.map((conv) => (
-                  <TouchableOpacity
-                    key={conv.currency}
-                    style={[styles.conversionCell, { backgroundColor: colors.containerBg, borderColor: colors.borderLight }]}
-                    onPress={() => copyConversion(`${conv.formatted} ${conv.currency}`)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.convFlag}>{conv.flag}</Text>
-                    <Text style={[styles.convAmount, { color: colors.primaryText }]} numberOfLines={1} adjustsFontSizeToFit>
-                      {copiedText === `${conv.formatted} ${conv.currency}` ? "Copied!" : conv.formatted}
-                    </Text>
-                    <Text style={[styles.convCode, { color: colors.mutedText }]}>{conv.currency}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-        );
-      })}
+      {detectedPrices.map((price, idx) => (
+        <PriceCard
+          key={`${price.raw}-${idx}`}
+          price={price}
+          idx={idx}
+          isExpanded={expandedIdx === idx || detectedPrices.length === 1}
+          canToggle={detectedPrices.length > 1}
+          colors={colors}
+          copiedText={copiedText}
+          onToggleExpand={handleToggleExpand}
+          onCopyConversion={copyConversion}
+        />
+      ))}
 
       {/* Actions */}
       <View style={styles.actionsRow}>
         <TouchableOpacity
           style={[styles.actionBtnOutline, { borderColor: colors.border, backgroundColor: colors.cardBg }]}
           onPress={shareAllConversions}
+          accessibilityRole="button"
+          accessibilityLabel="Share all conversions"
+          accessibilityHint="Opens share sheet with all price conversions"
         >
           <Text style={[styles.actionBtnOutlineText, { color: colors.primary }]}>↑ Share</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionBtn, { backgroundColor: colors.primary }]}
           onPress={() => { setPhase("camera"); setError(null); }}
+          accessibilityRole="button"
+          accessibilityLabel="Scan again"
+          accessibilityHint="Returns to camera to scan another price tag"
         >
           <Text style={styles.actionBtnText}>Scan Again</Text>
         </TouchableOpacity>

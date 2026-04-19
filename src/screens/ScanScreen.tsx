@@ -44,6 +44,47 @@ const MODE_ITEMS: ModeItem[] = [
   ...SCANNER_MODES.map((m) => ({ key: m.key as ScanMode, label: m.label, icon: m.icon })),
 ];
 
+const ModePill = React.memo(function ModePill({
+  item,
+  isActive,
+  onSelect,
+  activeColor,
+  glassBg,
+  glassBorder,
+  activeTextColor,
+  inactiveTextColor,
+}: {
+  item: ModeItem;
+  isActive: boolean;
+  onSelect: (key: ScanMode) => void;
+  activeColor: string;
+  glassBg: string;
+  glassBorder: string;
+  activeTextColor: string;
+  inactiveTextColor: string;
+}) {
+  const handlePress = useCallback(() => onSelect(item.key), [onSelect, item.key]);
+  return (
+    <TouchableOpacity
+      style={[
+        styles.modePill,
+        {
+          backgroundColor: isActive ? activeColor : glassBg,
+          borderColor: isActive ? activeColor : glassBorder,
+        },
+      ]}
+      onPress={handlePress}
+      accessibilityRole="tab"
+      accessibilityLabel={`${item.label} scanner mode`}
+      accessibilityHint={`Switches to ${item.label} scanning mode`}
+      accessibilityState={{ selected: isActive }}
+    >
+      <Text style={styles.modePillIcon}>{item.icon}</Text>
+      <Text style={[styles.modePillLabel, { color: isActive ? activeTextColor : inactiveTextColor }]}>{item.label}</Text>
+    </TouchableOpacity>
+  );
+});
+
 function ScanScreen({ route }: Props) {
   const isFocused = useIsFocused();
   const { settings } = useSettings();
@@ -65,28 +106,18 @@ function ScanScreen({ route }: Props) {
 
   const modeKeyExtractor = useCallback((item: ModeItem) => item.key, []);
 
-  const renderModeItem = useCallback(({ item }: { item: ModeItem }) => {
-    const isActive = item.key === selectedMode;
-    return (
-      <TouchableOpacity
-        style={[
-          styles.modePill,
-          {
-            backgroundColor: isActive ? colors.primary : colors.glassBg,
-            borderColor: isActive ? colors.primary : colors.glassBorder,
-          },
-        ]}
-        onPress={() => handleModeSelect(item.key)}
-        accessibilityRole="tab"
-        accessibilityLabel={`${item.label} scanner mode`}
-        accessibilityHint={`Switches to ${item.label} scanning mode`}
-        accessibilityState={{ selected: isActive }}
-      >
-        <Text style={styles.modePillIcon}>{item.icon}</Text>
-        <Text style={[styles.modePillLabel, { color: isActive ? colors.destructiveText : colors.primaryText }]}>{item.label}</Text>
-      </TouchableOpacity>
-    );
-  }, [selectedMode, colors, handleModeSelect]);
+  const renderModeItem = useCallback(({ item }: { item: ModeItem }) => (
+    <ModePill
+      item={item}
+      isActive={item.key === selectedMode}
+      onSelect={handleModeSelect}
+      activeColor={colors.primary}
+      glassBg={colors.glassBg}
+      glassBorder={colors.glassBorder}
+      activeTextColor={colors.destructiveText}
+      inactiveTextColor={colors.primaryText}
+    />
+  ), [selectedMode, colors, handleModeSelect]);
 
   const renderModeStrip = () => (
     <View style={styles.modeStripContainer} accessibilityRole="tablist">

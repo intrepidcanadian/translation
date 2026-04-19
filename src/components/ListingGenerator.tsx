@@ -29,8 +29,8 @@ import {
   generateSmartListing,
   translateListing,
   formatListingForShare,
-  getCategoryOptions,
-  getConditionOptions,
+  CATEGORY_OPTIONS,
+  CONDITION_OPTIONS,
   type ListingDraft,
   type ListingCondition,
   type ListingCategory,
@@ -49,6 +49,91 @@ interface ListingGeneratorProps {
 }
 
 type Phase = "camera" | "processing" | "editing";
+
+const ConditionPill = React.memo(function ConditionPill({
+  optKey,
+  label,
+  isSelected,
+  onPress,
+  activeBg,
+  activeTextColor,
+  inactiveBg,
+  inactiveBorderColor,
+  inactiveTextColor,
+  style,
+}: {
+  optKey: ListingCondition;
+  label: string;
+  isSelected: boolean;
+  onPress: (key: ListingCondition) => void;
+  activeBg: string;
+  activeTextColor: string;
+  inactiveBg: string;
+  inactiveBorderColor: string;
+  inactiveTextColor: string;
+  style: "camera" | "editing";
+}) {
+  const handlePress = useCallback(() => onPress(optKey), [onPress, optKey]);
+  return (
+    <TouchableOpacity
+      style={[
+        style === "camera" ? styles.conditionPill : styles.conditionEditPill,
+        { backgroundColor: isSelected ? activeBg : inactiveBg, borderColor: isSelected ? activeBg : inactiveBorderColor },
+      ]}
+      onPress={handlePress}
+      accessibilityRole="radio"
+      accessibilityLabel={`Condition: ${label}`}
+      accessibilityState={{ selected: isSelected }}
+    >
+      <Text style={[style === "camera" ? styles.conditionText : styles.conditionEditText, { color: isSelected ? activeTextColor : inactiveTextColor }]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
+const CategoryPill = React.memo(function CategoryPill({
+  optKey,
+  label,
+  icon,
+  isSelected,
+  onPress,
+  activeBg,
+  activeTextColor,
+  inactiveBg,
+  inactiveBorderColor,
+  inactiveTextColor,
+}: {
+  optKey: ListingCategory;
+  label: string;
+  icon: string;
+  isSelected: boolean;
+  onPress: (key: ListingCategory) => void;
+  activeBg: string;
+  activeTextColor: string;
+  inactiveBg: string;
+  inactiveBorderColor: string;
+  inactiveTextColor: string;
+}) {
+  const handlePress = useCallback(() => onPress(optKey), [onPress, optKey]);
+  return (
+    <TouchableOpacity
+      style={[
+        styles.categoryPill,
+        { backgroundColor: isSelected ? activeBg : inactiveBg, borderColor: isSelected ? activeBg : inactiveBorderColor },
+      ]}
+      onPress={handlePress}
+      accessibilityRole="radio"
+      accessibilityLabel={`Category: ${label}`}
+      accessibilityState={{ selected: isSelected }}
+    >
+      <Text style={styles.categoryIcon}>{icon}</Text>
+      <Text style={[styles.categoryText, { color: isSelected ? activeTextColor : inactiveTextColor }]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+});
 
 function ListingGenerator({
   visible,
@@ -274,22 +359,20 @@ function ListingGenerator({
           <View style={styles.cameraOverlay}>
             <Text style={styles.cameraHint}>Take a photo of the item you want to sell</Text>
             <View style={styles.conditionRow}>
-              {getConditionOptions().map((opt) => (
-                <TouchableOpacity
+              {CONDITION_OPTIONS.map((opt) => (
+                <ConditionPill
                   key={opt.key}
-                  style={[
-                    styles.conditionPill,
-                    { backgroundColor: condition === opt.key ? colors.primary : "rgba(0,0,0,0.5)", borderColor: condition === opt.key ? colors.primary : "rgba(255,255,255,0.3)" },
-                  ]}
-                  onPress={() => handleConditionPress(opt.key)}
-                  accessibilityRole="radio"
-                  accessibilityLabel={`Condition: ${opt.label}`}
-                  accessibilityState={{ selected: condition === opt.key }}
-                >
-                  <Text style={[styles.conditionText, { color: condition === opt.key ? colors.destructiveText : "#fff" }]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
+                  optKey={opt.key}
+                  label={opt.label}
+                  isSelected={condition === opt.key}
+                  onPress={handleConditionPress}
+                  activeBg={colors.primary}
+                  activeTextColor={colors.destructiveText}
+                  inactiveBg="rgba(0,0,0,0.5)"
+                  inactiveBorderColor="rgba(255,255,255,0.3)"
+                  inactiveTextColor="#fff"
+                  style="camera"
+                />
               ))}
             </View>
             <TouchableOpacity
@@ -419,23 +502,20 @@ function ListingGenerator({
           <Text style={[styles.label, { color: colors.secondaryText }]}>Category</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoryScroll}>
             <View style={styles.categoryRow}>
-              {getCategoryOptions().map((opt) => (
-                <TouchableOpacity
+              {CATEGORY_OPTIONS.map((opt) => (
+                <CategoryPill
                   key={opt.key}
-                  style={[
-                    styles.categoryPill,
-                    { backgroundColor: category === opt.key ? colors.primary : colors.cardBg, borderColor: category === opt.key ? colors.primary : colors.border },
-                  ]}
-                  onPress={() => handleCategoryPress(opt.key)}
-                  accessibilityRole="radio"
-                  accessibilityLabel={`Category: ${opt.label}`}
-                  accessibilityState={{ selected: category === opt.key }}
-                >
-                  <Text style={styles.categoryIcon}>{opt.icon}</Text>
-                  <Text style={[styles.categoryText, { color: category === opt.key ? colors.destructiveText : colors.mutedText }]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
+                  optKey={opt.key}
+                  label={opt.label}
+                  icon={opt.icon}
+                  isSelected={category === opt.key}
+                  onPress={handleCategoryPress}
+                  activeBg={colors.primary}
+                  activeTextColor={colors.destructiveText}
+                  inactiveBg={colors.cardBg}
+                  inactiveBorderColor={colors.border}
+                  inactiveTextColor={colors.mutedText}
+                />
               ))}
             </View>
           </ScrollView>
@@ -443,22 +523,20 @@ function ListingGenerator({
           {/* Condition selector */}
           <Text style={[styles.label, { color: colors.secondaryText }]}>Condition</Text>
           <View style={styles.conditionEditRow}>
-            {getConditionOptions().map((opt) => (
-              <TouchableOpacity
+            {CONDITION_OPTIONS.map((opt) => (
+              <ConditionPill
                 key={opt.key}
-                style={[
-                  styles.conditionEditPill,
-                  { backgroundColor: condition === opt.key ? colors.primary : colors.cardBg, borderColor: condition === opt.key ? colors.primary : colors.border },
-                ]}
-                onPress={() => { setCondition(opt.key); impactLight(); }}
-                accessibilityRole="radio"
-                accessibilityLabel={`Condition: ${opt.label}`}
-                accessibilityState={{ selected: condition === opt.key }}
-              >
-                <Text style={[styles.conditionEditText, { color: condition === opt.key ? colors.destructiveText : colors.mutedText }]}>
-                  {opt.label}
-                </Text>
-              </TouchableOpacity>
+                optKey={opt.key}
+                label={opt.label}
+                isSelected={condition === opt.key}
+                onPress={handleConditionPress}
+                activeBg={colors.primary}
+                activeTextColor={colors.destructiveText}
+                inactiveBg={colors.cardBg}
+                inactiveBorderColor={colors.border}
+                inactiveTextColor={colors.mutedText}
+                style="editing"
+              />
             ))}
           </View>
 

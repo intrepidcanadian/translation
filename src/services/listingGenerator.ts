@@ -64,10 +64,10 @@ const CATEGORY_LABELS: Record<ListingCategory, { label: string; icon: string }> 
   other: { label: "Other", icon: "📦" },
 };
 
-const CATEGORY_OPTIONS: ReadonlyArray<{ key: ListingCategory; label: string; icon: string }> =
+export const CATEGORY_OPTIONS: ReadonlyArray<{ key: ListingCategory; label: string; icon: string }> =
   Object.entries(CATEGORY_LABELS).map(([key, val]) => ({ key: key as ListingCategory, ...val }));
 
-const CONDITION_OPTIONS: ReadonlyArray<{ key: ListingCondition; label: string }> =
+export const CONDITION_OPTIONS: ReadonlyArray<{ key: ListingCondition; label: string }> =
   Object.entries(CONDITION_LABELS).map(([key, label]) => ({ key: key as ListingCondition, label }));
 
 export function getCategoryOptions(): ReadonlyArray<{ key: ListingCategory; label: string; icon: string }> {

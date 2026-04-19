@@ -248,6 +248,176 @@ const SelectRow = React.memo(function SelectRow({
   );
 });
 
+const LiveTranslationFooter = React.memo(function LiveTranslationFooter({
+  liveText,
+  translatedText,
+  isListening,
+  isTranslating,
+  colors,
+  dynamicFontSizes,
+  showRomanization,
+  sourceLang,
+  targetLang,
+  lastDetectedLang,
+  copiedText,
+  speakingText,
+  skeletonAnim,
+}: {
+  liveText: string;
+  translatedText: string;
+  isListening: boolean;
+  isTranslating: boolean;
+  colors: ThemeColors;
+  dynamicFontSizes: DynamicFontSizes;
+  showRomanization: boolean;
+  sourceLang: { code: string; name: string; speechCode: string };
+  targetLang: { code: string; name: string; speechCode: string };
+  lastDetectedLang: string | null | undefined;
+  copiedText: string | null;
+  speakingText: string | null;
+  skeletonAnim: Animated.Value;
+}) {
+  const { onCopyToClipboard, onSpeakText } = useHistoryActionsContext();
+  const handleCopy = useCallback(() => onCopyToClipboard(translatedText), [onCopyToClipboard, translatedText]);
+  const handleSpeak = useCallback(() => onSpeakText(translatedText, targetLang.speechCode), [onSpeakText, translatedText, targetLang.speechCode]);
+
+  return (
+    <View style={styles.liveSection} accessibilityLiveRegion="polite">
+      <View style={styles.liveDivider}>
+        <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+        <Text style={[styles.liveLabel, { color: colors.destructiveBg }]}>
+          {isListening ? "● LIVE" : "PROCESSING"}
+          {sourceLang.code === "autodetect" && lastDetectedLang
+            ? ` · ${LANGUAGE_MAP.get(lastDetectedLang!)?.name || lastDetectedLang}`
+            : ""}
+        </Text>
+        <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+      </View>
+
+      <View
+        style={[
+          styles.bubble,
+          styles.liveBubble,
+          { backgroundColor: colors.liveBubbleBg, borderColor: colors.border },
+        ]}
+      >
+        <Text
+          style={[
+            styles.liveOriginalText,
+            { color: colors.liveOriginalText },
+            dynamicFontSizes.liveOriginal,
+          ]}
+        >
+          {liveText}
+        </Text>
+        {showRomanization && needsRomanization(sourceLang.code) && (
+          <AlignedRomanization
+            text={liveText}
+            langCode={sourceLang.code}
+            textColor={colors.liveOriginalText}
+            romanColor={colors.mutedText}
+            fontSize={18}
+          />
+        )}
+      </View>
+
+      {translatedText ? (
+        <View
+          style={[
+            styles.bubble,
+            styles.liveTranslatedBubble,
+            {
+              backgroundColor: colors.liveTranslatedBubbleBg,
+              borderColor: colors.border,
+              borderLeftColor: colors.primary,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            onPress={handleCopy}
+            accessibilityRole="button"
+            accessibilityLabel={`Live translation: ${translatedText}. Tap to copy.`}
+            accessibilityHint="Copies the live translation to clipboard"
+          >
+            <Text
+              style={[
+                styles.liveTranslatedText,
+                { color: colors.liveTranslatedText },
+                dynamicFontSizes.liveTranslated,
+              ]}
+            >
+              {translatedText}
+            </Text>
+            {showRomanization && needsRomanization(targetLang.code) && (
+              <AlignedRomanization
+                text={translatedText}
+                langCode={targetLang.code}
+                textColor={colors.liveTranslatedText}
+                romanColor={colors.mutedText}
+                fontSize={20}
+              />
+            )}
+            {copiedText === translatedText && (
+              <Text style={[styles.copiedBadge, { color: colors.successText }]}>
+                Copied!
+              </Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.speakButton}
+            onPress={handleSpeak}
+            accessibilityRole="button"
+            accessibilityLabel={
+              speakingText === translatedText
+                ? "Stop speaking"
+                : `Speak translation: ${translatedText}`
+            }
+            accessibilityHint={speakingText === translatedText ? "Stops text-to-speech playback" : "Reads the translation aloud"}
+          >
+            <Text
+              style={[
+                styles.speakIcon,
+                speakingText === translatedText && styles.speakIconActive,
+              ]}
+            >
+              {speakingText === translatedText ? "⏹" : "🔊"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      ) : isTranslating ? (
+        <View
+          style={[
+            styles.bubble,
+            styles.liveTranslatedBubble,
+            {
+              backgroundColor: colors.liveTranslatedBubbleBg,
+              borderColor: colors.border,
+              borderLeftColor: colors.primary,
+            },
+          ]}
+          accessibilityLabel="Translation loading"
+          accessibilityRole="progressbar"
+        >
+          <Animated.View
+            style={[
+              styles.skeletonLine,
+              styles.skeletonLong,
+              { opacity: skeletonAnim, backgroundColor: colors.skeleton },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.skeletonLine,
+              styles.skeletonShort,
+              { opacity: skeletonAnim, backgroundColor: colors.skeleton },
+            ]}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+});
+
 function HistoryList({
   history,
   filteredHistory,
@@ -500,160 +670,23 @@ function HistoryList({
     onToggleFavoritesOnly,
   ]);
 
-  const listFooter = useMemo(() => {
-    if (!liveText) return null;
-    return (
-      <View style={styles.liveSection} accessibilityLiveRegion="polite">
-        <View style={styles.liveDivider}>
-          <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-          <Text style={[styles.liveLabel, { color: colors.destructiveBg }]}>
-            {isListening ? "● LIVE" : "PROCESSING"}
-            {sourceLang.code === "autodetect" && lastDetectedLang
-              ? ` · ${LANGUAGE_MAP.get(lastDetectedLang!)?.name || lastDetectedLang}`
-              : ""}
-          </Text>
-          <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
-        </View>
-
-        <View
-          style={[
-            styles.bubble,
-            styles.liveBubble,
-            { backgroundColor: colors.liveBubbleBg, borderColor: colors.border },
-          ]}
-        >
-          <Text
-            style={[
-              styles.liveOriginalText,
-              { color: colors.liveOriginalText },
-              dynamicFontSizes.liveOriginal,
-            ]}
-          >
-            {liveText}
-          </Text>
-          {showRomanization && needsRomanization(sourceLang.code) && (
-            <AlignedRomanization
-              text={liveText}
-              langCode={sourceLang.code}
-              textColor={colors.liveOriginalText}
-              romanColor={colors.mutedText}
-              fontSize={18}
-            />
-          )}
-        </View>
-
-        {translatedText ? (
-          <View
-            style={[
-              styles.bubble,
-              styles.liveTranslatedBubble,
-              {
-                backgroundColor: colors.liveTranslatedBubbleBg,
-                borderColor: colors.border,
-                borderLeftColor: colors.primary,
-              },
-            ]}
-          >
-            <TouchableOpacity
-              onPress={() => onCopyToClipboard(translatedText)}
-              accessibilityRole="button"
-              accessibilityLabel={`Live translation: ${translatedText}. Tap to copy.`}
-              accessibilityHint="Copies the live translation to clipboard"
-            >
-              <Text
-                style={[
-                  styles.liveTranslatedText,
-                  { color: colors.liveTranslatedText },
-                  dynamicFontSizes.liveTranslated,
-                ]}
-              >
-                {translatedText}
-              </Text>
-              {showRomanization && needsRomanization(targetLang.code) && (
-                <AlignedRomanization
-                  text={translatedText}
-                  langCode={targetLang.code}
-                  textColor={colors.liveTranslatedText}
-                  romanColor={colors.mutedText}
-                  fontSize={20}
-                />
-              )}
-              {copiedText === translatedText && (
-                <Text style={[styles.copiedBadge, { color: colors.successText }]}>
-                  Copied!
-                </Text>
-              )}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.speakButton}
-              onPress={() => onSpeakText(translatedText, targetLang.speechCode)}
-              accessibilityRole="button"
-              accessibilityLabel={
-                speakingText === translatedText
-                  ? "Stop speaking"
-                  : `Speak translation: ${translatedText}`
-              }
-              accessibilityHint={speakingText === translatedText ? "Stops text-to-speech playback" : "Reads the translation aloud"}
-            >
-              <Text
-                style={[
-                  styles.speakIcon,
-                  speakingText === translatedText && styles.speakIconActive,
-                ]}
-              >
-                {speakingText === translatedText ? "⏹" : "🔊"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        ) : isTranslating ? (
-          <View
-            style={[
-              styles.bubble,
-              styles.liveTranslatedBubble,
-              {
-                backgroundColor: colors.liveTranslatedBubbleBg,
-                borderColor: colors.border,
-                borderLeftColor: colors.primary,
-              },
-            ]}
-            accessibilityLabel="Translation loading"
-            accessibilityRole="progressbar"
-          >
-            <Animated.View
-              style={[
-                styles.skeletonLine,
-                styles.skeletonLong,
-                { opacity: skeletonAnim, backgroundColor: colors.skeleton },
-              ]}
-            />
-            <Animated.View
-              style={[
-                styles.skeletonLine,
-                styles.skeletonShort,
-                { opacity: skeletonAnim, backgroundColor: colors.skeleton },
-              ]}
-            />
-          </View>
-        ) : null}
-      </View>
-    );
-  }, [
-    liveText,
-    translatedText,
-    isListening,
-    isTranslating,
-    colors,
-    dynamicFontSizes,
-    showRomanization,
-    sourceLang,
-    targetLang,
-    lastDetectedLang,
-    copiedText,
-    speakingText,
-    skeletonAnim,
-    onCopyToClipboard,
-    onSpeakText,
-  ]);
+  const listFooter = liveText ? (
+    <LiveTranslationFooter
+      liveText={liveText}
+      translatedText={translatedText}
+      isListening={isListening}
+      isTranslating={isTranslating}
+      colors={colors}
+      dynamicFontSizes={dynamicFontSizes}
+      showRomanization={showRomanization}
+      sourceLang={sourceLang}
+      targetLang={targetLang}
+      lastDetectedLang={lastDetectedLang}
+      copiedText={copiedText}
+      speakingText={speakingText}
+      skeletonAnim={skeletonAnim}
+    />
+  ) : null;
 
   const listEmpty = useMemo(() => {
     if (isListening || liveText) return null;
