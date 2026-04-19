@@ -22,6 +22,65 @@ import {
 } from "../utils/conversationSessions";
 import { escapeHtml } from "../utils/htmlEscape";
 
+interface ConversationItemRowProps {
+  item: ConversationSession["items"][number];
+  isActive: boolean;
+  colors: ReturnType<typeof useTheme>["colors"];
+}
+
+const ConversationItemRow = React.memo(function ConversationItemRow({
+  item,
+  isActive,
+  colors,
+}: ConversationItemRowProps) {
+  const speakerColor = item.speaker === "A" ? "#4A90D9" : "#D94A4A";
+  return (
+    <View
+      style={[
+        styles.itemRow,
+        isActive && {
+          backgroundColor: colors.primary + "18",
+          borderLeftColor: colors.primary,
+          borderLeftWidth: 3,
+        },
+      ]}
+      accessible={true}
+      accessibilityLabel={`Speaker ${item.speaker}: ${item.original}, translated: ${item.translated}`}
+    >
+      <View
+        style={[
+          styles.speakerBadge,
+          { backgroundColor: speakerColor + "22" },
+        ]}
+      >
+        <Text
+          style={[styles.speakerLabel, { color: speakerColor }]}
+        >
+          {item.speaker}
+        </Text>
+      </View>
+      <View style={styles.itemTexts}>
+        <Text
+          style={[
+            styles.originalText,
+            { color: colors.primaryText },
+          ]}
+        >
+          {item.original}
+        </Text>
+        <Text
+          style={[
+            styles.translatedText,
+            { color: colors.dimText },
+          ]}
+        >
+          {item.translated}
+        </Text>
+      </View>
+    </View>
+  );
+});
+
 interface ConversationPlaybackProps {
   visible: boolean;
   onClose: () => void;
@@ -280,57 +339,14 @@ function ConversationPlayback({
 
           {isExpanded && (
             <View style={styles.itemList}>
-              {session.items.map((item, idx) => {
-                const isActive =
-                  isSessionPlaying && isPlaying && idx === currentItemIdx;
-                const speakerColor =
-                  item.speaker === "A" ? "#4A90D9" : "#D94A4A";
-
-                return (
-                  <View
-                    key={`${session.id}-${idx}`}
-                    style={[
-                      styles.itemRow,
-                      isActive && {
-                        backgroundColor: colors.primary + "18",
-                        borderLeftColor: colors.primary,
-                        borderLeftWidth: 3,
-                      },
-                    ]}
-                  >
-                    <View
-                      style={[
-                        styles.speakerBadge,
-                        { backgroundColor: speakerColor + "22" },
-                      ]}
-                    >
-                      <Text
-                        style={[styles.speakerLabel, { color: speakerColor }]}
-                      >
-                        {item.speaker}
-                      </Text>
-                    </View>
-                    <View style={styles.itemTexts}>
-                      <Text
-                        style={[
-                          styles.originalText,
-                          { color: colors.primaryText },
-                        ]}
-                      >
-                        {item.original}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.translatedText,
-                          { color: colors.dimText },
-                        ]}
-                      >
-                        {item.translated}
-                      </Text>
-                    </View>
-                  </View>
-                );
-              })}
+              {session.items.map((item, idx) => (
+                <ConversationItemRow
+                  key={`${session.id}-${idx}`}
+                  item={item}
+                  isActive={isSessionPlaying && isPlaying && idx === currentItemIdx}
+                  colors={colors}
+                />
+              ))}
             </View>
           )}
         </View>
