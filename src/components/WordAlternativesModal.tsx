@@ -1,14 +1,20 @@
-import React from "react";
+import React, { useCallback } from "react";
 import { Modal, View, Text, TouchableOpacity, FlatList, StyleSheet } from "react-native";
 import type { ThemeColors } from "../theme";
 import { modalStyles } from "../styles/modalStyles";
+
+interface Alternative {
+  translation: string;
+  source: string;
+  quality: number;
+}
 
 interface WordAlternativesModalProps {
   visible: boolean;
   data: {
     word: string;
     loading: boolean;
-    alternatives: Array<{ translation: string; source: string; quality: number }>;
+    alternatives: Alternative[];
   } | null;
   onClose: () => void;
   onCopy: (text: string) => void;
@@ -16,7 +22,48 @@ interface WordAlternativesModalProps {
   colors: ThemeColors;
 }
 
+const AlternativeRow = React.memo(function AlternativeRow({
+  alt,
+  onCopy,
+  colors,
+}: {
+  alt: Alternative;
+  onCopy: (text: string) => void;
+  colors: ThemeColors;
+}) {
+  const handleCopy = useCallback(() => onCopy(alt.translation), [onCopy, alt.translation]);
+  return (
+    <TouchableOpacity
+      style={[styles.altRow, { borderBottomColor: colors.borderLight }]}
+      onPress={handleCopy}
+      accessibilityRole="button"
+      accessibilityLabel={`Alternative: ${alt.translation}${alt.quality > 0 ? `, ${alt.quality}% quality` : ""}`}
+      accessibilityHint="Tap to copy this alternative translation"
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.altTranslation, { color: colors.translatedText }]}>{alt.translation}</Text>
+        <Text style={[styles.altSource, { color: colors.dimText }]}>{alt.source}</Text>
+      </View>
+      {alt.quality > 0 && (
+        <View
+          style={[styles.altQualityBadge, { backgroundColor: colors.primary + "22" }]}
+          importantForAccessibility="no-hide-descendants"
+        >
+          <Text style={[styles.altQualityText, { color: colors.primary }]}>{alt.quality}%</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  );
+});
+
 function WordAlternativesModal({ visible, data, onClose, onCopy, copiedText, colors }: WordAlternativesModalProps) {
+  const renderAltItem = useCallback(
+    ({ item }: { item: Alternative }) => (
+      <AlternativeRow alt={item} onCopy={onCopy} colors={colors} />
+    ),
+    [onCopy, colors],
+  );
+
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <View accessibilityViewIsModal={true} style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]}>
@@ -41,28 +88,7 @@ function WordAlternativesModal({ visible, data, onClose, onCopy, copiedText, col
                   data={data.alternatives}
                   keyExtractor={(_, i) => String(i)}
                   style={{ maxHeight: 300 }}
-                  renderItem={({ item: alt }) => (
-                    <TouchableOpacity
-                      style={[styles.altRow, { borderBottomColor: colors.borderLight }]}
-                      onPress={() => onCopy(alt.translation)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Alternative: ${alt.translation}${alt.quality > 0 ? `, ${alt.quality}% quality` : ""}`}
-                      accessibilityHint="Tap to copy this alternative translation"
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.altTranslation, { color: colors.translatedText }]}>{alt.translation}</Text>
-                        <Text style={[styles.altSource, { color: colors.dimText }]}>{alt.source}</Text>
-                      </View>
-                      {alt.quality > 0 && (
-                        <View
-                          style={[styles.altQualityBadge, { backgroundColor: colors.primary + "22" }]}
-                          importantForAccessibility="no-hide-descendants"
-                        >
-                          <Text style={[styles.altQualityText, { color: colors.primary }]}>{alt.quality}%</Text>
-                        </View>
-                      )}
-                    </TouchableOpacity>
-                  )}
+                  renderItem={renderAltItem}
                 />
               )}
               {copiedText && <Text style={[styles.copiedBadge, { textAlign: "center" as const }]} accessibilityLiveRegion="polite">Copied!</Text>}

@@ -28,6 +28,42 @@ const steps = [
   { icon: "⚙️", title: "Customize Everything", desc: "Adjust font size, speech speed, theme, haptics, and even switch translation providers in Settings." },
 ];
 
+const DotButton = React.memo(function DotButton({
+  index,
+  isSelected,
+  onPress,
+  stepTitle,
+  totalSteps,
+  activeColor,
+  inactiveColor,
+}: {
+  index: number;
+  isSelected: boolean;
+  onPress: (index: number) => void;
+  stepTitle: string;
+  totalSteps: number;
+  activeColor: string;
+  inactiveColor: string;
+}) {
+  const handlePress = useCallback(() => onPress(index), [onPress, index]);
+  return (
+    <TouchableOpacity
+      onPress={handlePress}
+      style={styles.onboardingDotTouchable}
+      accessibilityRole="button"
+      accessibilityLabel={`Go to step ${index + 1} of ${totalSteps}: ${stepTitle}`}
+      accessibilityState={{ selected: isSelected }}
+    >
+      <View
+        style={[
+          styles.onboardingDot,
+          { backgroundColor: isSelected ? activeColor : inactiveColor },
+        ]}
+      />
+    </TouchableOpacity>
+  );
+});
+
 function OnboardingModalBase({ visible, onComplete, colors }: OnboardingModalProps) {
   const [step, setStep] = useState(0);
 
@@ -62,22 +98,17 @@ function OnboardingModalBase({ visible, onComplete, colors }: OnboardingModalPro
             Step {step + 1} of {steps.length}
           </Text>
           <View style={styles.onboardingDots}>
-            {steps.map((_, i) => (
-              <TouchableOpacity
+            {steps.map((s, i) => (
+              <DotButton
                 key={i}
-                onPress={() => setStep(i)}
-                style={styles.onboardingDotTouchable}
-                accessibilityRole="button"
-                accessibilityLabel={`Go to step ${i + 1} of ${steps.length}: ${steps[i].title}`}
-                accessibilityState={{ selected: i === step }}
-              >
-                <View
-                  style={[
-                    styles.onboardingDot,
-                    { backgroundColor: i === step ? colors.primary : colors.border },
-                  ]}
-                />
-              </TouchableOpacity>
+                index={i}
+                isSelected={i === step}
+                onPress={setStep}
+                stepTitle={s.title}
+                totalSteps={steps.length}
+                activeColor={colors.primary}
+                inactiveColor={colors.border}
+              />
             ))}
           </View>
           <Text style={styles.onboardingIcon} importantForAccessibility="no">{current.icon}</Text>

@@ -26,6 +26,8 @@ import type { RootTabParamList } from "../navigation/types";
 
 type Props = BottomTabScreenProps<RootTabParamList, "Scan">;
 
+const NOOP = () => {};
+
 type ScanMode = "live" | "dual" | "dutyFree" | "priceTag" | "product" | "sell" | ScannerModeKey;
 
 interface ModeItem {
@@ -145,7 +147,7 @@ function ScanScreen({ route }: Props) {
             // switch scanner modes. Previously this jumped to "document"
             // mode, which made the X button feel like it was opening a
             // different section instead of closing.
-            onClose={() => {}}
+            onClose={NOOP}
             sourceLangCode={sourceLangCode}
             targetLangCode={targetLang.code}
             translationProvider={settings.translationProvider}

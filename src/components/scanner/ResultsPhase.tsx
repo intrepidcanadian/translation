@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import {
   View,
   Text,
@@ -42,7 +42,7 @@ interface ResultsPhaseProps {
   onShare: () => void;
 }
 
-export default function ResultsPhase({
+function ResultsPhase({
   colors,
   modeIcon,
   modeLabel,
@@ -195,7 +195,7 @@ export default function ResultsPhase({
   );
 }
 
-function FieldRow({
+const FieldRow = React.memo(function FieldRow({
   field,
   colors,
   onCopy,
@@ -206,10 +206,11 @@ function FieldRow({
   onCopy: (text: string) => void;
   copiedText: string | null;
 }) {
+  const handleCopy = useCallback(() => onCopy(field.value), [onCopy, field.value]);
   return (
     <TouchableOpacity
       style={entityStyles.row}
-      onPress={() => onCopy(field.value)}
+      onPress={handleCopy}
       accessibilityRole="button"
       accessibilityLabel={`${field.label}: ${field.value}`}
       accessibilityHint="Tap to copy this value to clipboard"
@@ -225,9 +226,9 @@ function FieldRow({
       </View>
     </TouchableOpacity>
   );
-}
+});
 
-function EntityRow({
+const EntityRow = React.memo(function EntityRow({
   icon,
   label,
   items,
@@ -259,7 +260,7 @@ function EntityRow({
       </View>
     </View>
   );
-}
+});
 
 const entityStyles = StyleSheet.create({
   row: {
@@ -404,3 +405,5 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
+
+export default React.memo(ResultsPhase);

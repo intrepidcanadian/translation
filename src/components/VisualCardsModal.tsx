@@ -261,6 +261,56 @@ const CARD_CATEGORIES: CardCategory[] = [
   },
 ];
 
+// ---------- Sub-components ----------
+
+const CategoryTab = React.memo(function CategoryTab({
+  category,
+  isSelected,
+  onSelect,
+  borderColor,
+  textColor,
+}: {
+  category: CardCategory;
+  isSelected: boolean;
+  onSelect: (id: string) => void;
+  borderColor: string;
+  textColor: string;
+}) {
+  const handlePress = useCallback(() => {
+    onSelect(category.id);
+    impactLight();
+  }, [onSelect, category.id]);
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.categoryChip,
+        { borderColor },
+        isSelected && {
+          backgroundColor: category.color,
+          borderColor: category.color,
+        },
+      ]}
+      onPress={handlePress}
+      accessibilityRole="tab"
+      accessibilityLabel={`${category.label} cards`}
+      accessibilityHint={`Shows ${category.cards.length} ${category.label.toLowerCase()} communication cards`}
+      accessibilityState={{ selected: isSelected }}
+    >
+      <Text style={styles.categoryIcon} importantForAccessibility="no">{category.icon}</Text>
+      <Text
+        style={[
+          styles.categoryLabel,
+          { color: textColor },
+          isSelected && { color: "#FFFFFF" },
+        ]}
+      >
+        {category.label}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
 // ---------- Component ----------
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -284,6 +334,16 @@ function VisualCardsModal({
   const [selectedCategory, setSelectedCategory] = useState<string>(CARD_CATEGORIES[0].id);
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
+
+  const handleSelectCategory = useCallback((id: string) => {
+    setSelectedCategory(id);
+    setExpandedCard(null);
+  }, []);
+
+  const handleClose = useCallback(() => {
+    Speech.stop();
+    onClose();
+  }, [onClose]);
 
   const currentCategory = useMemo(
     () => CARD_CATEGORIES.find((c) => c.id === selectedCategory) ?? CARD_CATEGORIES[0],
@@ -427,37 +487,14 @@ function VisualCardsModal({
             accessibilityLabel="Card categories"
           >
             {CARD_CATEGORIES.map((cat) => (
-              <TouchableOpacity
+              <CategoryTab
                 key={cat.id}
-                style={[
-                  styles.categoryChip,
-                  { borderColor: colors.border },
-                  selectedCategory === cat.id && {
-                    backgroundColor: cat.color,
-                    borderColor: cat.color,
-                  },
-                ]}
-                onPress={() => {
-                  setSelectedCategory(cat.id);
-                  setExpandedCard(null);
-                  impactLight();
-                }}
-                accessibilityRole="tab"
-                accessibilityLabel={`${cat.label} cards`}
-                accessibilityHint={`Shows ${cat.cards.length} ${cat.label.toLowerCase()} communication cards`}
-                accessibilityState={{ selected: selectedCategory === cat.id }}
-              >
-                <Text style={styles.categoryIcon} importantForAccessibility="no">{cat.icon}</Text>
-                <Text
-                  style={[
-                    styles.categoryLabel,
-                    { color: colors.primaryText },
-                    selectedCategory === cat.id && { color: "#FFFFFF" },
-                  ]}
-                >
-                  {cat.label}
-                </Text>
-              </TouchableOpacity>
+                category={cat}
+                isSelected={selectedCategory === cat.id}
+                onSelect={handleSelectCategory}
+                borderColor={colors.border}
+                textColor={colors.primaryText}
+              />
             ))}
           </ScrollView>
 
@@ -476,10 +513,7 @@ function VisualCardsModal({
           {/* Close */}
           <TouchableOpacity
             style={[styles.closeButton, { borderTopColor: colors.borderLight }]}
-            onPress={() => {
-              Speech.stop();
-              onClose();
-            }}
+            onPress={handleClose}
             accessibilityRole="button"
             accessibilityLabel="Close visual cards"
             accessibilityHint="Stops any speech and closes the visual cards modal"
