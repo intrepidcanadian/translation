@@ -22,6 +22,41 @@ import { logger } from "../services/logger";
 import { glassSurface, type ThemeColors } from "../theme";
 import GlassBackdrop from "./GlassBackdrop";
 
+interface CategoryPillProps {
+  item: { key: string; label: string; icon: string };
+  isSelected: boolean;
+  onSelect: (key: PhraseCategory | "nearby") => void;
+  colors: ThemeColors;
+}
+
+const CategoryPill = React.memo(function CategoryPill({
+  item,
+  isSelected,
+  onSelect,
+  colors,
+}: CategoryPillProps) {
+  const handlePress = useCallback(
+    () => onSelect(item.key as PhraseCategory | "nearby"),
+    [onSelect, item.key],
+  );
+  return (
+    <TouchableOpacity
+      style={[styles.phraseCategoryPill, { backgroundColor: isSelected ? colors.primary : colors.glassBg, borderColor: isSelected ? colors.primary : colors.glassBorder }]}
+      onPress={handlePress}
+      activeOpacity={0.85}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.label} phrases`}
+      accessibilityState={{ selected: isSelected }}
+      accessibilityHint={isSelected ? "Currently selected category" : `Switch to ${item.label} phrases`}
+    >
+      <Text style={styles.phraseCategoryIcon}>{item.icon}</Text>
+      <Text style={[styles.phraseCategoryText, { color: isSelected ? "#ffffff" : colors.mutedText }]}>
+        {item.label}
+      </Text>
+    </TouchableOpacity>
+  );
+});
+
 interface PhrasebookModalProps {
   visible: boolean;
   onClose: () => void;
@@ -87,19 +122,12 @@ function PhrasebookModal({
 
   const renderCategoryPill = useCallback(
     ({ item }: { item: { key: string; label: string; icon: string } }) => (
-      <TouchableOpacity
-        style={[styles.phraseCategoryPill, { backgroundColor: phraseCategory === item.key ? colors.primary : colors.glassBg, borderColor: phraseCategory === item.key ? colors.primary : colors.glassBorder }]}
-        onPress={() => setPhraseCategory(item.key as PhraseCategory | "nearby")}
-        activeOpacity={0.85}
-        accessibilityRole="button"
-        accessibilityLabel={`${item.label} phrases`}
-        accessibilityState={{ selected: phraseCategory === item.key }}
-      >
-        <Text style={styles.phraseCategoryIcon}>{item.icon}</Text>
-        <Text style={[styles.phraseCategoryText, { color: phraseCategory === item.key ? "#ffffff" : colors.mutedText }]}>
-          {item.label}
-        </Text>
-      </TouchableOpacity>
+      <CategoryPill
+        item={item}
+        isSelected={phraseCategory === item.key}
+        onSelect={setPhraseCategory}
+        colors={colors}
+      />
     ),
     [phraseCategory, colors],
   );
