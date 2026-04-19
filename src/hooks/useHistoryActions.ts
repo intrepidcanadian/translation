@@ -99,6 +99,7 @@ export function useHistoryActions({
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
   const [deletedItem, setDeletedItem] = useState<{ item: HistoryItem; index: number } | null>(null);
   const undoTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const compareAbortRef = useRef<AbortController | null>(null);
 
   const [modalState, dispatchModal] = useReducer(modalReducer, INITIAL_MODAL_STATE);
   const { compareData, correctionPrompt, wordAltData } = modalState;
@@ -108,10 +109,10 @@ export function useHistoryActions({
   const setCorrectionPrompt = useCallback((data: ModalState["correctionPrompt"]) => dispatchModal({ type: "SET_CORRECTION", data }), []);
   const setWordAltData = useCallback((data: ModalState["wordAltData"]) => dispatchModal({ type: "SET_WORD_ALT", data }), []);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (undoTimeout.current) clearTimeout(undoTimeout.current);
+      compareAbortRef.current?.abort();
       Speech.stop();
     };
   }, []);
@@ -189,21 +190,26 @@ export function useHistoryActions({
     const item = history[index];
     if (item?.status !== "error" || !item.sourceLangCode || !item.targetLangCode) return;
 
+    const itemId = item.id;
+    const matchItem = itemId
+      ? (h: HistoryItem) => h.id === itemId
+      : (_h: HistoryItem, i: number) => i === index;
+
     setHistory((prev) =>
-      prev.map((h, i) => i === index ? { ...h, status: "pending" as const, translated: "Retrying..." } : h)
+      prev.map((h, i) => matchItem(h, i) ? { ...h, status: "pending" as const, translated: "Retrying..." } : h)
     );
 
     const controller = new AbortController();
     try {
       const result = await translateText(item.original, item.sourceLangCode, item.targetLangCode, { signal: controller.signal, provider: translationProvider });
       setHistory((prev) =>
-        prev.map((h, i) => i === index ? { ...h, translated: result.translatedText, status: "ok" as const } : h)
+        prev.map((h, i) => matchItem(h, i) ? { ...h, translated: result.translatedText, status: "ok" as const } : h)
       );
       notifySuccess();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Translation failed";
       setHistory((prev) =>
-        prev.map((h, i) => i === index ? { ...h, translated: msg, status: "error" as const } : h)
+        prev.map((h, i) => matchItem(h, i) ? { ...h, translated: msg, status: "error" as const } : h)
       );
       showError(msg);
     }
@@ -389,6 +395,10 @@ export function useHistoryActions({
   }, []);
 
   const compareTranslation = useCallback(async (original: string, currentTranslation: string) => {
+    compareAbortRef.current?.abort();
+    const controller = new AbortController();
+    compareAbortRef.current = controller;
+
     const allProviders: Array<{ key: TranslationProvider; label: string }> = [
       { key: "apple", label: "Apple (On-Device)" },
       { key: "mlkit", label: "ML Kit (On-Device)" },
@@ -403,10 +413,13 @@ export function useHistoryActions({
     dispatchModal({ type: "SET_COMPARE", data: { original, results: initialResults } });
 
     for (const p of providers) {
+      if (controller.signal.aborted) return;
       try {
-        const result = await translateText(original, sourceLangCode, targetLangCode, { provider: p.key });
+        const result = await translateText(original, sourceLangCode, targetLangCode, { provider: p.key, signal: controller.signal });
+        if (controller.signal.aborted) return;
         dispatchModal({ type: "UPDATE_COMPARE_RESULT", provider: p.label, text: result.translatedText, loading: false });
       } catch (err) {
+        if (controller.signal.aborted) return;
         logger.warn("Translation", "Compare translation failed", err);
         dispatchModal({ type: "UPDATE_COMPARE_RESULT", provider: p.label, text: "Failed to load", loading: false });
       }

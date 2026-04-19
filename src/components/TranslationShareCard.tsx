@@ -1,4 +1,4 @@
-import React, { useRef, useCallback } from "react";
+import React, { useRef, useCallback, useMemo } from "react";
 import {
   View,
   Text,
@@ -38,8 +38,17 @@ function TranslationShareCard({
 }: TranslationShareCardProps) {
   const viewShotRef = useRef<ViewShot>(null);
 
-  const srcLang = sourceLangCode ? LANGUAGE_MAP.get(sourceLangCode) : null;
-  const tgtLang = targetLangCode ? LANGUAGE_MAP.get(targetLangCode) : null;
+  const srcLang = useMemo(() => sourceLangCode ? LANGUAGE_MAP.get(sourceLangCode) : null, [sourceLangCode]);
+  const tgtLang = useMemo(() => targetLangCode ? LANGUAGE_MAP.get(targetLangCode) : null, [targetLangCode]);
+
+  const cardText = useMemo(() => [
+    `"${original}"`,
+    "",
+    `→ "${translated}"`,
+    "",
+    srcLang && tgtLang ? `${srcLang.flag} ${srcLang.name} → ${tgtLang.flag} ${tgtLang.name}` : "",
+    "— Live Translator",
+  ].filter(Boolean).join("\n"), [original, translated, srcLang, tgtLang]);
 
   const handleShareImage = useCallback(async () => {
     try {
@@ -52,39 +61,22 @@ function TranslationShareCard({
           UTI: "public.png",
         });
       } else {
-        // Fallback to text share
-        const card = [
-          `"${original}"`,
-          "",
-          `→ "${translated}"`,
-          "",
-          srcLang && tgtLang ? `${srcLang.flag} ${srcLang.name} → ${tgtLang.flag} ${tgtLang.name}` : "",
-          "— Live Translator",
-        ].filter(Boolean).join("\n");
-        await Share.share({ message: card });
+        await Share.share({ message: cardText });
       }
       onClose();
     } catch (err) {
       logger.warn("Translation", "Share card failed", err instanceof Error ? err.message : String(err));
     }
-  }, [original, translated, srcLang, tgtLang, onClose]);
+  }, [cardText, onClose]);
 
   const handleShareText = useCallback(async () => {
-    const card = [
-      `"${original}"`,
-      "",
-      `→ "${translated}"`,
-      "",
-      srcLang && tgtLang ? `${srcLang.flag} ${srcLang.name} → ${tgtLang.flag} ${tgtLang.name}` : "",
-      "— Live Translator",
-    ].filter(Boolean).join("\n");
     try {
-      await Share.share({ message: card });
+      await Share.share({ message: cardText });
       onClose();
     } catch (err) {
       logger.warn("Translation", "Text share failed", err instanceof Error ? err.message : String(err));
     }
-  }, [original, translated, srcLang, tgtLang, onClose]);
+  }, [cardText, onClose]);
 
   if (!visible) return null;
 
@@ -180,6 +172,7 @@ function TranslationShareCard({
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="Cancel sharing"
+            accessibilityHint="Dismisses the share card without sharing"
           >
             <Text style={[styles.closeBtnText, { color: colors.mutedText }]}>Cancel</Text>
           </TouchableOpacity>

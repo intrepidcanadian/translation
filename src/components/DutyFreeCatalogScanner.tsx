@@ -218,7 +218,7 @@ const ProductCard = React.memo(function ProductCard({
   );
 });
 
-export default function DutyFreeCatalogScanner({
+function DutyFreeCatalogScanner({
   visible,
   onClose,
   sourceLangCode,
@@ -539,6 +539,8 @@ export default function DutyFreeCatalogScanner({
     </View>
   );
 }
+
+export default React.memo(DutyFreeCatalogScanner);
 
 // --- Product segmentation logic ---
 

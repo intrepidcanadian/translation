@@ -311,10 +311,92 @@ const CategoryTab = React.memo(function CategoryTab({
   );
 });
 
-// ---------- Component ----------
+// ---------- Sub-components ----------
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const CARD_SIZE = (SCREEN_WIDTH - 64 - 12) / 2; // 2 columns with padding + gap
+
+const VisualCardItem = React.memo(function VisualCardItem({
+  card,
+  isExpanded,
+  translatedText,
+  categoryColor,
+  colors,
+  isSpeaking,
+  onTap,
+  onSpeak,
+}: {
+  card: VisualCard;
+  isExpanded: boolean;
+  translatedText: string | null;
+  categoryColor: string;
+  colors: ThemeColors;
+  isSpeaking: boolean;
+  onTap: (card: VisualCard) => void;
+  onSpeak: (card: VisualCard) => void;
+}) {
+  const handlePress = useCallback(() => onTap(card), [onTap, card]);
+  const handleLongPress = useCallback(() => onSpeak(card), [onSpeak, card]);
+  const handleSpeak = useCallback(() => onSpeak(card), [onSpeak, card]);
+
+  return (
+    <TouchableOpacity
+      style={[
+        styles.card,
+        {
+          backgroundColor: colors.cardBg,
+          borderColor: isExpanded ? categoryColor : colors.border,
+          borderWidth: isExpanded ? 2 : 1,
+          width: isExpanded ? SCREEN_WIDTH - 48 : CARD_SIZE,
+          height: isExpanded ? undefined : CARD_SIZE,
+        },
+      ]}
+      onPress={handlePress}
+      onLongPress={handleLongPress}
+      activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={isExpanded && translatedText ? `${card.label}. Translation: ${translatedText}` : card.label}
+      accessibilityHint={isExpanded ? "Tap again to speak aloud. Long press to speak." : "Tap to expand and show translation. Long press to speak."}
+      accessibilityState={{ expanded: isExpanded }}
+    >
+      <Text style={styles.cardIcon} importantForAccessibility="no">{card.icon}</Text>
+      <Text
+        style={[styles.cardLabel, { color: colors.primaryText }]}
+        numberOfLines={isExpanded ? undefined : 2}
+      >
+        {card.label}
+      </Text>
+
+      {isExpanded && translatedText && (
+        <View
+          style={[styles.translatedSection, { borderTopColor: colors.borderLight }]}
+          accessibilityLabel={`Translation: ${translatedText}`}
+          accessibilityRole="text"
+        >
+          <Text style={[styles.translatedLabel, { color: categoryColor }]}>
+            {translatedText}
+          </Text>
+        </View>
+      )}
+
+      {isExpanded && (
+        <TouchableOpacity
+          style={[styles.speakBadge, { backgroundColor: categoryColor }]}
+          onPress={handleSpeak}
+          accessibilityRole="button"
+          accessibilityLabel={isSpeaking ? "Stop speaking" : `Speak ${card.label}`}
+          accessibilityHint={isSpeaking ? "Stops text-to-speech playback" : "Reads the translated phrase aloud"}
+        >
+          <Text style={styles.speakBadgeText}>
+            {isSpeaking ? "⏹ Stop" : "🔊 Speak"}
+          </Text>
+        </TouchableOpacity>
+      )}
+    </TouchableOpacity>
+  );
+});
+
+// ---------- Component ----------
 
 interface Props {
   visible: boolean;
@@ -401,68 +483,19 @@ function VisualCardsModal({
   );
 
   const renderCard = useCallback(
-    ({ item: card }: { item: VisualCard }) => {
-      const isExpanded = expandedCard === card.id;
-      const translatedText = getTranslatedText(card);
-
-      return (
-        <TouchableOpacity
-          style={[
-            styles.card,
-            {
-              backgroundColor: colors.cardBg,
-              borderColor: isExpanded ? currentCategory.color : colors.border,
-              borderWidth: isExpanded ? 2 : 1,
-              width: isExpanded ? SCREEN_WIDTH - 48 : CARD_SIZE,
-              height: isExpanded ? undefined : CARD_SIZE,
-            },
-          ]}
-          onPress={() => tapCard(card)}
-          onLongPress={() => speakCard(card)}
-          activeOpacity={0.7}
-          accessibilityRole="button"
-          accessibilityLabel={isExpanded && translatedText ? `${card.label}. Translation: ${translatedText}` : card.label}
-          accessibilityHint={isExpanded ? "Tap again to speak aloud. Long press to speak." : "Tap to expand and show translation. Long press to speak."}
-          accessibilityState={{ expanded: isExpanded }}
-        >
-          <Text style={styles.cardIcon} importantForAccessibility="no">{card.icon}</Text>
-          <Text
-            style={[styles.cardLabel, { color: colors.primaryText }]}
-            numberOfLines={isExpanded ? undefined : 2}
-          >
-            {card.label}
-          </Text>
-
-          {/* Show translated text when expanded */}
-          {isExpanded && translatedText && (
-            <View
-              style={[styles.translatedSection, { borderTopColor: colors.borderLight }]}
-              accessibilityLabel={`Translation: ${translatedText}`}
-              accessibilityRole="text"
-            >
-              <Text style={[styles.translatedLabel, { color: currentCategory.color }]}>
-                {translatedText}
-              </Text>
-            </View>
-          )}
-
-          {isExpanded && (
-            <TouchableOpacity
-              style={[styles.speakBadge, { backgroundColor: currentCategory.color }]}
-              onPress={() => speakCard(card)}
-              accessibilityRole="button"
-              accessibilityLabel={isSpeaking ? "Stop speaking" : `Speak ${card.label}`}
-              accessibilityHint={isSpeaking ? "Stops text-to-speech playback" : "Reads the translated phrase aloud"}
-            >
-              <Text style={styles.speakBadgeText}>
-                {isSpeaking ? "⏹ Stop" : "🔊 Speak"}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </TouchableOpacity>
-      );
-    },
-    [expandedCard, currentCategory, colors, tapCard, speakCard, getTranslatedText, isSpeaking]
+    ({ item: card }: { item: VisualCard }) => (
+      <VisualCardItem
+        card={card}
+        isExpanded={expandedCard === card.id}
+        translatedText={getTranslatedText(card)}
+        categoryColor={currentCategory.color}
+        colors={colors}
+        isSpeaking={isSpeaking}
+        onTap={tapCard}
+        onSpeak={speakCard}
+      />
+    ),
+    [expandedCard, currentCategory.color, colors, tapCard, speakCard, getTranslatedText, isSpeaking]
   );
 
   const cardKeyExtractor = useCallback((item: VisualCard) => item.id, []);

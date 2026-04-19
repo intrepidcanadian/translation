@@ -539,6 +539,62 @@ const SECTION_TABS: Array<{ key: SectionTab; label: string; icon: string }> = [
   { key: "tips", label: "Tips", icon: "💡" },
 ];
 
+// ---------- Sub-components ----------
+
+const InfoCard = React.memo(function InfoCard({
+  item,
+  colors,
+}: {
+  item: DietaryInfo;
+  colors: ThemeColors;
+}) {
+  return (
+    <View style={[styles.infoCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+      <Text style={styles.infoCardIcon}>{item.icon}</Text>
+      <View style={styles.infoCardBody}>
+        <Text style={[styles.infoCardTitle, { color: colors.primaryText }]}>{item.label}</Text>
+        <Text style={[styles.infoCardDetail, { color: colors.secondaryText }]}>{item.detail}</Text>
+      </View>
+    </View>
+  );
+});
+
+const TipRow = React.memo(function TipRow({
+  tip,
+  colors,
+  bgColor,
+  borderColor,
+}: {
+  tip: CultureTip;
+  colors: ThemeColors;
+  bgColor?: string;
+  borderColor?: string;
+}) {
+  return (
+    <View style={[styles.tipRow, { backgroundColor: bgColor ?? colors.cardBg, borderColor: borderColor ?? colors.border }]}>
+      <Text style={styles.tipIcon}>{tip.icon}</Text>
+      <Text style={[styles.tipText, { color: colors.secondaryText }]}>{tip.text}</Text>
+    </View>
+  );
+});
+
+const PhraseCard = React.memo(function PhraseCard({
+  phrase,
+  colors,
+}: {
+  phrase: CommonPhrase;
+  colors: ThemeColors;
+}) {
+  return (
+    <View style={[styles.phraseCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
+      <Text style={[styles.phraseSituation, { color: colors.mutedText }]}>{phrase.situation}</Text>
+      <Text style={[styles.phraseNative, { color: colors.primaryText }]}>{phrase.phrase}</Text>
+      <Text style={[styles.phrasePronunciation, { color: colors.primary }]}>🔊 {phrase.pronunciation}</Text>
+      <Text style={[styles.phraseEnglish, { color: colors.secondaryText }]}>{phrase.english}</Text>
+    </View>
+  );
+});
+
 // ---------- Component ----------
 
 interface Props {
@@ -587,20 +643,13 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
     if (!currentProfile) return null;
     return (
       <View style={styles.sectionContent}>
-        {currentProfile.dietary.map((item, idx) => (
-          <View key={idx} style={[styles.infoCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-            <Text style={styles.infoCardIcon}>{item.icon}</Text>
-            <View style={styles.infoCardBody}>
-              <Text style={[styles.infoCardTitle, { color: colors.primaryText }]}>{item.label}</Text>
-              <Text style={[styles.infoCardDetail, { color: colors.secondaryText }]}>{item.detail}</Text>
-            </View>
-          </View>
+        {currentProfile.dietary.map((item) => (
+          <InfoCard key={item.label} item={item} colors={colors} />
         ))}
 
-        {/* Common requests */}
         <Text style={[styles.subheading, { color: colors.primaryText }]}>Common Requests</Text>
-        {currentProfile.commonRequests.map((req, idx) => (
-          <View key={idx} style={[styles.requestRow, { borderBottomColor: colors.borderLight }]}>
+        {currentProfile.commonRequests.map((req) => (
+          <View key={req} style={[styles.requestRow, { borderBottomColor: colors.borderLight }]}>
             <Text style={[styles.requestBullet, { color: colors.primary }]}>•</Text>
             <Text style={[styles.requestText, { color: colors.secondaryText }]}>{req}</Text>
           </View>
@@ -614,19 +663,13 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
     return (
       <View style={styles.sectionContent}>
         <Text style={[styles.subheading, { color: colors.primaryText }]}>Service Expectations</Text>
-        {currentProfile.serviceExpectations.map((tip, idx) => (
-          <View key={idx} style={[styles.tipRow, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-            <Text style={styles.tipIcon}>{tip.icon}</Text>
-            <Text style={[styles.tipText, { color: colors.secondaryText }]}>{tip.text}</Text>
-          </View>
+        {currentProfile.serviceExpectations.map((tip) => (
+          <TipRow key={tip.text} tip={tip} colors={colors} />
         ))}
 
         <Text style={[styles.subheading, { color: "#ff4757" }]}>⚠️ Cultural Taboos — Avoid</Text>
-        {currentProfile.taboos.map((taboo, idx) => (
-          <View key={idx} style={[styles.tipRow, { backgroundColor: "rgba(255,71,87,0.08)", borderColor: "rgba(255,71,87,0.2)" }]}>
-            <Text style={styles.tipIcon}>{taboo.icon}</Text>
-            <Text style={[styles.tipText, { color: colors.secondaryText }]}>{taboo.text}</Text>
-          </View>
+        {currentProfile.taboos.map((taboo) => (
+          <TipRow key={taboo.text} tip={taboo} colors={colors} bgColor="rgba(255,71,87,0.08)" borderColor="rgba(255,71,87,0.2)" />
         ))}
       </View>
     );
@@ -637,13 +680,8 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
     return (
       <View style={styles.sectionContent}>
         <Text style={[styles.subheading, { color: colors.primaryText }]}>Useful Phrases</Text>
-        {currentProfile.usefulPhrases.map((phrase, idx) => (
-          <View key={idx} style={[styles.phraseCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-            <Text style={[styles.phraseSituation, { color: colors.mutedText }]}>{phrase.situation}</Text>
-            <Text style={[styles.phraseNative, { color: colors.primaryText }]}>{phrase.phrase}</Text>
-            <Text style={[styles.phrasePronunciation, { color: colors.primary }]}>🔊 {phrase.pronunciation}</Text>
-            <Text style={[styles.phraseEnglish, { color: colors.secondaryText }]}>{phrase.english}</Text>
-          </View>
+        {currentProfile.usefulPhrases.map((phrase) => (
+          <PhraseCard key={phrase.phrase} phrase={phrase} colors={colors} />
         ))}
       </View>
     );
@@ -654,11 +692,8 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
     return (
       <View style={styles.sectionContent}>
         <Text style={[styles.subheading, { color: colors.primaryText }]}>Crew Tips</Text>
-        {currentProfile.crewTips.map((tip, idx) => (
-          <View key={idx} style={[styles.tipRow, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
-            <Text style={styles.tipIcon}>{tip.icon}</Text>
-            <Text style={[styles.tipText, { color: colors.secondaryText }]}>{tip.text}</Text>
-          </View>
+        {currentProfile.crewTips.map((tip) => (
+          <TipRow key={tip.text} tip={tip} colors={colors} />
         ))}
       </View>
     );
