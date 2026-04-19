@@ -1,4 +1,4 @@
-import { parseGlossaryCSV } from "../utils/glossaryParser";
+import { parseGlossaryCSV, glossaryToCSV } from "../utils/glossaryParser";
 
 describe("parseGlossaryCSV", () => {
   it("parses basic CSV rows", () => {
@@ -82,5 +82,81 @@ describe("parseGlossaryCSV", () => {
     const result = parseGlossaryCSV(csv, existing);
     expect(result.entries).toHaveLength(2);
     expect(result.entries[0]).toEqual(existing[0]);
+  });
+});
+
+describe("glossaryToCSV", () => {
+  it("produces a header row", () => {
+    const csv = glossaryToCSV([]);
+    expect(csv.trim()).toBe("source,target,sourceLang,targetLang");
+  });
+
+  it("quotes every field", () => {
+    const csv = glossaryToCSV([
+      { source: "hello", target: "hola", sourceLang: "en", targetLang: "es" },
+    ]);
+    expect(csv).toBe(
+      'source,target,sourceLang,targetLang\n"hello","hola","en","es"'
+    );
+  });
+
+  it("escapes double quotes inside fields", () => {
+    const csv = glossaryToCSV([
+      { source: 'say "hi"', target: 'di "hola"', sourceLang: "en", targetLang: "es" },
+    ]);
+    expect(csv).toContain('"say ""hi"""');
+    expect(csv).toContain('"di ""hola"""');
+  });
+
+  it("handles multiple entries", () => {
+    const entries = [
+      { source: "cat", target: "gato", sourceLang: "en", targetLang: "es" },
+      { source: "dog", target: "perro", sourceLang: "en", targetLang: "es" },
+    ];
+    const lines = glossaryToCSV(entries).split("\n");
+    expect(lines).toHaveLength(3);
+  });
+});
+
+describe("glossaryToCSV → parseGlossaryCSV round-trip", () => {
+  it("round-trips basic entries", () => {
+    const original = [
+      { source: "hello", target: "hola", sourceLang: "en", targetLang: "es" },
+      { source: "goodbye", target: "adiós", sourceLang: "en", targetLang: "es" },
+    ];
+    const csv = glossaryToCSV(original);
+    const result = parseGlossaryCSV(csv, []);
+    expect(result.entries).toEqual(original);
+    expect(result.imported).toBe(2);
+  });
+
+  it("round-trips entries containing commas", () => {
+    const original = [
+      { source: "hello, world", target: "hola, mundo", sourceLang: "en", targetLang: "es" },
+    ];
+    const csv = glossaryToCSV(original);
+    const result = parseGlossaryCSV(csv, []);
+    expect(result.entries).toEqual(original);
+  });
+
+  it("round-trips entries containing double quotes", () => {
+    const original = [
+      { source: 'say "hi"', target: 'di "hola"', sourceLang: "en", targetLang: "es" },
+    ];
+    const csv = glossaryToCSV(original);
+    const result = parseGlossaryCSV(csv, []);
+    expect(result.entries).toEqual(original);
+  });
+
+  it("round-trips entries across multiple language pairs", () => {
+    const original = [
+      { source: "hello", target: "hola", sourceLang: "en", targetLang: "es" },
+      { source: "hello", target: "bonjour", sourceLang: "en", targetLang: "fr" },
+      { source: "cat", target: "猫", sourceLang: "en", targetLang: "zh" },
+    ];
+    const csv = glossaryToCSV(original);
+    const result = parseGlossaryCSV(csv, []);
+    expect(result.entries).toEqual(original);
+    expect(result.imported).toBe(3);
   });
 });

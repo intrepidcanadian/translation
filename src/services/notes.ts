@@ -123,7 +123,7 @@ export function markdownToNote(content: string, filename: string): SavedNote | n
     const scanMode = (get("scan_mode") || "document") as ScannerModeKey;
     const sourceLang = get("source_lang") || "en";
     const targetLang = get("target_lang") || "en";
-    const timestamp = parseInt(get("timestamp")) || Date.now();
+    const timestamp = parseInt(get("timestamp"), 10) || Date.now();
 
     const body = content.slice(fmMatch[0].length);
 

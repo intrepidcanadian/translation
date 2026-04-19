@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Pressable,
   StyleSheet,
   Dimensions,
   Platform,
@@ -29,17 +28,11 @@ import { clearOCRCache } from "../services/ocrTranslation";
 import { useLiveOCR } from "../hooks/useLiveOCR";
 import { showBlockActionSheet } from "../utils/liveBlockActions";
 import { pruneBlockOpacities } from "../utils/pruneBlockOpacities";
+import { DetectedBlockOverlay, getOCRLanguage, OCR_OPTIONS_BASE, type DetectedBlock } from "./OCROverlay";
 import { impactLight, impactMedium } from "../services/haptics";
 import { logger } from "../services/logger";
 import * as telemetry from "../services/telemetry";
-import { primaryAlpha, textOnGlass, type ThemeColors } from "../theme";
-
-interface DetectedBlock {
-  id: string;
-  originalText: string;
-  translatedText: string;
-  frame: { top: number; left: number; width: number; height: number };
-}
+import { primaryAlpha, type ThemeColors } from "../theme";
 
 interface DualStreamViewProps {
   visible: boolean;
@@ -53,136 +46,6 @@ interface DualStreamViewProps {
   offlineSpeech: boolean;
   colors: ThemeColors;
 }
-
-// OCR overlay for live text blocks. Renders a horizontal glass label
-// anchored next to each detected line — same side-label pattern as
-// CameraTranslator so the two scanner modes present translations
-// consistently and don't paint over the text the user is trying to read.
-// Prefers the right side of the text (matching LTR reading flow), flips
-// to the left when the text is near the right edge, and falls back to a
-// position just below the line when neither side has enough room.
-const LABEL_GAP = 6;
-const LABEL_MIN_SIDE = 80;
-const LABEL_SIDE_MAX_WIDTH = 240;
-const LABEL_SIDE_PADDING = 12;
-const LABEL_MIN_HEIGHT = 22;
-// Pad the tap target beyond the visible label so thin OCR boxes (~22 px)
-// still meet the iOS 44 pt accessibility minimum for touch targets. (#10)
-const LABEL_HIT_SLOP = { top: 10, bottom: 10, left: 6, right: 6 };
-
-const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
-  block,
-  animatedOpacity,
-  screenWidth,
-  screenHeight,
-  onPress,
-}: {
-  block: DetectedBlock;
-  animatedOpacity: Animated.Value;
-  screenWidth: number;
-  screenHeight: number;
-  /** Invoked when the label is tapped — opens the copy/speak action sheet.
-   *  Optional so callers can render read-only labels if they prefer. */
-  onPress?: (block: DetectedBlock) => void;
-}) {
-  const textTop = block.frame.top;
-  const textLeft = block.frame.left;
-  const textRight = textLeft + block.frame.width;
-  const textBottom = textTop + block.frame.height;
-
-  const roomRight = Math.max(0, screenWidth - LABEL_SIDE_PADDING - (textRight + LABEL_GAP));
-  const roomLeft = Math.max(0, textLeft - LABEL_GAP - LABEL_SIDE_PADDING);
-
-  const labelHeight = Math.max(LABEL_MIN_HEIGHT, block.frame.height);
-  const fontSize = Math.max(12, Math.min(24, labelHeight * 0.54));
-
-  let pos: { top: number; left: number; maxWidth: number };
-  if (roomRight >= LABEL_MIN_SIDE) {
-    pos = { top: textTop, left: textRight + LABEL_GAP, maxWidth: Math.min(LABEL_SIDE_MAX_WIDTH, roomRight) };
-  } else if (roomLeft >= LABEL_MIN_SIDE) {
-    const maxW = Math.min(LABEL_SIDE_MAX_WIDTH, roomLeft);
-    pos = { top: textTop, left: textLeft - LABEL_GAP - maxW, maxWidth: maxW };
-  } else {
-    pos = {
-      top: Math.min(textBottom + LABEL_GAP, screenHeight - labelHeight - LABEL_SIDE_PADDING),
-      left: Math.max(LABEL_SIDE_PADDING, Math.min(textLeft, screenWidth - LABEL_SIDE_MAX_WIDTH - LABEL_SIDE_PADDING)),
-      maxWidth: LABEL_SIDE_MAX_WIDTH,
-    };
-  }
-
-  return (
-    <Animated.View
-      style={{
-        position: "absolute",
-        top: pos.top,
-        left: pos.left,
-        maxWidth: pos.maxWidth,
-        minHeight: labelHeight,
-        backgroundColor: "rgba(26, 26, 46, 0.92)",
-        borderRadius: 8,
-        borderWidth: StyleSheet.hairlineWidth,
-        borderColor: primaryAlpha.border,
-        borderLeftWidth: 3,
-        borderLeftColor: "#a8a4ff",
-        opacity: animatedOpacity,
-      }}
-    >
-      <Pressable
-        onPress={onPress ? () => onPress(block) : undefined}
-        disabled={!onPress}
-        hitSlop={LABEL_HIT_SLOP}
-        accessibilityRole={onPress ? "button" : undefined}
-        accessibilityLabel={
-          onPress
-            ? `${block.translatedText}. Tap for copy or speak options.`
-            : block.translatedText
-        }
-        style={{
-          flex: 1,
-          paddingHorizontal: 10,
-          paddingVertical: 3,
-          justifyContent: "center",
-        }}
-      >
-        <Text
-          style={[{ color: "#fff", fontSize, fontWeight: "700", lineHeight: fontSize * 1.2 }, textOnGlass]}
-          numberOfLines={2}
-          adjustsFontSizeToFit
-          minimumFontScale={0.6}
-        >
-          {block.translatedText}
-        </Text>
-      </Pressable>
-    </Animated.View>
-  );
-});
-
-// Map language codes to OCR plugin language options
-function getOCRLanguage(
-  langCode: string
-): "latin" | "chinese" | "japanese" | "korean" | "devanagari" {
-  switch (langCode) {
-    case "zh":
-      return "chinese";
-    case "ja":
-      return "japanese";
-    case "ko":
-      return "korean";
-    case "hi":
-      return "devanagari";
-    default:
-      return "latin";
-  }
-}
-
-// Frame-processor tunables — see the matching block in CameraTranslator for
-// the full rationale. Kept in sync so Live and Dual modes give the user
-// identical scan behavior and battery characteristics. (#4)
-const OCR_OPTIONS_BASE = {
-  frameSkipThreshold: 15,
-  scanRegion: { left: "5%", top: "15%", width: "90%", height: "70%" } as const,
-  useLightweightMode: true,
-};
 
 function DualStreamView({
   visible,
@@ -598,12 +461,18 @@ function DualStreamView({
   if (!device) {
     return (
       <View style={styles.container}>
-        <View style={styles.errorContainer}>
+        <View style={styles.errorContainer} accessible={true} accessibilityRole="alert">
           <Text style={styles.errorText}>No camera device found</Text>
           <Text style={styles.errorSubtext}>
             Dual-Stream requires a physical device with a camera
           </Text>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close dual-stream view"
+            accessibilityHint="Returns to the scanner mode selection"
+          >
             <Text style={styles.closeButtonText}>Close</Text>
           </TouchableOpacity>
         </View>
@@ -622,10 +491,19 @@ function DualStreamView({
           <TouchableOpacity
             style={styles.permissionButton}
             onPress={requestPermission}
+            accessibilityRole="button"
+            accessibilityLabel="Grant camera permission"
+            accessibilityHint="Opens system permission dialog for camera access"
           >
             <Text style={styles.permissionButtonText}>Grant Permission</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close dual-stream view"
+            accessibilityHint="Returns to the scanner mode selection"
+          >
             <Text style={styles.closeButtonText}>Close</Text>
           </TouchableOpacity>
         </View>

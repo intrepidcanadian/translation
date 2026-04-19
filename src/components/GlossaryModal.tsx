@@ -14,7 +14,7 @@ import {
 import * as Clipboard from "expo-clipboard";
 import { notifySuccess } from "../services/haptics";
 import { logger } from "../services/logger";
-import { parseGlossaryCSV } from "../utils/glossaryParser";
+import { parseGlossaryCSV, glossaryToCSV } from "../utils/glossaryParser";
 import type { GlossaryEntry } from "../utils/glossaryValidation";
 import type { ThemeColors } from "../theme";
 
@@ -131,16 +131,8 @@ function GlossaryModal({
   );
 
   const handleExportCSV = useCallback(async () => {
-    const csv =
-      "source,target,sourceLang,targetLang\n" +
-      glossary
-        .map(
-          (g) =>
-            `"${g.source.replace(/"/g, '""')}","${g.target.replace(/"/g, '""')}","${g.sourceLang}","${g.targetLang}"`
-        )
-        .join("\n");
     try {
-      await Share.share({ message: csv });
+      await Share.share({ message: glossaryToCSV(glossary) });
     } catch (err) { logger.warn("Glossary", "Glossary export failed", err); }
   }, [glossary]);
 

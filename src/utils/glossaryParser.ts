@@ -5,8 +5,44 @@ export interface GlossaryParseResult {
   imported: number;
 }
 
-const CSV_ROW_RE =
-  /^"?([^"]*)"?\s*,\s*"?([^"]*)"?\s*,\s*"?([^"]*)"?\s*,\s*"?([^"]*)"?$/;
+export function glossaryToCSV(entries: readonly GlossaryEntry[]): string {
+  return (
+    "source,target,sourceLang,targetLang\n" +
+    entries
+      .map(
+        (g) =>
+          `"${g.source.replace(/"/g, '""')}","${g.target.replace(/"/g, '""')}","${g.sourceLang}","${g.targetLang}"`
+      )
+      .join("\n")
+  );
+}
+
+function parseCSVRow(line: string): string[] | null {
+  const fields: string[] = [];
+  let i = 0;
+  while (i <= line.length) {
+    if (i === line.length) { fields.push(""); break; }
+    if (line[i] === '"') {
+      let val = "";
+      i++;
+      while (i < line.length) {
+        if (line[i] === '"') {
+          if (line[i + 1] === '"') { val += '"'; i += 2; }
+          else { i++; break; }
+        } else { val += line[i]; i++; }
+      }
+      fields.push(val);
+      if (line[i] === ",") i++;
+      else break;
+    } else {
+      const next = line.indexOf(",", i);
+      if (next === -1) { fields.push(line.slice(i).trim()); break; }
+      fields.push(line.slice(i, next).trim());
+      i = next + 1;
+    }
+  }
+  return fields.length >= 4 ? fields : null;
+}
 
 export function parseGlossaryCSV(
   csvText: string,
@@ -18,9 +54,9 @@ export function parseGlossaryCSV(
   const entries: GlossaryEntry[] = [...existingEntries];
 
   for (let i = start; i < lines.length; i++) {
-    const match = lines[i].match(CSV_ROW_RE);
-    if (!match) continue;
-    const [, src, tgt, sLang, tLang] = match;
+    const fields = parseCSVRow(lines[i]);
+    if (!fields) continue;
+    const [src, tgt, sLang, tLang] = fields;
     if (!src || !tgt || !sLang || !tLang) continue;
     const exists = entries.some(
       (g) =>

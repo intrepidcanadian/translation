@@ -4,7 +4,6 @@ import {
   Text,
   Image,
   TouchableOpacity,
-  Pressable,
   StyleSheet,
   Dimensions,
   Platform,
@@ -23,14 +22,8 @@ import { useLiveOCR } from "../hooks/useLiveOCR";
 import { usePhotoCapture } from "../hooks/usePhotoCapture";
 import { showBlockActionSheet } from "../utils/liveBlockActions";
 import { pruneBlockOpacities } from "../utils/pruneBlockOpacities";
+import { DetectedBlockOverlay, getOCRLanguage, OCR_OPTIONS_BASE, type DetectedBlock } from "./OCROverlay";
 import { primaryAlpha, textOnGlass, type ThemeColors } from "../theme";
-
-interface DetectedBlock {
-  id: string;
-  originalText: string;
-  translatedText: string;
-  frame: { top: number; left: number; width: number; height: number };
-}
 
 interface CapturedBlock {
   id: string;
@@ -101,220 +94,6 @@ const CapturedBlockOverlay = React.memo(function CapturedBlockOverlay({
 // "bubble" mode stacks translation + original in a dark glass card floating
 // above the top-left of the text. Kept for users who want to see both at
 // once.
-const LABEL_GAP = 6;            // px gap between text and the floating label
-const LABEL_MIN_SIDE = 80;      // px — below this width we fall back to the other side / below
-const LABEL_SIDE_MAX_WIDTH = 240; // cap so a long line doesn't cross the whole screen
-const LABEL_SIDE_PADDING = 12;  // screen margin — stay this far from the edges
-const LABEL_MIN_HEIGHT = 22;    // px — small OCR boxes still get a tappable label
-
-// Tap hit-slop for live overlay labels. The label itself is as small as
-// ~22 px tall on tight OCR boxes, which is below the 44 pt iOS accessibility
-// minimum — hitSlop pads the tappable area outward so the label is still
-// comfortable to hit even when it sits on a small sign or a single
-// word. (#10)
-const LABEL_HIT_SLOP = { top: 10, bottom: 10, left: 6, right: 6 };
-
-const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
-  block,
-  overlayMode,
-  animatedOpacity,
-  screenWidth,
-  screenHeight,
-  onPress,
-}: {
-  block: DetectedBlock;
-  overlayMode: "bubble" | "label";
-  animatedOpacity: Animated.Value;
-  screenWidth: number;
-  screenHeight: number;
-  /** Invoked when the label is tapped — opens the copy/speak action sheet.
-   *  Optional so bubble mode (which is display-only) can skip wiring it. */
-  onPress?: (block: DetectedBlock) => void;
-}) {
-  if (overlayMode === "label") {
-    // Decide side: try right, then left, then below. Only the chosen branch
-    // renders — we avoid a flicker where the label briefly spans both sides.
-    const textTop = block.frame.top;
-    const textLeft = block.frame.left;
-    const textRight = textLeft + block.frame.width;
-    const textBottom = textTop + block.frame.height;
-
-    const roomRight = Math.max(0, screenWidth - LABEL_SIDE_PADDING - (textRight + LABEL_GAP));
-    const roomLeft = Math.max(0, textLeft - LABEL_GAP - LABEL_SIDE_PADDING);
-
-    const labelHeight = Math.max(LABEL_MIN_HEIGHT, block.frame.height);
-    // Font scales to fill the detected line height, capped so very tall
-    // OCR boxes (headlines) don't produce absurd text. ~54% of line height
-    // is a readable ratio for a bold sans-serif.
-    const fontSize = Math.max(12, Math.min(24, labelHeight * 0.54));
-
-    let sideStyle: { top: number; left: number; maxWidth: number } | null = null;
-    if (roomRight >= LABEL_MIN_SIDE) {
-      sideStyle = {
-        top: textTop,
-        left: textRight + LABEL_GAP,
-        maxWidth: Math.min(LABEL_SIDE_MAX_WIDTH, roomRight),
-      };
-    } else if (roomLeft >= LABEL_MIN_SIDE) {
-      // Anchor by right edge via negative left: place the label so its
-      // right side butts up against the text with a gap.
-      const maxW = Math.min(LABEL_SIDE_MAX_WIDTH, roomLeft);
-      sideStyle = {
-        top: textTop,
-        left: textLeft - LABEL_GAP - maxW,
-        maxWidth: maxW,
-      };
-    }
-
-    // Label body is identical for side + fallback branches — extracted so
-    // the only difference between them is positioning. Wrapping the Text in
-    // a Pressable (instead of the old pointerEvents="none" Animated.View)
-    // makes the label tappable; hitSlop widens the tap target beyond the
-    // visual rect so small labels (~22 px tall) still meet the iOS 44 pt
-    // accessibility minimum. (#10)
-    const labelBody = (
-      <Pressable
-        onPress={onPress ? () => onPress(block) : undefined}
-        disabled={!onPress}
-        hitSlop={LABEL_HIT_SLOP}
-        accessibilityRole={onPress ? "button" : undefined}
-        accessibilityLabel={
-          onPress
-            ? `${block.translatedText}. Tap for copy or speak options.`
-            : block.translatedText
-        }
-        style={{
-          flex: 1,
-          paddingHorizontal: 10,
-          paddingVertical: 3,
-          justifyContent: "center",
-        }}
-      >
-        <Text
-          style={[{ color: "#fff", fontSize, fontWeight: "700", lineHeight: fontSize * 1.2 }, textOnGlass]}
-          numberOfLines={2}
-          adjustsFontSizeToFit
-          minimumFontScale={0.6}
-        >
-          {block.translatedText}
-        </Text>
-      </Pressable>
-    );
-
-    if (sideStyle) {
-      return (
-        <Animated.View
-          style={{
-            position: "absolute",
-            top: sideStyle.top,
-            left: sideStyle.left,
-            maxWidth: sideStyle.maxWidth,
-            minHeight: labelHeight,
-            backgroundColor: "rgba(26, 26, 46, 0.92)",
-            borderRadius: 8,
-            borderWidth: StyleSheet.hairlineWidth,
-            borderColor: primaryAlpha.border,
-            opacity: animatedOpacity,
-            // Small left-edge accent bar so the label reads as "attached to"
-            // the text rather than floating randomly. Matches the primary
-            // purple used elsewhere in the app.
-            borderLeftWidth: 3,
-            borderLeftColor: "#a8a4ff",
-          }}
-        >
-          {labelBody}
-        </Animated.View>
-      );
-    }
-
-    // Fallback: neither side has room (text spans almost the entire width).
-    // Drop the label just below the line, clamped to the screen bounds, so
-    // it's always visible even on full-width banners.
-    const fallbackTop = Math.min(textBottom + LABEL_GAP, screenHeight - labelHeight - LABEL_SIDE_PADDING);
-    const fallbackLeft = Math.max(LABEL_SIDE_PADDING, Math.min(textLeft, screenWidth - LABEL_SIDE_MAX_WIDTH - LABEL_SIDE_PADDING));
-    return (
-      <Animated.View
-        style={{
-          position: "absolute",
-          top: fallbackTop,
-          left: fallbackLeft,
-          maxWidth: LABEL_SIDE_MAX_WIDTH,
-          minHeight: labelHeight,
-          backgroundColor: "rgba(26, 26, 46, 0.92)",
-          borderRadius: 8,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: primaryAlpha.border,
-          borderLeftWidth: 3,
-          borderLeftColor: "#a8a4ff",
-          opacity: animatedOpacity,
-        }}
-      >
-        {labelBody}
-      </Animated.View>
-    );
-  }
-
-  return (
-    <View style={[{ position: "absolute", top: block.frame.top, left: block.frame.left, minWidth: block.frame.width, minHeight: block.frame.height, justifyContent: "flex-start", alignItems: "flex-start" }]}>
-      <Pressable
-        onPress={onPress ? () => onPress(block) : undefined}
-        disabled={!onPress}
-        hitSlop={LABEL_HIT_SLOP}
-        accessibilityRole={onPress ? "button" : undefined}
-        accessibilityLabel={
-          onPress
-            ? `${block.translatedText}. Tap for copy or speak options.`
-            : block.translatedText
-        }
-        style={{ backgroundColor: "rgba(26, 26, 46, 0.88)", borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, borderWidth: 1, borderColor: primaryAlpha.border, maxWidth: 280 }}
-      >
-        <Text style={[{ color: "#a8a4ff", fontSize: 14, fontWeight: "700" }, textOnGlass]} numberOfLines={2}>{block.translatedText}</Text>
-        <Text style={[{ color: "rgba(255,255,255,0.7)", fontSize: 10, marginTop: 1 }, textOnGlass]} numberOfLines={1}>{block.originalText}</Text>
-      </Pressable>
-    </View>
-  );
-});
-
-// Map language codes to OCR plugin language options
-function getOCRLanguage(langCode: string): "latin" | "chinese" | "japanese" | "korean" | "devanagari" {
-  switch (langCode) {
-    case "zh": return "chinese";
-    case "ja": return "japanese";
-    case "ko": return "korean";
-    case "hi": return "devanagari";
-    default: return "latin";
-  }
-}
-
-// Frame-processor options for the live OCR plugin. Three tunables beyond
-// `language` give us meaningful battery + latency wins without hurting
-// detection quality on the signs / menus / documents this scanner targets:
-//
-//  * frameSkipThreshold=15 — the plugin defaults to 10; we nudge it higher
-//    so ~33% more frames are skipped on the native side before they ever
-//    reach JS. Text in a real scene doesn't change at 30 fps, so this is
-//    pure battery savings.
-//
-//  * scanRegion={ 5% / 15% / 90% / 70% } — restrict recognition to a
-//    center-weighted viewfinder that excludes the top/bottom edges where
-//    our own UI chrome (top bar, bottom status) sits and where spurious
-//    reflections / status bar text would otherwise be OCR'd. Users
-//    naturally aim the camera at the center anyway, so clipping here cuts
-//    work without changing the useful detection area.
-//
-//  * useLightweightMode=true — Android-only; iOS ignores this. Skips
-//    corner-point / element / language metadata we don't currently
-//    consume, ~20% CPU win on mid-range Android.
-//
-// The object is memoized on sourceLangCode so the VisionCamera frame
-// processor (which memoizes on options identity) doesn't rebuild every
-// render — without the useMemo, every state change in CameraTranslator
-// tore down and rebuilt the frame processor pipeline. (#4)
-const OCR_OPTIONS_BASE = {
-  frameSkipThreshold: 15,
-  scanRegion: { left: "5%", top: "15%", width: "90%", height: "70%" } as const,
-  useLightweightMode: true,
-};
 
 function CameraTranslator({
   visible,
@@ -434,12 +213,18 @@ function CameraTranslator({
   if (!device) {
     return (
       <View style={styles.container}>
-        <View style={styles.errorContainer}>
+        <View style={styles.errorContainer} accessible={true} accessibilityRole="alert">
           <Text style={styles.errorText}>No camera device found</Text>
           <Text style={styles.errorSubtext}>
             Camera translation requires a physical device
           </Text>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close camera translator"
+            accessibilityHint="Returns to the scanner mode selection"
+          >
             <Text style={styles.closeButtonText}>Close</Text>
           </TouchableOpacity>
         </View>
@@ -458,10 +243,19 @@ function CameraTranslator({
           <TouchableOpacity
             style={styles.permissionButton}
             onPress={requestPermission}
+            accessibilityRole="button"
+            accessibilityLabel="Grant camera permission"
+            accessibilityHint="Opens system permission dialog for camera access"
           >
             <Text style={styles.permissionButtonText}>Grant Permission</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close camera translator"
+            accessibilityHint="Returns to the scanner mode selection"
+          >
             <Text style={styles.closeButtonText}>Close</Text>
           </TouchableOpacity>
         </View>

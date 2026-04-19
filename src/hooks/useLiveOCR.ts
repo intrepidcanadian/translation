@@ -4,20 +4,14 @@ import { logger } from "../services/logger";
 import type { TranslationProvider } from "../services/translation";
 import { translateOCRLines } from "../services/ocrTranslation";
 import { mapImageRectToScreen } from "../utils/rectMapping";
+import type { DetectedBlock } from "../components/OCROverlay";
 
 // Re-export so existing imports (and the parseOCRFrameData tests) keep working
 // after the function moved to `src/utils/rectMapping.ts`. The tests and this
 // hook import `mapImageRectToScreen` from `../hooks/useLiveOCR` — keeping the
 // re-export means no churn in the test file and no duplicate implementations.
 export { mapImageRectToScreen };
-
-interface DetectedBlock {
-  id: string;
-  originalText: string;
-  translatedText: string;
-  /** Screen-space rectangle in px — ready to paint as `position: absolute`. */
-  frame: { top: number; left: number; width: number; height: number };
-}
+export type { DetectedBlock };
 
 // Shape returned by react-native-vision-camera-ocr-plus's scanText frame
 // processor — see node_modules/react-native-vision-camera-ocr-plus/src/types.ts.
