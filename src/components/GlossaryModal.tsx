@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo, useCallback } from "react";
 import { modalStyles } from "../styles/modalStyles";
 import {
   Modal,
@@ -22,6 +22,52 @@ interface GlossaryEntry {
   sourceLang: string;
   targetLang: string;
 }
+
+interface GlossaryEntryRowProps {
+  item: GlossaryEntry;
+  realIndex: number;
+  onRemove: (index: number) => void;
+  colors: ThemeColors;
+}
+
+const GlossaryEntryRow = React.memo(function GlossaryEntryRow({
+  item,
+  realIndex,
+  onRemove,
+  colors,
+}: GlossaryEntryRowProps) {
+  const handleRemove = useCallback(() => onRemove(realIndex), [onRemove, realIndex]);
+  return (
+    <View
+      style={[
+        styles.glossaryEntry,
+        { backgroundColor: colors.cardBg, borderColor: colors.border },
+      ]}
+      accessible={true}
+      accessibilityLabel={`Glossary entry: ${item.source} translates to ${item.target}`}
+    >
+      <View style={{ flex: 1 }}>
+        <Text style={{ color: colors.secondaryText, fontSize: 14 }}>
+          {item.source}
+        </Text>
+        <Text
+          style={{ color: colors.translatedText, fontSize: 14, fontWeight: "600" }}
+        >
+          {item.target}
+        </Text>
+      </View>
+      <TouchableOpacity
+        onPress={handleRemove}
+        style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}
+        accessibilityRole="button"
+        accessibilityLabel={`Remove glossary entry: ${item.source}`}
+        accessibilityHint="Deletes this custom translation from your glossary"
+      >
+        <Text style={{ color: colors.errorText, fontSize: 18 }}>✕</Text>
+      </TouchableOpacity>
+    </View>
+  );
+});
 
 interface GlossaryModalProps {
   visible: boolean;
@@ -54,17 +100,109 @@ function GlossaryModal({
   const [glossarySource, setGlossarySource] = useState("");
   const [glossaryTarget, setGlossaryTarget] = useState("");
 
-  const handleAdd = () => {
+  const handleAdd = useCallback(() => {
     if (glossarySource.trim() && glossaryTarget.trim()) {
       onAdd(glossarySource.trim(), glossaryTarget.trim());
       setGlossarySource("");
       setGlossaryTarget("");
     }
-  };
+  }, [glossarySource, glossaryTarget, onAdd]);
 
-  const filteredGlossary = glossary.filter(
-    (g) => g.sourceLang === sourceLangCode && g.targetLang === targetLangCode
+  const filteredGlossary = useMemo(
+    () => glossary.filter(
+      (g) => g.sourceLang === sourceLangCode && g.targetLang === targetLangCode
+    ),
+    [glossary, sourceLangCode, targetLangCode],
   );
+
+  const keyExtractor = useCallback(
+    (item: GlossaryEntry) => `${item.sourceLang}|${item.targetLang}|${item.source}`,
+    [],
+  );
+
+  const renderItem = useCallback(
+    ({ item }: { item: GlossaryEntry }) => {
+      const realIndex = glossary.indexOf(item);
+      return (
+        <GlossaryEntryRow
+          item={item}
+          realIndex={realIndex}
+          onRemove={onRemove}
+          colors={colors}
+        />
+      );
+    },
+    [glossary, onRemove, colors],
+  );
+
+  const handleExportCSV = useCallback(async () => {
+    const csv =
+      "source,target,sourceLang,targetLang\n" +
+      glossary
+        .map(
+          (g) =>
+            `"${g.source.replace(/"/g, '""')}","${g.target.replace(/"/g, '""')}","${g.sourceLang}","${g.targetLang}"`
+        )
+        .join("\n");
+    try {
+      await Share.share({ message: csv });
+    } catch (err) { logger.warn("Glossary", "Glossary export failed", err); }
+  }, [glossary]);
+
+  const handleImportCSV = useCallback(async () => {
+    try {
+      const clip = await Clipboard.getStringAsync();
+      if (!clip || !clip.includes(",")) {
+        Alert.alert(
+          "Import",
+          "Copy a CSV to clipboard first.\nFormat: source,target,sourceLang,targetLang"
+        );
+        return;
+      }
+      const lines = clip.split("\n").filter((l) => l.trim());
+      const start = lines[0]?.toLowerCase().startsWith("source") ? 1 : 0;
+      let imported = 0;
+      const newEntries: GlossaryEntry[] = [...glossary];
+      for (let i = start; i < lines.length; i++) {
+        const match = lines[i].match(
+          /^"?([^"]*)"?\s*,\s*"?([^"]*)"?\s*,\s*"?([^"]*)"?\s*,\s*"?([^"]*)"?$/
+        );
+        if (match) {
+          const [, src, tgt, sLang, tLang] = match;
+          if (src && tgt && sLang && tLang) {
+            const exists = newEntries.some(
+              (g) =>
+                g.source.toLowerCase() === src.toLowerCase() &&
+                g.sourceLang === sLang &&
+                g.targetLang === tLang
+            );
+            if (!exists) {
+              newEntries.push({
+                source: src,
+                target: tgt,
+                sourceLang: sLang,
+                targetLang: tLang,
+              });
+              imported++;
+            }
+          }
+        }
+      }
+      if (imported > 0) {
+        onImport(newEntries);
+        notifySuccess();
+      }
+      Alert.alert(
+        "Import",
+        imported > 0
+          ? `Imported ${imported} new ${imported === 1 ? "entry" : "entries"}.`
+          : "No new entries found in clipboard."
+      );
+    } catch (err) {
+      logger.warn("Glossary", "Glossary import failed", err);
+      Alert.alert("Import", "Failed to read clipboard.");
+    }
+  }, [glossary, onImport]);
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
@@ -146,7 +284,7 @@ function GlossaryModal({
 
           <FlatList
             data={filteredGlossary}
-            keyExtractor={(_, i) => String(i)}
+            keyExtractor={keyExtractor}
             style={{ maxHeight: 250, paddingHorizontal: 16 }}
             ListEmptyComponent={
               <Text
@@ -160,38 +298,7 @@ function GlossaryModal({
                 No entries for this language pair yet.
               </Text>
             }
-            renderItem={({ item }) => {
-              const realIndex = glossary.findIndex((g) => g === item);
-              return (
-                <View
-                  style={[
-                    styles.glossaryEntry,
-                    { backgroundColor: colors.cardBg, borderColor: colors.border },
-                  ]}
-                  accessible={true}
-                  accessibilityLabel={`Glossary entry: ${item.source} translates to ${item.target}`}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ color: colors.secondaryText, fontSize: 14 }}>
-                      {item.source}
-                    </Text>
-                    <Text
-                      style={{ color: colors.translatedText, fontSize: 14, fontWeight: "600" }}
-                    >
-                      {item.target}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => onRemove(realIndex)}
-                    style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Remove glossary entry: ${item.source}`}
-                  >
-                    <Text style={{ color: colors.errorText, fontSize: 18 }}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-              );
-            }}
+            renderItem={renderItem}
           />
 
           {glossary.length > 0 && (
@@ -215,19 +322,7 @@ function GlossaryModal({
               >
                 <TouchableOpacity
                   style={[styles.glossaryIOButton, { backgroundColor: colors.cardBg }]}
-                  onPress={async () => {
-                    const csv =
-                      "source,target,sourceLang,targetLang\n" +
-                      glossary
-                        .map(
-                          (g) =>
-                            `"${g.source.replace(/"/g, '""')}","${g.target.replace(/"/g, '""')}","${g.sourceLang}","${g.targetLang}"`
-                        )
-                        .join("\n");
-                    try {
-                      await Share.share({ message: csv });
-                    } catch (err) { logger.warn("Glossary", "Glossary export failed", err); }
-                  }}
+                  onPress={handleExportCSV}
                   accessibilityRole="button"
                   accessibilityLabel="Export glossary as CSV"
                   accessibilityHint="Opens the share sheet with all glossary entries formatted as CSV"
@@ -240,60 +335,7 @@ function GlossaryModal({
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.glossaryIOButton, { backgroundColor: colors.cardBg }]}
-                  onPress={async () => {
-                    try {
-                      const clip = await Clipboard.getStringAsync();
-                      if (!clip || !clip.includes(",")) {
-                        Alert.alert(
-                          "Import",
-                          "Copy a CSV to clipboard first.\nFormat: source,target,sourceLang,targetLang"
-                        );
-                        return;
-                      }
-                      const lines = clip.split("\n").filter((l) => l.trim());
-                      const start = lines[0]?.toLowerCase().startsWith("source") ? 1 : 0;
-                      let imported = 0;
-                      const newEntries: GlossaryEntry[] = [...glossary];
-                      for (let i = start; i < lines.length; i++) {
-                        const match = lines[i].match(
-                          /^"?([^"]*)"?\s*,\s*"?([^"]*)"?\s*,\s*"?([^"]*)"?\s*,\s*"?([^"]*)"?$/
-                        );
-                        if (match) {
-                          const [, src, tgt, sLang, tLang] = match;
-                          if (src && tgt && sLang && tLang) {
-                            const exists = newEntries.some(
-                              (g) =>
-                                g.source.toLowerCase() === src.toLowerCase() &&
-                                g.sourceLang === sLang &&
-                                g.targetLang === tLang
-                            );
-                            if (!exists) {
-                              newEntries.push({
-                                source: src,
-                                target: tgt,
-                                sourceLang: sLang,
-                                targetLang: tLang,
-                              });
-                              imported++;
-                            }
-                          }
-                        }
-                      }
-                      if (imported > 0) {
-                        onImport(newEntries);
-                        notifySuccess();
-                      }
-                      Alert.alert(
-                        "Import",
-                        imported > 0
-                          ? `Imported ${imported} new ${imported === 1 ? "entry" : "entries"}.`
-                          : "No new entries found in clipboard."
-                      );
-                    } catch (err) {
-                      logger.warn("Glossary", "Glossary import failed", err);
-                      Alert.alert("Import", "Failed to read clipboard.");
-                    }
-                  }}
+                  onPress={handleImportCSV}
                   accessibilityRole="button"
                   accessibilityLabel="Import glossary from clipboard CSV"
                   accessibilityHint="Reads CSV data from your clipboard and adds new glossary entries"
@@ -339,14 +381,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: "center" as const,
     justifyContent: "center" as const,
-  },
-  glossaryInput: {
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    fontSize: 14,
-    borderWidth: 1,
-    marginBottom: 8,
   },
   glossaryIOButton: {
     borderRadius: 10,
