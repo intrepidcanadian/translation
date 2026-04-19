@@ -9,20 +9,7 @@ import {
 } from "react-native";
 import type { ThemeColors } from "../../theme";
 import type { ExtractedField } from "../../services/scannerModes";
-
-interface DocumentAnalysis {
-  detectedLanguage: string | null;
-  persons: string[];
-  organizations: string[];
-  places: string[];
-  dates: string[];
-  phoneNumbers: string[];
-  urls: string[];
-  addresses: string[];
-  moneyAmounts: string[];
-  sentenceCount: number;
-  wordCount: number;
-}
+import type { DocumentAnalysis } from "../../types";
 
 interface ResultsPhaseProps {
   colors: ThemeColors;

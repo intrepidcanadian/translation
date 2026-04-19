@@ -29,23 +29,10 @@ import { copyWithAutoClear } from "../services/clipboard";
 import { useAutoClearFlag } from "../hooks/useAutoClearFlag";
 import { notifySuccess, impactMedium } from "../services/haptics";
 import type { ThemeColors } from "../theme";
+import type { DocumentAnalysis } from "../types";
 import CameraPhase from "./scanner/CameraPhase";
 import ProcessingPhase from "./scanner/ProcessingPhase";
 import ResultsPhase from "./scanner/ResultsPhase";
-
-interface DocumentAnalysis {
-  detectedLanguage: string | null;
-  persons: string[];
-  organizations: string[];
-  places: string[];
-  dates: string[];
-  phoneNumbers: string[];
-  urls: string[];
-  addresses: string[];
-  moneyAmounts: string[];
-  sentenceCount: number;
-  wordCount: number;
-}
 
 interface DocumentScannerProps {
   visible: boolean;

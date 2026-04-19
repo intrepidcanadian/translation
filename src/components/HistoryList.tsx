@@ -490,10 +490,15 @@ function HistoryList({
     }
   }, [history, liveText, translatedText, autoScroll]);
 
+  const sourceSpeechCode = sourceLang.speechCode;
+  const targetSpeechCode = targetLang.speechCode;
+  const sourceLangName = sourceLang.name;
+  const targetLangName = targetLang.name;
+
   const renderHistoryItem = useCallback(
     ({ item, index }: { item: HistoryItem; index: number }) => {
       const isB = item.speaker === "B";
-      const speakLang = isB ? sourceLang.speechCode : targetLang.speechCode;
+      const speakLang = isB ? sourceSpeechCode : targetSpeechCode;
       const realIndex = filteredToRealIndex
         ? (filteredToRealIndex.get(item) ?? index)
         : index;
@@ -523,8 +528,8 @@ function HistoryList({
             copiedText={copiedText}
             speakingText={speakingText}
             speakLang={speakLang}
-            sourceLangName={sourceLang.name}
-            targetLangName={targetLang.name}
+            sourceLangName={sourceLangName}
+            targetLangName={targetLangName}
             searchQuery={searchQuery}
           />
         );
@@ -541,7 +546,7 @@ function HistoryList({
           confidenceThreshold={confidenceThreshold}
           copiedText={copiedText}
           speakingText={speakingText}
-          targetSpeechCode={targetLang.speechCode}
+          targetSpeechCode={targetSpeechCode}
           searchQuery={searchQuery}
         />
       );
@@ -557,8 +562,10 @@ function HistoryList({
       confidenceThreshold,
       copiedText,
       speakingText,
-      sourceLang,
-      targetLang,
+      sourceSpeechCode,
+      targetSpeechCode,
+      sourceLangName,
+      targetLangName,
       searchQuery,
       filteredToRealIndex,
       onToggleSelectItem,

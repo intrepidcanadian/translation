@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import { romanizeAligned, getRomanizationName, type AlignedPair } from "../services/romanization";
+import { romanizeAligned, getRomanizationName } from "../services/romanization";
 
 interface Props {
   text: string;
@@ -9,6 +9,40 @@ interface Props {
   romanColor: string;
   fontSize?: number;
 }
+
+const RomanPair = React.memo(function RomanPair({
+  char,
+  roman,
+  textColor,
+  romanColor,
+  fontSize,
+  romanFontSize,
+}: {
+  char: string;
+  roman: string;
+  textColor: string;
+  romanColor: string;
+  fontSize: number;
+  romanFontSize: number;
+}) {
+  if (char === " ") {
+    return <View style={styles.space} />;
+  }
+
+  return (
+    <View style={styles.pair}>
+      <Text
+        style={[styles.roman, { color: romanColor, fontSize: romanFontSize }]}
+        numberOfLines={1}
+      >
+        {roman || " "}
+      </Text>
+      <Text style={[styles.char, { color: textColor, fontSize }]}>
+        {char}
+      </Text>
+    </View>
+  );
+});
 
 function AlignedRomanizationBase({ text, langCode, textColor, romanColor, fontSize = 16 }: Props) {
   const pairs = useMemo(() => romanizeAligned(text, langCode), [text, langCode]);
@@ -24,42 +58,22 @@ function AlignedRomanizationBase({ text, langCode, textColor, romanColor, fontSi
         {label}
       </Text>
       <View style={styles.row}>
-        {pairs.map((pair, i) => {
-          // Space characters — render as a small gap
-          if (pair.char === " ") {
-            return <View key={i} style={styles.space} />;
-          }
-
-          return (
-            <View key={i} style={styles.pair}>
-              <Text
-                style={[
-                  styles.roman,
-                  { color: romanColor, fontSize: romanFontSize },
-                ]}
-                numberOfLines={1}
-              >
-                {pair.roman || " "}
-              </Text>
-              <Text
-                style={[
-                  styles.char,
-                  { color: textColor, fontSize },
-                ]}
-              >
-                {pair.char}
-              </Text>
-            </View>
-          );
-        })}
+        {pairs.map((pair, i) => (
+          <RomanPair
+            key={i}
+            char={pair.char}
+            roman={pair.roman}
+            textColor={textColor}
+            romanColor={romanColor}
+            fontSize={fontSize}
+            romanFontSize={romanFontSize}
+          />
+        ))}
       </View>
     </View>
   );
 }
 
-// Memoized: re-renders only when text/langCode/colors/fontSize actually change.
-// Parent list rows pass stable theme colors by reference, so this avoids
-// rebuilding the romanization pair layout on unrelated parent updates.
 const AlignedRomanization = React.memo(AlignedRomanizationBase);
 export default AlignedRomanization;
 

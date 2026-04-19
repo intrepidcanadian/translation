@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,41 @@ import { Camera, type CameraDevice } from "react-native-vision-camera";
 import { SCANNER_MODES, type ScannerModeKey } from "../../services/scannerModes";
 import { selection } from "../../services/haptics";
 import { primaryAlpha } from "../../theme";
+
+const ScannerModePill = React.memo(function ScannerModePill({
+  modeKey,
+  label,
+  icon,
+  isSelected,
+  onSelect,
+}: {
+  modeKey: ScannerModeKey;
+  label: string;
+  icon: string;
+  isSelected: boolean;
+  onSelect: (key: ScannerModeKey) => void;
+}) {
+  const handlePress = useCallback(() => {
+    onSelect(modeKey);
+    selection();
+  }, [onSelect, modeKey]);
+
+  return (
+    <TouchableOpacity
+      style={[styles.modePill, isSelected && styles.modePillActive]}
+      onPress={handlePress}
+      accessibilityLabel={`${label} scanner mode${isSelected ? ", selected" : ""}`}
+      accessibilityHint={`Switch to ${label.toLowerCase()} scanning mode`}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: isSelected }}
+    >
+      <Text style={styles.modePillIcon}>{icon}</Text>
+      <Text style={[styles.modePillText, isSelected && styles.modePillTextActive]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+});
 
 interface CameraPhaseProps {
   cameraRef: React.RefObject<Camera | null>;
@@ -77,29 +112,14 @@ export default function CameraPhase({
       <View style={styles.modeBar} accessibilityRole="tablist" accessibilityLabel="Scanner mode selector">
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modeBarContent}>
           {SCANNER_MODES.map((m) => (
-            <TouchableOpacity
+            <ScannerModePill
               key={m.key}
-              style={[
-                styles.modePill,
-                selectedMode === m.key && styles.modePillActive,
-              ]}
-              onPress={() => {
-                onSelectMode(m.key);
-                selection();
-              }}
-              accessibilityLabel={`${m.label} scanner mode${selectedMode === m.key ? ", selected" : ""}`}
-              accessibilityHint={`Switch to ${m.label.toLowerCase()} scanning mode`}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: selectedMode === m.key }}
-            >
-              <Text style={styles.modePillIcon}>{m.icon}</Text>
-              <Text style={[
-                styles.modePillText,
-                selectedMode === m.key && styles.modePillTextActive,
-              ]}>
-                {m.label}
-              </Text>
-            </TouchableOpacity>
+              modeKey={m.key}
+              label={m.label}
+              icon={m.icon}
+              isSelected={selectedMode === m.key}
+              onSelect={onSelectMode}
+            />
           ))}
         </ScrollView>
       </View>

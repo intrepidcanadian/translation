@@ -1,3 +1,17 @@
+export interface DocumentAnalysis {
+  detectedLanguage: string | null;
+  persons: string[];
+  organizations: string[];
+  places: string[];
+  dates: string[];
+  phoneNumbers: string[];
+  urls: string[];
+  addresses: string[];
+  moneyAmounts: string[];
+  sentenceCount: number;
+  wordCount: number;
+}
+
 export type HistoryItemStatus = "ok" | "pending" | "error";
 
 export interface HistoryItem {

@@ -6,18 +6,23 @@ interface ProcessingPhaseProps {
   processingStep: string;
 }
 
-export default function ProcessingPhase({ modeIcon, processingStep }: ProcessingPhaseProps) {
+export default React.memo(function ProcessingPhase({ modeIcon, processingStep }: ProcessingPhaseProps) {
   return (
-    <View style={styles.container}>
+    <View
+      style={styles.container}
+      accessible={true}
+      accessibilityRole="progressbar"
+      accessibilityLabel={`Processing document: ${processingStep}`}
+    >
       <View style={styles.centerContent}>
-        <Text style={styles.modeIcon}>{modeIcon}</Text>
-        <ActivityIndicator size="large" color="#6c63ff" />
-        <Text style={styles.processingStep}>{processingStep}</Text>
-        <Text style={styles.processingHint}>All processing runs on-device</Text>
+        <Text style={styles.modeIcon} importantForAccessibility="no">{modeIcon}</Text>
+        <ActivityIndicator size="large" color="#6c63ff" accessibilityElementsHidden={true} />
+        <Text style={styles.processingStep} accessibilityLiveRegion="polite">{processingStep}</Text>
+        <Text style={styles.processingHint} importantForAccessibility="no">All processing runs on-device</Text>
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
