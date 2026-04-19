@@ -71,6 +71,54 @@ interface CatalogProduct {
   confidence: number;
 }
 
+const SpecChip = React.memo(function SpecChip({
+  label,
+  value,
+  colors,
+}: {
+  label: string;
+  value: string;
+  colors: ThemeColors;
+}) {
+  return (
+    <View style={[styles.specChip, { backgroundColor: colors.containerBg }]}>
+      <Text style={[styles.specLabel, { color: colors.mutedText }]}>{label}</Text>
+      <Text style={[styles.specValue, { color: colors.primaryText }]}>{value}</Text>
+    </View>
+  );
+});
+
+const DutyFreeConversionCell = React.memo(function DutyFreeConversionCell({
+  conv,
+  colors,
+  copiedText,
+  onCopyPrice,
+}: {
+  conv: ConvertedPrice;
+  colors: ThemeColors;
+  copiedText: string | null;
+  onCopyPrice: (text: string) => void;
+}) {
+  const copyLabel = `${conv.formatted} ${conv.currency}`;
+  const handleCopy = useCallback(() => onCopyPrice(copyLabel), [onCopyPrice, copyLabel]);
+
+  return (
+    <TouchableOpacity
+      style={[styles.priceGridCell, { backgroundColor: colors.containerBg, borderColor: colors.borderLight }]}
+      onPress={handleCopy}
+      accessibilityRole="button"
+      accessibilityLabel={`Copy ${conv.formatted} ${conv.currency}`}
+      accessibilityHint="Tap to copy this conversion to clipboard"
+    >
+      <Text style={styles.priceGridFlag}>{conv.flag}</Text>
+      <Text style={[styles.priceGridAmount, { color: colors.primaryText }]} numberOfLines={1} adjustsFontSizeToFit>
+        {copiedText === copyLabel ? "✓" : conv.formatted}
+      </Text>
+      <Text style={[styles.priceGridCode, { color: colors.mutedText }]}>{conv.currency}</Text>
+    </TouchableOpacity>
+  );
+});
+
 interface ProductCardProps {
   product: CatalogProduct;
   index: number;
@@ -141,11 +189,8 @@ const ProductCard = React.memo(function ProductCard({
           )}
           {product.specs.length > 0 && (
             <View style={styles.specsRow}>
-              {product.specs.slice(0, 6).map((spec, si) => (
-                <View key={si} style={[styles.specChip, { backgroundColor: colors.containerBg }]}>
-                  <Text style={[styles.specLabel, { color: colors.mutedText }]}>{spec.label}</Text>
-                  <Text style={[styles.specValue, { color: colors.primaryText }]}>{spec.value}</Text>
-                </View>
+              {product.specs.slice(0, 6).map((spec) => (
+                <SpecChip key={spec.label} label={spec.label} value={spec.value} colors={colors} />
               ))}
             </View>
           )}
@@ -156,19 +201,13 @@ const ProductCard = React.memo(function ProductCard({
               </Text>
               <View style={styles.priceGrid}>
                 {price.conversions.map((conv) => (
-                  <TouchableOpacity
+                  <DutyFreeConversionCell
                     key={conv.currency}
-                    style={[styles.priceGridCell, { backgroundColor: colors.containerBg, borderColor: colors.borderLight }]}
-                    onPress={() => onCopyPrice(`${conv.formatted} ${conv.currency}`)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Copy ${conv.formatted} ${conv.currency}`}
-                  >
-                    <Text style={styles.priceGridFlag}>{conv.flag}</Text>
-                    <Text style={[styles.priceGridAmount, { color: colors.primaryText }]} numberOfLines={1} adjustsFontSizeToFit>
-                      {copiedText === `${conv.formatted} ${conv.currency}` ? "✓" : conv.formatted}
-                    </Text>
-                    <Text style={[styles.priceGridCode, { color: colors.mutedText }]}>{conv.currency}</Text>
-                  </TouchableOpacity>
+                    conv={conv}
+                    colors={colors}
+                    copiedText={copiedText}
+                    onCopyPrice={onCopyPrice}
+                  />
                 ))}
               </View>
             </View>

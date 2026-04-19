@@ -120,7 +120,7 @@ const PriceCard = React.memo(function PriceCard({
         accessibilityRole="button"
         accessibilityLabel={`${meta?.symbol ?? ""}${price.amount} ${price.currency}${meta?.name ? `, ${meta.name}` : ""}`}
         accessibilityHint={canToggle ? (isExpanded ? "Collapse currency conversions" : "Expand to see currency conversions") : "Shows currency conversions"}
-        accessibilityState={canToggle ? { expanded: isExpanded } : undefined}
+        accessibilityState={canToggle ? { expanded: isExpanded } : { disabled: true }}
       >
         <View style={styles.originalPriceRow}>
           <Text style={styles.originalFlag}>{meta?.flag ?? "🏷️"}</Text>

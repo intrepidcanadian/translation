@@ -60,7 +60,7 @@ function AlignedRomanizationBase({ text, langCode, textColor, romanColor, fontSi
       <View style={styles.row}>
         {pairs.map((pair, i) => (
           <RomanPair
-            key={i}
+            key={`${i}-${pair.char}`}
             char={pair.char}
             roman={pair.roman}
             textColor={textColor}

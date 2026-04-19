@@ -134,7 +134,7 @@ function ScanScreen({ route }: Props) {
     </View>
   );
 
-  const renderContent = () => {
+  const content = useMemo(() => {
     if (!isFocused) return null;
 
     switch (selectedMode) {
@@ -142,11 +142,6 @@ function ScanScreen({ route }: Props) {
         return (
           <CameraTranslator
             visible={true}
-            // No-op: CameraTranslator no longer has its own X button,
-            // because the mode pill strip above is the canonical way to
-            // switch scanner modes. Previously this jumped to "document"
-            // mode, which made the X button feel like it was opening a
-            // different section instead of closing.
             onClose={NOOP}
             sourceLangCode={sourceLangCode}
             targetLangCode={targetLang.code}
@@ -220,7 +215,7 @@ function ScanScreen({ route }: Props) {
           />
         );
     }
-  };
+  }, [isFocused, selectedMode, sourceLangCode, sourceLang.speechCode, targetLang.code, targetLang.speechCode, settings.translationProvider, settings.speechRate, settings.offlineSpeech, colors, handleCloseScanMode]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
@@ -230,7 +225,7 @@ function ScanScreen({ route }: Props) {
       <GlassBackdrop />
       <SafeAreaView style={styles.flex}>
         {renderModeStrip()}
-        {renderContent()}
+        {content}
       </SafeAreaView>
     </View>
   );
