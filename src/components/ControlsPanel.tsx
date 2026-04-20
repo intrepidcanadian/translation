@@ -277,6 +277,7 @@ function ControlsPanel({
               style={[styles.typedPreview, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder, borderLeftColor: colors.primary, borderLeftWidth: 3 }]}
               onPress={handleCopyPreview}
               activeOpacity={0.85}
+              accessibilityRole="button"
               accessibilityLiveRegion="polite"
               accessibilityLabel={`Preview: ${typedPreview}. Tap to copy.`}
             >

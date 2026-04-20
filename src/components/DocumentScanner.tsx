@@ -332,7 +332,7 @@ function DocumentScanner({
       <View style={styles.container}>
         <View style={styles.centerContent}>
           <Text style={styles.errorText}>No camera device found</Text>
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+          <TouchableOpacity style={styles.closeBtn} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close scanner" accessibilityHint="Returns to the previous screen">
             <Text style={styles.closeBtnText}>Close</Text>
           </TouchableOpacity>
         </View>
@@ -345,10 +345,10 @@ function DocumentScanner({
       <View style={styles.container}>
         <View style={styles.centerContent}>
           <Text style={styles.errorText}>Camera permission required</Text>
-          <TouchableOpacity style={styles.actionBtn} onPress={requestPermission}>
+          <TouchableOpacity style={styles.actionBtn} onPress={requestPermission} accessibilityRole="button" accessibilityLabel="Grant camera permission" accessibilityHint="Opens system permission dialog">
             <Text style={styles.actionBtnText}>Grant Permission</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+          <TouchableOpacity style={styles.closeBtn} onPress={onClose} accessibilityRole="button" accessibilityLabel="Close scanner" accessibilityHint="Returns to the previous screen">
             <Text style={styles.closeBtnText}>Close</Text>
           </TouchableOpacity>
         </View>

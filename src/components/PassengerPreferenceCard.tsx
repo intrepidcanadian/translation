@@ -322,7 +322,9 @@ function PassengerPreferenceCard({ visible, onClose, colors, initialLang }: Prop
             key={lang.code}
             style={[styles.langButton, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
             onPress={() => handleLanguageSelect(lang.code)}
+            accessibilityRole="button"
             accessibilityLabel={`Select ${lang.name}`}
+            accessibilityHint={`Set passenger language to ${lang.name}`}
           >
             <Text style={styles.langButtonFlag}>{lang.flag}</Text>
             <Text style={[styles.langButtonName, { color: colors.primaryText }]}>{lang.name}</Text>

@@ -74,7 +74,7 @@ function ChatBubble({
         <Text style={[styles.chatSpeakerLabel, { color: colors.primary }]}>
           {isB ? targetLangName : sourceLangName}
         </Text>
-        <TouchableOpacity onPress={handleCopyOriginal}>
+        <TouchableOpacity onPress={handleCopyOriginal} accessibilityRole="button" accessibilityLabel="Original text" accessibilityHint="Tap to copy original text to clipboard">
           <Text selectable style={[styles.chatOriginal, { color: colors.secondaryText }, dynamicFontSizes.chatText]}>
             {searchQuery?.trim()
               ? highlightMatches(item.original, searchQuery, { color: colors.secondaryText }, { backgroundColor: colors.primary + "30", color: colors.primaryText, borderRadius: 2 })
@@ -92,7 +92,7 @@ function ChatBubble({
         {showRomanization && item.sourceLangCode && (
           <AlignedRomanization text={item.original} langCode={item.sourceLangCode} textColor={colors.secondaryText} romanColor={colors.mutedText} fontSize={14 * fontSizeScale} />
         )}
-        <TouchableOpacity onPress={handleCopyTranslated}>
+        <TouchableOpacity onPress={handleCopyTranslated} accessibilityRole="button" accessibilityLabel="Translated text" accessibilityHint="Tap to copy translated text to clipboard">
           <Text selectable style={[styles.chatTranslated, { color: colors.translatedText }, dynamicFontSizes.chatText]}>
             {searchQuery?.trim()
               ? highlightMatches(item.translated, searchQuery, { color: colors.translatedText }, { backgroundColor: colors.primary + "30", color: colors.primaryText, borderRadius: 2 })

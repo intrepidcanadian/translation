@@ -178,6 +178,8 @@ function CameraTranslator({
     });
   }, [blockOpacities]);
 
+  const handleTogglePause = useCallback(() => setIsPaused((p) => !p), []);
+
   // Track screen dimensions for overlay mapping
   useEffect(() => {
     const sub = Dimensions.addEventListener("change", ({ window }) => {
@@ -401,15 +403,19 @@ function CameraTranslator({
               style={styles.captureButton}
               onPress={handleCapture}
               disabled={isProcessingCapture}
+              accessibilityRole="button"
               accessibilityLabel="Capture photo for translation"
+              accessibilityHint="Takes a photo and translates all visible text"
             >
               <View style={styles.captureButtonInner} />
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.topButton, isPaused && styles.topButtonActive]}
-              onPress={() => setIsPaused((p) => !p)}
+              onPress={handleTogglePause}
+              accessibilityRole="button"
               accessibilityLabel={isPaused ? "Resume scanning" : "Pause scanning"}
+              accessibilityState={{ selected: isPaused }}
             >
               <Text style={styles.topButtonText}>{isPaused ? "▶" : "||"}</Text>
             </TouchableOpacity>
@@ -433,7 +439,9 @@ function CameraTranslator({
             <TouchableOpacity
               style={styles.topButton}
               onPress={handleShareCapture}
+              accessibilityRole="button"
               accessibilityLabel="Share translated photo"
+              accessibilityHint="Opens share sheet with captured translation"
             >
               <Text style={styles.topButtonText}>↑</Text>
             </TouchableOpacity>

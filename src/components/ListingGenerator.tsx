@@ -336,7 +336,7 @@ function ListingGenerator({
           {!device ? "No camera device found" : "Camera permission required"}
         </Text>
         {!hasPermission && (
-          <TouchableOpacity onPress={requestPermission} style={[styles.permBtn, { backgroundColor: colors.primary }]}>
+          <TouchableOpacity onPress={requestPermission} style={[styles.permBtn, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Grant camera permission" accessibilityHint="Opens system permission dialog">
             <Text style={{ color: colors.destructiveText, fontWeight: "700" }}>Grant Permission</Text>
           </TouchableOpacity>
         )}
@@ -733,7 +733,9 @@ function ListingGenerator({
       <TouchableOpacity
         style={[styles.backBtn, { backgroundColor: phase === "camera" ? "rgba(0,0,0,0.5)" : colors.cardBg + "CC" }]}
         onPress={phase === "editing" ? resetToCamera : onClose}
+        accessibilityRole="button"
         accessibilityLabel={phase === "editing" ? "Retake photo" : "Close listing generator"}
+        accessibilityHint={phase === "editing" ? "Go back to camera to take a new photo" : "Returns to the scan screen"}
       >
         <Text style={[styles.backBtnText, { color: phase === "camera" ? "#fff" : colors.primaryText }]}>
           {phase === "camera" ? "✕" : "←"}

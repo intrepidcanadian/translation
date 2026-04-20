@@ -46,6 +46,7 @@ const NoteListCard = React.memo(function NoteListCard({ item, colors, onSelect, 
       style={[styles.noteCard, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
       activeOpacity={0.85}
       onPress={handleSelect}
+      accessibilityRole="button"
       accessibilityLabel={`Note: ${item.title}`}
       accessibilityHint="Open this note"
     >
