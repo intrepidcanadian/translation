@@ -26,6 +26,52 @@ function isSectionHeader(item: ListItem): item is { type: "section"; title: stri
   return "type" in item && item.type === "section";
 }
 
+const LanguageItem = React.memo(function LanguageItem({
+  item,
+  isSelected,
+  onSelect,
+  borderBottomColor,
+  selectedBg,
+  textColor,
+  selectedTextColor,
+  codeColor,
+}: {
+  item: Language;
+  isSelected: boolean;
+  onSelect: (lang: Language) => void;
+  borderBottomColor: string;
+  selectedBg: string;
+  textColor: string;
+  selectedTextColor: string;
+  codeColor: string;
+}) {
+  const handlePress = useCallback(() => onSelect(item), [onSelect, item]);
+  return (
+    <TouchableOpacity
+      style={[
+        styles.langItem,
+        { borderBottomColor },
+        isSelected && { backgroundColor: selectedBg },
+      ]}
+      onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}`}
+      accessibilityState={{ selected: isSelected }}
+    >
+      <Text
+        style={[
+          styles.langText,
+          { color: textColor },
+          isSelected && { color: selectedTextColor, fontWeight: "700" },
+        ]}
+      >
+        {item.flag} {item.name}
+      </Text>
+      <Text style={[styles.langCode, { color: codeColor }]}>{item.code.toUpperCase()}</Text>
+    </TouchableOpacity>
+  );
+});
+
 function LanguagePicker({ label, selected, onSelect, showAutoDetect, recentCodes = [], colors }: Props) {
   const [visible, setVisible] = useState(false);
   const [search, setSearch] = useState("");
@@ -75,6 +121,11 @@ function LanguagePicker({ label, selected, onSelect, showAutoDetect, recentCodes
     []
   );
 
+  const handleSelectAndClose = useCallback((lang: Language) => {
+    onSelect(lang);
+    closeModal();
+  }, [onSelect, closeModal]);
+
   const renderItem = useCallback(
     ({ item }: { item: ListItem }) => {
       if (isSectionHeader(item)) {
@@ -84,36 +135,20 @@ function LanguagePicker({ label, selected, onSelect, showAutoDetect, recentCodes
           </View>
         );
       }
-      const isItemSelected = item.code === selected.code;
       return (
-        <TouchableOpacity
-          style={[
-            styles.langItem,
-            { borderBottomColor: colors.borderLight },
-            isItemSelected && { backgroundColor: colors.cardBg },
-          ]}
-          onPress={() => {
-            onSelect(item);
-            closeModal();
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={`${item.name}`}
-          accessibilityState={{ selected: isItemSelected }}
-        >
-          <Text
-            style={[
-              styles.langText,
-              { color: colors.secondaryText },
-              isItemSelected && { color: colors.primary, fontWeight: "700" },
-            ]}
-          >
-            {item.flag} {item.name}
-          </Text>
-          <Text style={[styles.langCode, { color: colors.dimText }]}>{item.code.toUpperCase()}</Text>
-        </TouchableOpacity>
+        <LanguageItem
+          item={item}
+          isSelected={item.code === selected.code}
+          onSelect={handleSelectAndClose}
+          borderBottomColor={colors.borderLight}
+          selectedBg={colors.cardBg}
+          textColor={colors.secondaryText}
+          selectedTextColor={colors.primary}
+          codeColor={colors.dimText}
+        />
       );
     },
-    [selected.code, colors.sectionBg, colors.primary, colors.borderLight, colors.cardBg, colors.secondaryText, colors.dimText, onSelect, closeModal]
+    [selected.code, colors.sectionBg, colors.primary, colors.borderLight, colors.cardBg, colors.secondaryText, colors.dimText, handleSelectAndClose]
   );
 
   const emptyComponent = useMemo(

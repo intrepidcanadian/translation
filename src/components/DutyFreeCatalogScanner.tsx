@@ -508,7 +508,7 @@ function DutyFreeCatalogScanner({
 
         {products.map((product, idx) => (
           <ProductCard
-            key={idx}
+            key={`${idx}-${product.name}`}
             product={product}
             index={idx}
             isExpanded={expandedProduct === idx}

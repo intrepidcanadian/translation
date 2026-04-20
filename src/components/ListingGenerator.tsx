@@ -461,8 +461,8 @@ function ListingGenerator({
               {/* Detected specs */}
               {draft.insights.keySpecs.length > 0 && (
                 <View style={styles.specsGrid}>
-                  {draft.insights.keySpecs.slice(0, 6).map((spec, i) => (
-                    <View key={i} style={[styles.specItem, { backgroundColor: colors.sectionBg }]}>
+                  {draft.insights.keySpecs.slice(0, 6).map((spec) => (
+                    <View key={spec.label} style={[styles.specItem, { backgroundColor: colors.sectionBg }]}>
                       <Text style={[styles.specLabel, { color: colors.dimText }]}>{spec.label}</Text>
                       <Text style={[styles.specValue, { color: colors.primaryText }]}>{spec.value}</Text>
                     </View>
@@ -474,9 +474,9 @@ function ListingGenerator({
               {draft.insights.detectedPrices.length > 0 && (
                 <View style={styles.insightsRow}>
                   <Text style={[styles.insightPriceLabel, { color: colors.dimText }]}>Detected prices: </Text>
-                  {draft.insights.detectedPrices.slice(0, 3).map((p, i) => (
+                  {draft.insights.detectedPrices.slice(0, 3).map((p) => (
                     <TouchableOpacity
-                      key={i}
+                      key={p}
                       style={[styles.priceBubble, { backgroundColor: colors.warningBg }]}
                       onPress={() => {
                         const numericPrice = p.replace(/[^0-9.]/g, "");
@@ -707,13 +707,7 @@ function ListingGenerator({
           <View style={styles.actionsRow}>
             <TouchableOpacity
               style={[styles.actionBtn, { backgroundColor: colors.cardBg, borderColor: colors.border, borderWidth: 1 }]}
-              onPress={() => {
-                const fullText = formatListingForShare(
-                  { ...draft, title: editTitle, description: editDescription, price: price || undefined },
-                  !!draft.translatedTitle
-                );
-                handleCopy(fullText, "fullListing");
-              }}
+              onPress={handleCopyAll}
               accessibilityRole="button"
               accessibilityLabel="Copy entire listing"
               accessibilityHint="Copy the full formatted listing to clipboard"

@@ -99,8 +99,8 @@ function ResultsPhase({
                selectedMode === "textbook" ? "Content Summary" :
                "Key Information"}
             </Text>
-            {modeFields.map((field, i) => (
-              <FieldRow key={i} field={field} colors={colors} onCopy={onCopy} copiedText={copiedText} />
+            {modeFields.map((field) => (
+              <FieldRow key={`${field.label}-${field.value}`} field={field} colors={colors} onCopy={onCopy} copiedText={copiedText} />
             ))}
           </View>
         )}
@@ -236,8 +236,8 @@ const EntityRow = React.memo(function EntityRow({
       <View style={entityStyles.content}>
         <Text style={[entityStyles.label, { color: colors.dimText }]}>{label}</Text>
         <View style={entityStyles.chips}>
-          {items.map((item, i) => (
-            <View key={i} style={[entityStyles.chip, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
+          {items.map((item) => (
+            <View key={`${label}-${item}`} style={[entityStyles.chip, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
               <Text style={[entityStyles.chipText, { color: colors.primaryText }]} numberOfLines={1}>
                 {item}
               </Text>
