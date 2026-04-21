@@ -110,6 +110,12 @@ function GlossaryModal({
     [glossary, sourceLangCode, targetLangCode],
   );
 
+  const glossaryIndexMap = useMemo(() => {
+    const map = new Map<GlossaryEntry, number>();
+    glossary.forEach((entry, idx) => map.set(entry, idx));
+    return map;
+  }, [glossary]);
+
   const keyExtractor = useCallback(
     (item: GlossaryEntry) => `${item.sourceLang}|${item.targetLang}|${item.source}`,
     [],
@@ -117,7 +123,7 @@ function GlossaryModal({
 
   const renderItem = useCallback(
     ({ item }: { item: GlossaryEntry }) => {
-      const realIndex = glossary.indexOf(item);
+      const realIndex = glossaryIndexMap.get(item) ?? -1;
       return (
         <GlossaryEntryRow
           item={item}
@@ -127,7 +133,7 @@ function GlossaryModal({
         />
       );
     },
-    [glossary, onRemove, colors],
+    [glossaryIndexMap, onRemove, colors],
   );
 
   const handleExportCSV = useCallback(async () => {

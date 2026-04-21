@@ -29,7 +29,7 @@ const ResultRow = React.memo(function ResultRow({
       <Text style={[modalStyles.label, { color: colors.primary }]}>{result.provider.toUpperCase()}</Text>
       {result.loading ? (
         <View accessibilityLiveRegion="polite" accessibilityLabel={`Loading ${result.provider} translation`}>
-          <Text style={[{ color: colors.dimText, fontStyle: "italic", fontSize: 15 }]}>Loading...</Text>
+          <Text style={[styles.loadingText, { color: colors.dimText }]}>Loading...</Text>
         </View>
       ) : (
         <TouchableOpacity
@@ -38,7 +38,7 @@ const ResultRow = React.memo(function ResultRow({
           accessibilityLabel={`Copy ${result.provider} translation: ${result.text}`}
           accessibilityHint="Tap to copy this translation to clipboard"
         >
-          <Text style={[{ color: colors.translatedText, fontSize: 15 }]}>{result.text}</Text>
+          <Text style={[styles.resultText, { color: colors.translatedText }]}>{result.text}</Text>
           {copiedText === result.text && <Text style={styles.copiedBadge}>Copied!</Text>}
         </TouchableOpacity>
       )}
@@ -68,7 +68,7 @@ function ComparisonModal({ visible, data, onClose, onCopy, copiedText, colors }:
             <>
               <View style={[modalStyles.infoBox, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
                 <Text style={[modalStyles.label, { color: colors.dimText }]}>ORIGINAL</Text>
-                <Text style={[{ color: colors.primaryText, fontSize: 15 }]}>{data.original}</Text>
+                <Text style={[styles.originalText, { color: colors.primaryText }]}>{data.original}</Text>
               </View>
               {data.results.map((r) => (
                 <ResultRow
@@ -88,7 +88,7 @@ function ComparisonModal({ visible, data, onClose, onCopy, copiedText, colors }:
             accessibilityLabel="Close comparison"
             accessibilityHint="Returns to the translation screen"
           >
-            <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" }]}>Done</Text>
+            <Text style={[styles.doneText, { color: colors.primary }]}>Done</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -110,5 +110,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     marginTop: 6,
+  },
+  loadingText: {
+    fontStyle: "italic" as const,
+    fontSize: 15,
+  },
+  resultText: {
+    fontSize: 15,
+  },
+  originalText: {
+    fontSize: 15,
+  },
+  doneText: {
+    fontSize: 17,
+    fontWeight: "600" as const,
   },
 });

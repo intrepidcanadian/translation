@@ -40,7 +40,7 @@ const AlternativeRow = React.memo(function AlternativeRow({
       accessibilityLabel={`Alternative: ${alt.translation}${alt.quality > 0 ? `, ${alt.quality}% quality` : ""}`}
       accessibilityHint="Tap to copy this alternative translation"
     >
-      <View style={{ flex: 1 }}>
+      <View style={styles.altContent}>
         <Text style={[styles.altTranslation, { color: colors.translatedText }]}>{alt.translation}</Text>
         <Text style={[styles.altSource, { color: colors.dimText }]}>{alt.source}</Text>
       </View>
@@ -73,15 +73,15 @@ function WordAlternativesModal({ visible, data, onClose, onCopy, copiedText, col
               <Text style={[modalStyles.title, { color: colors.titleText }]}>Word Lookup</Text>
               <View style={[modalStyles.infoBox, { backgroundColor: colors.bubbleBg, borderColor: colors.border }]}>
                 <Text style={[modalStyles.label, { color: colors.dimText }]}>WORD</Text>
-                <Text style={[{ color: colors.primaryText, fontSize: 20, fontWeight: "700" as const }]}>{data.word}</Text>
+                <Text style={[styles.wordText, { color: colors.primaryText }]}>{data.word}</Text>
               </View>
               {data.loading ? (
-                <View style={{ paddingVertical: 30, alignItems: "center" as const }}>
-                  <Text style={[{ color: colors.dimText, fontStyle: "italic" as const, fontSize: 15 }]}>Looking up alternatives...</Text>
+                <View style={styles.statusContainer}>
+                  <Text style={[styles.loadingText, { color: colors.dimText }]}>Looking up alternatives...</Text>
                 </View>
               ) : data.alternatives.length === 0 ? (
-                <View style={{ paddingVertical: 30, alignItems: "center" as const }}>
-                  <Text style={[{ color: colors.dimText, fontSize: 15 }]}>No alternatives found</Text>
+                <View style={styles.statusContainer}>
+                  <Text style={[styles.emptyText, { color: colors.dimText }]}>No alternatives found</Text>
                 </View>
               ) : (
                 <FlatList
@@ -91,7 +91,7 @@ function WordAlternativesModal({ visible, data, onClose, onCopy, copiedText, col
                   renderItem={renderAltItem}
                 />
               )}
-              {copiedText && <Text style={[styles.copiedBadge, { textAlign: "center" as const }]} accessibilityLiveRegion="polite">Copied!</Text>}
+              {copiedText && <Text style={[styles.copiedBadge, styles.copiedBadgeCenter]} accessibilityLiveRegion="polite">Copied!</Text>}
             </>
           )}
           <TouchableOpacity
@@ -100,7 +100,7 @@ function WordAlternativesModal({ visible, data, onClose, onCopy, copiedText, col
             accessibilityRole="button"
             accessibilityLabel="Close word lookup"
           >
-            <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
+            <Text style={[styles.doneText, { color: colors.primary }]}>Done</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -145,5 +145,30 @@ const styles = StyleSheet.create({
   altQualityText: {
     fontSize: 12,
     fontWeight: "700" as const,
+  },
+  altContent: {
+    flex: 1,
+  },
+  wordText: {
+    fontSize: 20,
+    fontWeight: "700" as const,
+  },
+  statusContainer: {
+    paddingVertical: 30,
+    alignItems: "center" as const,
+  },
+  loadingText: {
+    fontStyle: "italic" as const,
+    fontSize: 15,
+  },
+  emptyText: {
+    fontSize: 15,
+  },
+  copiedBadgeCenter: {
+    textAlign: "center" as const,
+  },
+  doneText: {
+    fontSize: 17,
+    fontWeight: "600" as const,
   },
 });

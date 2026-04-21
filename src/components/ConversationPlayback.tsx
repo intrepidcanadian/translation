@@ -52,9 +52,14 @@ const ConversationItemRow = React.memo(function ConversationItemRow({
           styles.speakerBadge,
           { backgroundColor: speakerColor + "22" },
         ]}
+        accessible={true}
+        accessibilityRole="text"
+        accessibilityLabel={`Speaker ${item.speaker}`}
+        accessibilityHint={item.speaker === "A" ? "Source language speaker" : "Target language speaker"}
       >
         <Text
           style={[styles.speakerLabel, { color: speakerColor }]}
+          importantForAccessibility="no"
         >
           {item.speaker}
         </Text>
@@ -168,7 +173,7 @@ const SessionCard = React.memo(function SessionCard({
             accessibilityRole="button"
             accessibilityLabel={isSessionPlaying && isPlaying ? "Pause playback" : "Play conversation"}
           >
-            <Text style={{ fontSize: 16, color: "#fff" }}>{isSessionPlaying && isPlaying ? "⏸" : "▶"}</Text>
+            <Text style={styles.actionBtnIcon}>{isSessionPlaying && isPlaying ? "⏸" : "▶"}</Text>
           </TouchableOpacity>
           {isSessionPlaying && isPlaying && (
             <TouchableOpacity
@@ -177,7 +182,7 @@ const SessionCard = React.memo(function SessionCard({
               accessibilityRole="button"
               accessibilityLabel="Stop playback"
             >
-              <Text style={{ fontSize: 16, color: "#fff" }}>⏹</Text>
+              <Text style={styles.actionBtnIcon}>⏹</Text>
             </TouchableOpacity>
           )}
           <TouchableOpacity
@@ -191,7 +196,7 @@ const SessionCard = React.memo(function SessionCard({
             {exporting ? (
               <ActivityIndicator size="small" color={colors.primary} />
             ) : (
-              <Text style={{ fontSize: 16, color: colors.primary }}>PDF</Text>
+              <Text style={[styles.actionBtnText, { color: colors.primary }]}>PDF</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -201,7 +206,7 @@ const SessionCard = React.memo(function SessionCard({
         <View style={styles.itemList}>
           {session.items.map((item, idx) => (
             <ConversationItemRow
-              key={`${session.id}-${idx}`}
+              key={`${session.id}-${item.timestamp ?? idx}-${item.speaker}`}
               item={item}
               isActive={isSessionPlaying && isPlaying && idx === currentItemIdx}
               colors={colors}
@@ -420,13 +425,13 @@ function ConversationPlayback({
             Conversation History
           </Text>
           <TouchableOpacity onPress={handleClose} style={styles.closeBtn} accessibilityRole="button" accessibilityLabel="Close conversation history">
-            <Text style={{ fontSize: 20, fontWeight: "700", color: colors.primaryText }}>X</Text>
+            <Text style={[styles.closeBtnText, { color: colors.primaryText }]}>X</Text>
           </TouchableOpacity>
         </View>
 
         {sessions.length === 0 ? (
           <View style={styles.emptyState}>
-            <Text style={{ fontSize: 40 }}>💬</Text>
+            <Text style={styles.emptyIcon}>💬</Text>
             <Text style={[styles.emptyText, { color: colors.dimText }]}>
               No conversation sessions yet.{"\n"}Use conversation mode to start
               recording.
@@ -563,6 +568,20 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 12,
     lineHeight: 22,
+  },
+  actionBtnIcon: {
+    fontSize: 16,
+    color: "#fff",
+  },
+  actionBtnText: {
+    fontSize: 16,
+  },
+  closeBtnText: {
+    fontSize: 20,
+    fontWeight: "700" as const,
+  },
+  emptyIcon: {
+    fontSize: 40,
   },
 });
 
