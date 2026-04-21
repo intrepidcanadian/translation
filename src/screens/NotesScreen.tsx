@@ -198,13 +198,23 @@ function NotesScreen() {
         <Modal visible animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setSelectedNote(null)}>
           <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
             <View style={[styles.header, { backgroundColor: colors.cardBg, borderBottomColor: colors.border }]}>
-              <TouchableOpacity onPress={() => setSelectedNote(null)}>
+              <TouchableOpacity
+                onPress={() => setSelectedNote(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Back"
+                accessibilityHint="Return to notes list"
+              >
                 <Text style={[styles.headerAction, { color: colors.primary }]}>Back</Text>
               </TouchableOpacity>
               <Text style={[styles.headerTitle, { color: colors.titleText }]} numberOfLines={1}>
                 {mode.icon} {mode.label}
               </Text>
-              <TouchableOpacity onPress={() => handleShare(selectedNote)}>
+              <TouchableOpacity
+                onPress={() => handleShare(selectedNote)}
+                accessibilityRole="button"
+                accessibilityLabel="Share note"
+                accessibilityHint="Share this note via system share sheet"
+              >
                 <Text style={[styles.headerAction, { color: colors.primary }]}>Share</Text>
               </TouchableOpacity>
             </View>

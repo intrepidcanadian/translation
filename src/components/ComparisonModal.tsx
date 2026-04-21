@@ -1,5 +1,6 @@
 import React, { useCallback } from "react";
 import { Modal, View, Text, TouchableOpacity, StyleSheet } from "react-native";
+// View already imported above — no change needed
 import type { ThemeColors } from "../theme";
 import { modalStyles } from "../styles/modalStyles";
 
@@ -27,7 +28,9 @@ const ResultRow = React.memo(function ResultRow({
     <View style={[styles.compareResult, { backgroundColor: colors.translatedBubbleBg, borderColor: colors.border }]}>
       <Text style={[modalStyles.label, { color: colors.primary }]}>{result.provider.toUpperCase()}</Text>
       {result.loading ? (
-        <Text style={[{ color: colors.dimText, fontStyle: "italic", fontSize: 15 }]}>Loading...</Text>
+        <View accessibilityLiveRegion="polite" accessibilityLabel={`Loading ${result.provider} translation`}>
+          <Text style={[{ color: colors.dimText, fontStyle: "italic", fontSize: 15 }]}>Loading...</Text>
+        </View>
       ) : (
         <TouchableOpacity
           onPress={handleCopy}
