@@ -553,9 +553,9 @@ function SettingsModal({ visible, onClose, settings, onUpdate }: Props) {
     }
   }, []);
 
-  const toggle = (key: keyof Settings) => {
+  const toggle = useCallback((key: keyof Settings) => {
     onUpdate({ ...settings, [key]: !settings[key] });
-  };
+  }, [settings, onUpdate]);
 
   const dynamicStyles = useMemo(() => ({
     overlay: { backgroundColor: colors.overlayBg },

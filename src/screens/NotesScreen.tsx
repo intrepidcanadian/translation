@@ -34,11 +34,15 @@ interface NoteCardProps {
 
 const NoteCard = memo(function NoteCard({ item, colors, onPress, onDelete }: NoteCardProps) {
   const mode = getScannerMode(item.scanMode);
+  const handlePress = useCallback(() => onPress(item), [onPress, item]);
+  const handleDelete = useCallback(() => onDelete(item.id), [onDelete, item.id]);
   return (
     <TouchableOpacity
       style={[styles.noteCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
-      onPress={() => onPress(item)}
+      onPress={handlePress}
+      accessibilityRole="button"
       accessibilityLabel={`Note: ${item.title}`}
+      accessibilityHint="Opens note detail view"
     >
       <View style={styles.noteCardHeader}>
         <Text style={styles.noteCardIcon}>{mode.icon}</Text>
@@ -49,9 +53,11 @@ const NoteCard = memo(function NoteCard({ item, colors, onPress, onDelete }: Not
           </Text>
         </View>
         <TouchableOpacity
-          onPress={() => onDelete(item.id)}
+          onPress={handleDelete}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          accessibilityRole="button"
           accessibilityLabel="Delete note"
+          accessibilityHint="Permanently deletes this note"
         >
           <Text style={[styles.deleteIcon, { color: colors.dimText }]}>X</Text>
         </TouchableOpacity>
@@ -237,7 +243,12 @@ function NotesScreen() {
                       </TouchableOpacity>
                     </View>
                   ) : (
-                    <TouchableOpacity onPress={() => { setEditingTitle(true); setTitleDraft(selectedNote.title); }}>
+                    <TouchableOpacity
+                      onPress={() => { setEditingTitle(true); setTitleDraft(selectedNote.title); }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Edit title: ${selectedNote.title}`}
+                      accessibilityHint="Tap to edit the note title"
+                    >
                       <Text style={[styles.noteDetailTitle, { color: colors.titleText }]}>{selectedNote.title}</Text>
                       <Text style={[styles.editHint, { color: colors.dimText }]}>Tap to edit title</Text>
                     </TouchableOpacity>
@@ -259,7 +270,14 @@ function NotesScreen() {
                     {selectedNote.fields.map((f) => {
                       const fieldKey = `${f.label}-${f.value}`;
                       return (
-                        <TouchableOpacity key={fieldKey} style={styles.fieldRow} onPress={() => handleCopy(f.value, fieldKey)}>
+                        <TouchableOpacity
+                          key={fieldKey}
+                          style={styles.fieldRow}
+                          onPress={() => handleCopy(f.value, fieldKey)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${f.label}: ${f.value}`}
+                          accessibilityHint="Tap to copy this field value"
+                        >
                           <Text style={[styles.fieldLabel, { color: colors.dimText }]}>{f.label}</Text>
                           <Text style={[styles.fieldValue, { color: colors.primaryText }]}>
                             {copiedId === fieldKey ? "Copied!" : f.value}
@@ -273,7 +291,12 @@ function NotesScreen() {
                 <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
                   <View style={styles.sectionHeader}>
                     <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Translation</Text>
-                    <TouchableOpacity onPress={() => handleCopy(selectedNote.translatedText, "translated")}>
+                    <TouchableOpacity
+                      onPress={() => handleCopy(selectedNote.translatedText, "translated")}
+                      accessibilityRole="button"
+                      accessibilityLabel="Copy translation"
+                      accessibilityHint="Copies the translated text to clipboard"
+                    >
                       <Text style={[styles.headerAction, { color: colors.primary }]}>
                         {copiedId === "translated" ? "Copied!" : "Copy"}
                       </Text>
@@ -287,7 +310,12 @@ function NotesScreen() {
                 <View style={[styles.section, { backgroundColor: colors.cardBg, borderColor: colors.border }]}>
                   <View style={styles.sectionHeader}>
                     <Text style={[styles.sectionTitle, { color: colors.titleText }]}>Original</Text>
-                    <TouchableOpacity onPress={() => handleCopy(selectedNote.originalText, "original")}>
+                    <TouchableOpacity
+                      onPress={() => handleCopy(selectedNote.originalText, "original")}
+                      accessibilityRole="button"
+                      accessibilityLabel="Copy original text"
+                      accessibilityHint="Copies the original scanned text to clipboard"
+                    >
                       <Text style={[styles.headerAction, { color: colors.primary }]}>
                         {copiedId === "original" ? "Copied!" : "Copy"}
                       </Text>
@@ -298,7 +326,13 @@ function NotesScreen() {
                   </Text>
                 </View>
 
-                <TouchableOpacity style={[styles.deleteButton, { backgroundColor: colors.destructiveBg }]} onPress={() => handleDelete(selectedNote.id)}>
+                <TouchableOpacity
+                  style={[styles.deleteButton, { backgroundColor: colors.destructiveBg }]}
+                  onPress={() => handleDelete(selectedNote.id)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete note"
+                  accessibilityHint="Permanently deletes this note after confirmation"
+                >
                   <Text style={[styles.deleteButtonText, { color: colors.destructiveText }]}>Delete Note</Text>
                 </TouchableOpacity>
                 <View style={{ height: 40 }} />
@@ -332,7 +366,12 @@ function NotesScreen() {
           returnKeyType="search"
         />
         {search.length > 0 && (
-          <TouchableOpacity onPress={() => setSearch("")}>
+          <TouchableOpacity
+            onPress={() => setSearch("")}
+            accessibilityRole="button"
+            accessibilityLabel="Clear search"
+            accessibilityHint="Clears the search field"
+          >
             <Text style={[styles.clearSearch, { color: colors.dimText }]}>X</Text>
           </TouchableOpacity>
         )}

@@ -86,7 +86,7 @@ function WordAlternativesModal({ visible, data, onClose, onCopy, copiedText, col
               ) : (
                 <FlatList
                   data={data.alternatives}
-                  keyExtractor={(_, i) => String(i)}
+                  keyExtractor={(item, i) => `${i}-${item.translation}-${item.source}`}
                   style={{ maxHeight: 300 }}
                   renderItem={renderAltItem}
                 />

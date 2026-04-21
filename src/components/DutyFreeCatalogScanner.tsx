@@ -195,7 +195,7 @@ const ProductCard = React.memo(function ProductCard({
             </View>
           )}
           {product.prices.map((price, pi) => (
-            <View key={pi} style={styles.priceComparisonBlock}>
+            <View key={`${pi}-${price.currency}-${price.amount}`} style={styles.priceComparisonBlock}>
               <Text style={[styles.priceComparisonTitle, { color: colors.primaryText }]}>
                 💱 {CURRENCIES[price.currency]?.flag} {CURRENCIES[price.currency]?.symbol}{price.amount.toLocaleString()} {price.currency}
               </Text>
@@ -407,6 +407,15 @@ function DutyFreeCatalogScanner({
     }
   }, [products, ratesAge]);
 
+  const handleBackToScanner = useCallback(() => {
+    setPhase("camera");
+    setError(null);
+  }, []);
+
+  const handleCopyTranslatedText = useCallback(() => {
+    if (translatedText) copyText(translatedText);
+  }, [translatedText, copyText]);
+
   if (!visible) return null;
 
   if (!device || !hasPermission) {
@@ -492,7 +501,7 @@ function DutyFreeCatalogScanner({
     <View style={{ flex: 1, backgroundColor: colors.containerBg }}>
       {/* Fixed header */}
       <View style={[styles.resultsHeader, { backgroundColor: colors.containerBg, borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={() => { setPhase("camera"); setError(null); }} accessibilityRole="button" accessibilityLabel="Back to scanner">
+        <TouchableOpacity onPress={handleBackToScanner} accessibilityRole="button" accessibilityLabel="Back to scanner" accessibilityHint="Returns to camera to scan another page">
           <Text style={[styles.headerBackText, { color: colors.primary }]}>← Scan</Text>
         </TouchableOpacity>
         <Text style={[styles.resultsTitle, { color: colors.titleText }]}>🛍️ {totalItems} Product{totalItems !== 1 ? "s" : ""}</Text>
@@ -523,7 +532,7 @@ function DutyFreeCatalogScanner({
         {translatedText && (
           <TouchableOpacity
             style={[styles.fullTextCard, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
-            onPress={() => copyText(translatedText)}
+            onPress={handleCopyTranslatedText}
             activeOpacity={0.7}
             accessibilityRole="button"
             accessibilityLabel="Full translation text"
