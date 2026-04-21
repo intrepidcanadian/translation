@@ -57,6 +57,55 @@ const CategoryPill = React.memo(function CategoryPill({
   );
 });
 
+interface PhraseItemProps {
+  phrase: OfflinePhrase;
+  sourceLangCode: string;
+  targetLangCode: string;
+  onCopy: (text: string) => void;
+  onSpeak: (text: string, langCode: string) => void;
+  colors: ThemeColors;
+}
+
+const PhraseItem = React.memo(function PhraseItem({
+  phrase,
+  sourceLangCode,
+  targetLangCode,
+  onCopy,
+  onSpeak,
+  colors,
+}: PhraseItemProps) {
+  const srcText = (sourceLangCode in phrase ? phrase[sourceLangCode as PhraseLangCode] : phrase.en);
+  const tgtText = (targetLangCode in phrase ? phrase[targetLangCode as PhraseLangCode] : "");
+  const handlePress = useCallback(() => {
+    if (tgtText) {
+      onCopy(tgtText);
+      impactLight();
+    }
+  }, [tgtText, onCopy]);
+  const handleLongPress = useCallback(() => {
+    if (tgtText) {
+      onSpeak(tgtText, targetLangCode);
+    }
+  }, [tgtText, onSpeak, targetLangCode]);
+  return (
+    <TouchableOpacity
+      style={[styles.phraseItem, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
+      activeOpacity={0.85}
+      onPress={handlePress}
+      onLongPress={handleLongPress}
+      accessibilityRole="button"
+      accessibilityLabel={`${srcText} translates to ${tgtText}. Tap to copy, long press to speak.`}
+    >
+      <Text style={[styles.phraseSrcText, { color: colors.secondaryText }]}>{srcText}</Text>
+      {tgtText ? (
+        <Text style={[styles.phraseTgtText, { color: colors.translatedText }]}>{tgtText}</Text>
+      ) : (
+        <Text style={[styles.phraseTgtText, { color: colors.dimText, fontStyle: "italic" }]}>Not available</Text>
+      )}
+    </TouchableOpacity>
+  );
+});
+
 interface PhrasebookModalProps {
   visible: boolean;
   onClose: () => void;
@@ -138,36 +187,16 @@ function PhrasebookModal({
   );
 
   const renderPhrase = useCallback(
-    ({ item: phrase }: { item: OfflinePhrase }) => {
-      const srcText = (sourceLangCode in phrase ? phrase[sourceLangCode as PhraseLangCode] : phrase.en);
-      const tgtText = (targetLangCode in phrase ? phrase[targetLangCode as PhraseLangCode] : "");
-      return (
-        <TouchableOpacity
-          style={[styles.phraseItem, glassSurface, { backgroundColor: colors.glassBg, borderColor: colors.glassBorder }]}
-          activeOpacity={0.85}
-          onPress={() => {
-            if (tgtText) {
-              onCopy(tgtText);
-              impactLight();
-            }
-          }}
-          onLongPress={() => {
-            if (tgtText) {
-              onSpeak(tgtText, targetLangCode);
-            }
-          }}
-          accessibilityRole="button"
-          accessibilityLabel={`${srcText} translates to ${tgtText}. Tap to copy, long press to speak.`}
-        >
-          <Text style={[styles.phraseSrcText, { color: colors.secondaryText }]}>{srcText}</Text>
-          {tgtText ? (
-            <Text style={[styles.phraseTgtText, { color: colors.translatedText }]}>{tgtText}</Text>
-          ) : (
-            <Text style={[styles.phraseTgtText, { color: colors.dimText, fontStyle: "italic" }]}>Not available</Text>
-          )}
-        </TouchableOpacity>
-      );
-    },
+    ({ item: phrase }: { item: OfflinePhrase }) => (
+      <PhraseItem
+        phrase={phrase}
+        sourceLangCode={sourceLangCode}
+        targetLangCode={targetLangCode}
+        onCopy={onCopy}
+        onSpeak={onSpeak}
+        colors={colors}
+      />
+    ),
     [sourceLangCode, targetLangCode, onCopy, onSpeak, colors],
   );
 

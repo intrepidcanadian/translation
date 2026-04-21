@@ -11,6 +11,7 @@
  */
 
 import * as Localization from "expo-localization";
+import { logger } from "./logger";
 
 export type UILocale = "en" | "es" | "fr" | "de" | "zh" | "ja" | "pt";
 
@@ -322,8 +323,8 @@ function detectLocale(): UILocale {
       const code = (loc.languageCode || "").toLowerCase();
       if (code && (code in LOCALES)) return code as UILocale;
     }
-  } catch {
-    // fall through
+  } catch (err) {
+    logger.warn("Settings", "Failed to detect device locale", err);
   }
   return "en";
 }

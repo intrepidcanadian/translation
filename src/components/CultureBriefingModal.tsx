@@ -595,6 +595,90 @@ const PhraseCard = React.memo(function PhraseCard({
   );
 });
 
+const RoutePill = React.memo(function RoutePill({
+  group,
+  isActive,
+  onSelect,
+  colors,
+}: {
+  group: { id: string; label: string; icon: string };
+  isActive: boolean;
+  onSelect: (routeId: string) => void;
+  colors: ThemeColors;
+}) {
+  const handlePress = useCallback(() => onSelect(group.id), [onSelect, group.id]);
+  return (
+    <TouchableOpacity
+      key={group.id}
+      style={[styles.routePill, { backgroundColor: isActive ? colors.primary : colors.cardBg, borderColor: isActive ? colors.primary : colors.border }]}
+      onPress={handlePress}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: isActive }}
+      accessibilityLabel={`${group.label} route`}
+      accessibilityHint={isActive ? "Currently selected route" : `Switch to ${group.label} passenger profiles`}
+    >
+      <Text style={styles.routePillIcon} importantForAccessibility="no">{group.icon}</Text>
+      <Text style={[styles.routePillLabel, { color: isActive ? "#fff" : colors.mutedText }]}>{group.label}</Text>
+    </TouchableOpacity>
+  );
+});
+
+const ProfilePill = React.memo(function ProfilePill({
+  profile,
+  isActive,
+  onSelect,
+  colors,
+}: {
+  profile: PassengerProfile;
+  isActive: boolean;
+  onSelect: (profileId: string) => void;
+  colors: ThemeColors;
+}) {
+  const handlePress = useCallback(() => onSelect(profile.id), [onSelect, profile.id]);
+  return (
+    <TouchableOpacity
+      key={profile.id}
+      style={[styles.profilePill, { backgroundColor: isActive ? primaryAlpha.faint : "transparent", borderColor: isActive ? colors.primary : colors.borderLight }]}
+      onPress={handlePress}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: isActive }}
+      accessibilityLabel={`${profile.groupName} passenger profile`}
+      accessibilityHint={isActive ? "Currently selected profile" : `View cultural tips for ${profile.groupName} passengers`}
+    >
+      <Text style={styles.profilePillFlag} importantForAccessibility="no">{profile.flag}</Text>
+      <Text style={[styles.profilePillLabel, { color: isActive ? colors.primary : colors.secondaryText }]}>{profile.groupName}</Text>
+    </TouchableOpacity>
+  );
+});
+
+const SectionTabPill = React.memo(function SectionTabPill({
+  tab,
+  isActive,
+  onSelect,
+  colors,
+}: {
+  tab: { key: SectionTab; label: string; icon: string };
+  isActive: boolean;
+  onSelect: (key: SectionTab) => void;
+  colors: ThemeColors;
+}) {
+  const handlePress = useCallback(() => { impactLight(); onSelect(tab.key); }, [onSelect, tab.key]);
+  return (
+    <TouchableOpacity
+      key={tab.key}
+      style={[styles.sectionTab, isActive && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
+      onPress={handlePress}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: isActive }}
+      accessibilityLabel={`${tab.label} section`}
+      accessibilityHint={isActive ? `Viewing ${tab.label.toLowerCase()} information` : `Switch to ${tab.label.toLowerCase()} information`}
+    >
+      <Text style={styles.sectionTabIcon} importantForAccessibility="no">{tab.icon}</Text>
+      <Text style={[styles.sectionTabLabel, { color: isActive ? colors.primary : colors.mutedText }]}>{tab.label}</Text>
+    </TouchableOpacity>
+  );
+});
+
 // ---------- Component ----------
 
 interface Props {
@@ -713,45 +797,17 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
 
         {/* Route selector */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.routeStrip} contentContainerStyle={styles.routeStripContent} accessibilityRole="tablist">
-          {ROUTE_GROUPS.map((group) => {
-            const isActive = group.id === selectedRoute;
-            return (
-              <TouchableOpacity
-                key={group.id}
-                style={[styles.routePill, { backgroundColor: isActive ? colors.primary : colors.cardBg, borderColor: isActive ? colors.primary : colors.border }]}
-                onPress={() => handleRouteSelect(group.id)}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: isActive }}
-                accessibilityLabel={`${group.label} route`}
-                accessibilityHint={isActive ? "Currently selected route" : `Switch to ${group.label} passenger profiles`}
-              >
-                <Text style={styles.routePillIcon} importantForAccessibility="no">{group.icon}</Text>
-                <Text style={[styles.routePillLabel, { color: isActive ? "#fff" : colors.mutedText }]}>{group.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
+          {ROUTE_GROUPS.map((group) => (
+            <RoutePill key={group.id} group={group} isActive={group.id === selectedRoute} onSelect={handleRouteSelect} colors={colors} />
+          ))}
         </ScrollView>
 
         {/* Profile tabs (if route has multiple) */}
         {profileList.length > 1 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.profileStrip} contentContainerStyle={styles.profileStripContent}>
-            {profileList.map((profile) => {
-              const isActive = profile.id === currentProfile?.id;
-              return (
-                <TouchableOpacity
-                  key={profile.id}
-                  style={[styles.profilePill, { backgroundColor: isActive ? primaryAlpha.faint : "transparent", borderColor: isActive ? colors.primary : colors.borderLight }]}
-                  onPress={() => handleProfileSelect(profile.id)}
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: isActive }}
-                  accessibilityLabel={`${profile.groupName} passenger profile`}
-                  accessibilityHint={isActive ? "Currently selected profile" : `View cultural tips for ${profile.groupName} passengers`}
-                >
-                  <Text style={styles.profilePillFlag} importantForAccessibility="no">{profile.flag}</Text>
-                  <Text style={[styles.profilePillLabel, { color: isActive ? colors.primary : colors.secondaryText }]}>{profile.groupName}</Text>
-                </TouchableOpacity>
-              );
-            })}
+            {profileList.map((profile) => (
+              <ProfilePill key={profile.id} profile={profile} isActive={profile.id === currentProfile?.id} onSelect={handleProfileSelect} colors={colors} />
+            ))}
           </ScrollView>
         )}
 
@@ -768,23 +824,9 @@ function CultureBriefingModal({ visible, onClose, colors, initialRoute }: Props)
 
         {/* Section tabs */}
         <View style={[styles.sectionTabs, { borderBottomColor: colors.border }]} accessibilityRole="tablist">
-          {SECTION_TABS.map((tab) => {
-            const isActive = tab.key === activeSection;
-            return (
-              <TouchableOpacity
-                key={tab.key}
-                style={[styles.sectionTab, isActive && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
-                onPress={() => { impactLight(); setActiveSection(tab.key); }}
-                accessibilityRole="tab"
-                accessibilityState={{ selected: isActive }}
-                accessibilityLabel={`${tab.label} section`}
-                accessibilityHint={isActive ? `Viewing ${tab.label.toLowerCase()} information` : `Switch to ${tab.label.toLowerCase()} information`}
-              >
-                <Text style={styles.sectionTabIcon} importantForAccessibility="no">{tab.icon}</Text>
-                <Text style={[styles.sectionTabLabel, { color: isActive ? colors.primary : colors.mutedText }]}>{tab.label}</Text>
-              </TouchableOpacity>
-            );
-          })}
+          {SECTION_TABS.map((tab) => (
+            <SectionTabPill key={tab.key} tab={tab} isActive={tab.key === activeSection} onSelect={setActiveSection} colors={colors} />
+          ))}
         </View>
 
         {/* Content */}

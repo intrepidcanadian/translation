@@ -124,11 +124,11 @@ function StatsModal({ visible, onClose, history, streak, colors }: StatsModalPro
           {Array.from({ length: days[0].date.getDay() }).map((_, pi) => (
             <View key={`pad-${pi}`} style={styles.calendarCell} />
           ))}
-          {days.map((day, di) => {
+          {days.map((day) => {
             const intensity = day.count === 0 ? 0 : Math.max(0.2, day.count / maxCount);
             return (
               <View
-                key={di}
+                key={day.label}
                 style={[
                   styles.calendarCell,
                   {
@@ -261,6 +261,7 @@ function StatsModal({ visible, onClose, history, streak, colors }: StatsModalPro
             onPress={onClose}
             accessibilityRole="button"
             accessibilityLabel="Close statistics"
+            accessibilityHint="Returns to the main translation screen"
           >
             <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
           </TouchableOpacity>

@@ -242,6 +242,77 @@ const PASSENGER_LANGUAGES: Array<{ code: LangCode; flag: string; name: string }>
   { code: "es", flag: "🇪🇸", name: "Español" },
 ];
 
+// ---------- Sub-components ----------
+
+const LanguageButton = React.memo(function LanguageButton({
+  lang,
+  onSelect,
+  colors,
+}: {
+  lang: { code: LangCode; flag: string; name: string };
+  onSelect: (code: LangCode) => void;
+  colors: ThemeColors;
+}) {
+  const handlePress = useCallback(() => onSelect(lang.code), [onSelect, lang.code]);
+  return (
+    <TouchableOpacity
+      style={[styles.langButton, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
+      onPress={handlePress}
+      accessibilityRole="button"
+      accessibilityLabel={`Select ${lang.name}`}
+      accessibilityHint={`Set passenger language to ${lang.name}`}
+    >
+      <Text style={styles.langButtonFlag}>{lang.flag}</Text>
+      <Text style={[styles.langButtonName, { color: colors.primaryText }]}>{lang.name}</Text>
+    </TouchableOpacity>
+  );
+});
+
+const OptionButton = React.memo(function OptionButton({
+  option,
+  isSelected,
+  onToggle,
+  passengerLang,
+  colors,
+}: {
+  option: LocalizedOption;
+  isSelected: boolean;
+  onToggle: (optionId: string) => void;
+  passengerLang: LangCode;
+  colors: ThemeColors;
+}) {
+  const handlePress = useCallback(() => onToggle(option.id), [onToggle, option.id]);
+  return (
+    <TouchableOpacity
+      style={[
+        styles.optionButton,
+        {
+          backgroundColor: isSelected ? primaryAlpha.faint : colors.cardBg,
+          borderColor: isSelected ? colors.primary : colors.border,
+          borderWidth: isSelected ? 2 : 1,
+        },
+      ]}
+      onPress={handlePress}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: isSelected }}
+    >
+      <Text style={styles.optionIcon}>{option.icon}</Text>
+      <Text
+        style={[
+          styles.optionLabel,
+          { color: isSelected ? colors.primary : colors.primaryText },
+        ]}
+        numberOfLines={2}
+        adjustsFontSizeToFit
+        minimumFontScale={0.7}
+      >
+        {option.labels[passengerLang] ?? option.labels.en}
+      </Text>
+      {isSelected && <Text style={styles.optionCheck}>✓</Text>}
+    </TouchableOpacity>
+  );
+});
+
 // ---------- Component ----------
 
 interface Props {
@@ -318,17 +389,7 @@ function PassengerPreferenceCard({ visible, onClose, colors, initialLang }: Prop
       </Text>
       <View style={styles.langGrid}>
         {PASSENGER_LANGUAGES.map((lang) => (
-          <TouchableOpacity
-            key={lang.code}
-            style={[styles.langButton, { backgroundColor: colors.cardBg, borderColor: colors.border }]}
-            onPress={() => handleLanguageSelect(lang.code)}
-            accessibilityRole="button"
-            accessibilityLabel={`Select ${lang.name}`}
-            accessibilityHint={`Set passenger language to ${lang.name}`}
-          >
-            <Text style={styles.langButtonFlag}>{lang.flag}</Text>
-            <Text style={[styles.langButtonName, { color: colors.primaryText }]}>{lang.name}</Text>
-          </TouchableOpacity>
+          <LanguageButton key={lang.code} lang={lang} onSelect={handleLanguageSelect} colors={colors} />
         ))}
       </View>
     </View>
@@ -353,39 +414,9 @@ function PassengerPreferenceCard({ visible, onClose, colors, initialLang }: Prop
             {category.icon} {category.titles[passengerLang] ?? category.titles.en}
           </Text>
           <View style={styles.optionGrid}>
-            {category.options.map((option) => {
-              const isSelected = selected.has(option.id);
-              return (
-                <TouchableOpacity
-                  key={option.id}
-                  style={[
-                    styles.optionButton,
-                    {
-                      backgroundColor: isSelected ? primaryAlpha.faint : colors.cardBg,
-                      borderColor: isSelected ? colors.primary : colors.border,
-                      borderWidth: isSelected ? 2 : 1,
-                    },
-                  ]}
-                  onPress={() => handleToggleOption(option.id)}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: isSelected }}
-                >
-                  <Text style={styles.optionIcon}>{option.icon}</Text>
-                  <Text
-                    style={[
-                      styles.optionLabel,
-                      { color: isSelected ? colors.primary : colors.primaryText },
-                    ]}
-                    numberOfLines={2}
-                    adjustsFontSizeToFit
-                    minimumFontScale={0.7}
-                  >
-                    {option.labels[passengerLang] ?? option.labels.en}
-                  </Text>
-                  {isSelected && <Text style={styles.optionCheck}>✓</Text>}
-                </TouchableOpacity>
-              );
-            })}
+            {category.options.map((option) => (
+              <OptionButton key={option.id} option={option} isSelected={selected.has(option.id)} onToggle={handleToggleOption} passengerLang={passengerLang} colors={colors} />
+            ))}
           </View>
         </View>
       ))}
