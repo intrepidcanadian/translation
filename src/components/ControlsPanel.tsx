@@ -101,10 +101,10 @@ function ControlsPanel({
                 <Text style={[styles.clearText, { color: colors.dimText }]}>Cancel</Text>
               </TouchableOpacity>
               <Text style={[styles.selectCountText, { color: colors.mutedText }]}>{selectedCount} selected</Text>
-              <TouchableOpacity style={styles.clearButton} onPress={onExportSelected} accessibilityRole="button" accessibilityLabel="Share selected" disabled={selectedCount === 0}>
+              <TouchableOpacity style={styles.clearButton} onPress={onExportSelected} accessibilityRole="button" accessibilityLabel="Share selected" disabled={selectedCount === 0} accessibilityState={{ disabled: selectedCount === 0 }}>
                 <Text style={[styles.shareText, { color: selectedCount > 0 ? colors.primary : colors.dimText }]}>Share</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.clearButton} onPress={onDeleteSelected} accessibilityRole="button" accessibilityLabel="Delete selected" disabled={selectedCount === 0}>
+              <TouchableOpacity style={styles.clearButton} onPress={onDeleteSelected} accessibilityRole="button" accessibilityLabel="Delete selected" disabled={selectedCount === 0} accessibilityState={{ disabled: selectedCount === 0 }}>
                 <Text style={[styles.clearText, { color: selectedCount > 0 ? colors.errorText : colors.dimText }]}>Delete</Text>
               </TouchableOpacity>
             </>

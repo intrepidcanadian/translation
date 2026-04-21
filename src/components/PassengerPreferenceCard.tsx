@@ -398,6 +398,7 @@ function PassengerPreferenceCard({ visible, onClose, colors, initialLang }: Prop
         accessibilityRole="button"
         accessibilityLabel={strings.submit}
         accessibilityHint={selected.size > 0 ? `Submit ${selected.size} selected preferences to crew` : "Select at least one preference first"}
+        accessibilityState={{ disabled: selected.size === 0 }}
       >
         <Text style={styles.submitButtonText}>{strings.submit}</Text>
       </TouchableOpacity>

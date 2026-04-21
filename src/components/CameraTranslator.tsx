@@ -406,6 +406,7 @@ function CameraTranslator({
               accessibilityRole="button"
               accessibilityLabel="Capture photo for translation"
               accessibilityHint="Takes a photo and translates all visible text"
+              accessibilityState={{ disabled: isProcessingCapture }}
             >
               <View style={styles.captureButtonInner} />
             </TouchableOpacity>

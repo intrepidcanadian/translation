@@ -255,7 +255,7 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
     isOffline,
     isProcessingQueue,
     registerOnTranslated,
-  }), [offlineQueue, queueLength, addToOfflineQueue, isOffline, isProcessingQueue, registerOnTranslated]);
+  }), [offlineQueue, addToOfflineQueue, isOffline, isProcessingQueue, registerOnTranslated]);
 
   return (
     <OfflineQueueContext.Provider value={value}>{children}</OfflineQueueContext.Provider>

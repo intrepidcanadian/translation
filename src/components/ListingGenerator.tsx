@@ -611,6 +611,7 @@ function ListingGenerator({
               accessibilityRole="button"
               accessibilityLabel="Price check"
               accessibilityHint="Check comparable prices on marketplaces"
+              accessibilityState={{ disabled: isCheckingPrice }}
             >
               {isCheckingPrice ? (
                 <ActivityIndicator size="small" color={colors.primary} />
@@ -686,6 +687,7 @@ function ListingGenerator({
               accessibilityRole="button"
               accessibilityLabel={isTranslating ? "Translating listing" : "Translate listing"}
               accessibilityHint="Translate the listing to your target language"
+              accessibilityState={{ disabled: isTranslating }}
             >
               {isTranslating ? (
                 <ActivityIndicator size="small" color={colors.primary} />

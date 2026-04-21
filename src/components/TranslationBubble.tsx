@@ -164,14 +164,11 @@ function TranslationBubble({
             ? highlightMatches(item.original, searchQuery, { color: colors.secondaryText }, { backgroundColor: colors.primary + "30", color: colors.primaryText, borderRadius: 2 })
             : item.original}
         </Text>
-        {item.detectedLang && (() => {
-          const lang = LANGUAGE_MAP.get(item.detectedLang!);
-          return lang ? (
-            <Text style={[styles.detectedLangBadge, { color: colors.primary, backgroundColor: colors.primary + "18" }]}>
-              Detected: {lang.name}
-            </Text>
-          ) : null;
-        })()}
+        {item.detectedLang && LANGUAGE_MAP.get(item.detectedLang) && (
+          <Text style={[styles.detectedLangBadge, { color: colors.primary, backgroundColor: colors.primary + "18" }]}>
+            Detected: {LANGUAGE_MAP.get(item.detectedLang)!.name}
+          </Text>
+        )}
         {showRomanization && item.sourceLangCode && (
           <AlignedRomanization text={item.original} langCode={item.sourceLangCode} textColor={colors.secondaryText} romanColor={colors.mutedText} />
         )}
@@ -185,6 +182,7 @@ function TranslationBubble({
           accessibilityRole="button"
           accessibilityLabel={item.status === "error" ? `Translation failed: ${item.translated}` : item.status === "pending" ? `Queued for translation when online` : `Translation: ${item.translated}. Tap to copy. Long-press a word for alternatives.`}
           disabled={item.status === "pending" || item.status === "error"}
+          accessibilityState={{ disabled: item.status === "pending" || item.status === "error" }}
         >
           {item.status === "pending" && (
             <Text style={[styles.pendingBadge, { color: colors.offlineText }]}>

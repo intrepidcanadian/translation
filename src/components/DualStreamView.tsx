@@ -388,6 +388,7 @@ function DualStreamView({
     setIsListening(false);
     // Auto-restart on transient errors if mic is active
     if (isMicActive && isMountedRef.current) {
+      setSpeechError(null);
       restartTimerRef.current = setTimeout(() => {
         restartTimerRef.current = null;
         if (isMicActive && isMountedRef.current) {

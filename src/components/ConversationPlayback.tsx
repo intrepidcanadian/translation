@@ -186,6 +186,7 @@ const SessionCard = React.memo(function SessionCard({
             disabled={exporting}
             accessibilityRole="button"
             accessibilityLabel="Export conversation as PDF"
+            accessibilityState={{ disabled: exporting }}
           >
             {exporting ? (
               <ActivityIndicator size="small" color={colors.primary} />

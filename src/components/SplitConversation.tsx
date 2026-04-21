@@ -126,6 +126,7 @@ function SplitConversation({ visible, onClose }: SplitConversationProps) {
           }
         } catch (err) {
           if (controller.signal.aborted) return;
+          logger.warn("Speech", "SplitConversation translate failed", err);
         }
       }, 300);
     },
@@ -374,6 +375,7 @@ function SplitConversation({ visible, onClose }: SplitConversationProps) {
       <Pressable
         onPress={handleHalfPress}
         disabled={otherSpeaking}
+        accessibilityState={{ disabled: otherSpeaking }}
         style={({ pressed }) => [
           styles.half,
           {
