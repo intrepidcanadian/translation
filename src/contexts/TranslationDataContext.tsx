@@ -70,7 +70,9 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
       return;
     }
     allHistoryRef.current = history;
-    AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-100)));
+    AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(history.slice(-100))).catch((err) =>
+      logger.warn("Storage", "Failed to persist history", err)
+    );
   }, [history]);
 
   const loadMoreHistory = useCallback(() => {

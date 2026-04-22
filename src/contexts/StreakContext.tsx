@@ -44,7 +44,9 @@ export function StreakProvider({ children }: { children: React.ReactNode }) {
       const newStreak = prev.lastDate === yesterday
         ? { current: prev.current + 1, lastDate: today }
         : { current: 1, lastDate: today };
-      AsyncStorage.setItem(STREAK_KEY, JSON.stringify(newStreak));
+      AsyncStorage.setItem(STREAK_KEY, JSON.stringify(newStreak)).catch((err) =>
+        logger.warn("Storage", "Failed to persist streak", err)
+      );
       return newStreak;
     });
   }, []);

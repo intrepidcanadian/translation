@@ -103,6 +103,8 @@ export function useHistoryActions({
 
   const [modalState, dispatchModal] = useReducer(modalReducer, INITIAL_MODAL_STATE);
   const { compareData, correctionPrompt, wordAltData } = modalState;
+  const historyRef = useRef(history);
+  historyRef.current = history;
 
   // Stable setters for parent compatibility
   const setCompareData = useCallback((data: ModalState["compareData"]) => dispatchModal({ type: "SET_COMPARE", data }), []);
@@ -187,7 +189,7 @@ export function useHistoryActions({
   }, [setHistory]);
 
   const retryTranslation = useCallback(async (index: number) => {
-    const item = history[index];
+    const item = historyRef.current[index];
     if (item?.status !== "error" || !item.sourceLangCode || !item.targetLangCode) return;
 
     const itemId = item.id;
@@ -213,7 +215,7 @@ export function useHistoryActions({
       );
       showError(msg);
     }
-  }, [history, translationProvider, showError, setHistory]);
+  }, [translationProvider, showError, setHistory]);
 
   const clearHistory = useCallback(() => {
     Alert.alert(

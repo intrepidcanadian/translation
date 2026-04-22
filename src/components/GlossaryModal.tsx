@@ -41,24 +41,24 @@ const GlossaryEntryRow = React.memo(function GlossaryEntryRow({
       accessible={true}
       accessibilityLabel={`Glossary entry: ${item.source} translates to ${item.target}`}
     >
-      <View style={{ flex: 1 }}>
-        <Text style={{ color: colors.secondaryText, fontSize: 14 }}>
+      <View style={styles.entryContent}>
+        <Text style={[styles.entrySourceText, { color: colors.secondaryText }]}>
           {item.source}
         </Text>
         <Text
-          style={{ color: colors.translatedText, fontSize: 14, fontWeight: "600" }}
+          style={[styles.entryTargetText, { color: colors.translatedText }]}
         >
           {item.target}
         </Text>
       </View>
       <TouchableOpacity
         onPress={handleRemove}
-        style={{ minWidth: 44, minHeight: 44, alignItems: "center", justifyContent: "center" }}
+        style={styles.entryRemoveButton}
         accessibilityRole="button"
         accessibilityLabel={`Remove glossary entry: ${item.source}`}
         accessibilityHint="Deletes this custom translation from your glossary"
       >
-        <Text style={{ color: colors.errorText, fontSize: 18 }}>✕</Text>
+        <Text style={[styles.entryRemoveIcon, { color: colors.errorText }]}>✕</Text>
       </TouchableOpacity>
     </View>
   );
@@ -363,5 +363,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 8,
     gap: 10,
+  },
+  entryContent: {
+    flex: 1,
+  },
+  entrySourceText: {
+    fontSize: 14,
+  },
+  entryTargetText: {
+    fontSize: 14,
+    fontWeight: "600" as const,
+  },
+  entryRemoveButton: {
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: "center" as const,
+    justifyContent: "center" as const,
+  },
+  entryRemoveIcon: {
+    fontSize: 18,
   },
 });
