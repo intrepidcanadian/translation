@@ -144,10 +144,10 @@ function StatsModal({ visible, onClose, history, streak, colors }: StatsModalPro
           })}
         </View>
         <View style={styles.calendarLegend}>
-          <Text style={[{ color: colors.dimText, fontSize: 11 }]}>Less</Text>
-          {[0, 0.25, 0.5, 0.75, 1].map((level, li) => (
+          <Text style={[styles.legendLabel, { color: colors.dimText }]}>Less</Text>
+          {[0, 0.25, 0.5, 0.75, 1].map((level) => (
             <View
-              key={li}
+              key={level}
               style={[
                 styles.calendarLegendCell,
                 {
@@ -157,7 +157,7 @@ function StatsModal({ visible, onClose, history, streak, colors }: StatsModalPro
               ]}
             />
           ))}
-          <Text style={[{ color: colors.dimText, fontSize: 11 }]}>More</Text>
+          <Text style={[styles.legendLabel, { color: colors.dimText }]}>More</Text>
         </View>
       </View>
     );
@@ -193,10 +193,10 @@ function StatsModal({ visible, onClose, history, streak, colors }: StatsModalPro
                 {streak.current > 0 && (
                   <View style={[styles.statsSection, { backgroundColor: colors.cardBg }]} accessible={true} accessibilityLabel={`Daily streak: ${streak.current} ${streak.current === 1 ? "day" : "days"} in a row`}>
                     <Text style={[styles.statsSectionTitle, { color: colors.secondaryText }]} importantForAccessibility="no">Daily Streak</Text>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <Text style={{ fontSize: 32 }} importantForAccessibility="no">🔥</Text>
-                      <Text style={[styles.statNumber, { color: colors.primary, fontSize: 28 }]} importantForAccessibility="no">{streak.current}</Text>
-                      <Text style={[{ color: colors.mutedText, fontSize: 14 }]} importantForAccessibility="no">{streak.current === 1 ? "day" : "days"} in a row</Text>
+                    <View style={styles.streakRow}>
+                      <Text style={styles.streakEmoji} importantForAccessibility="no">🔥</Text>
+                      <Text style={[styles.streakNumber, { color: colors.primary }]} importantForAccessibility="no">{streak.current}</Text>
+                      <Text style={[styles.streakLabel, { color: colors.mutedText }]} importantForAccessibility="no">{streak.current === 1 ? "day" : "days"} in a row</Text>
                     </View>
                   </View>
                 )}
@@ -248,8 +248,8 @@ function StatsModal({ visible, onClose, history, streak, colors }: StatsModalPro
 
                 {stats.totalTranslations === 0 && (
                   <View style={styles.statsEmptyState} accessible={true} accessibilityLabel="No translations yet. Start translating to see your stats!">
-                    <Text importantForAccessibility="no" style={[{ color: colors.mutedText, fontSize: 40, marginBottom: 12 }]}>📭</Text>
-                    <Text style={[{ color: colors.mutedText, fontSize: 15, textAlign: "center" as const }]}>
+                    <Text importantForAccessibility="no" style={[styles.emptyStateEmoji, { color: colors.mutedText }]}>📭</Text>
+                    <Text style={[styles.emptyStateText, { color: colors.mutedText }]}>
                       No translations yet.{"\n"}Start translating to see your stats!
                     </Text>
                   </View>
@@ -263,7 +263,7 @@ function StatsModal({ visible, onClose, history, streak, colors }: StatsModalPro
             accessibilityLabel="Close statistics"
             accessibilityHint="Returns to the main translation screen"
           >
-            <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Done</Text>
+            <Text style={[styles.doneText, { color: colors.primary }]}>Done</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -369,6 +369,36 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 3,
+  },
+  streakRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+  },
+  streakEmoji: {
+    fontSize: 32,
+  },
+  streakNumber: {
+    fontSize: 28,
+    fontWeight: "800" as const,
+  },
+  streakLabel: {
+    fontSize: 14,
+  },
+  legendLabel: {
+    fontSize: 11,
+  },
+  emptyStateEmoji: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  emptyStateText: {
+    fontSize: 15,
+    textAlign: "center" as const,
+  },
+  doneText: {
+    fontSize: 17,
+    fontWeight: "600" as const,
   },
   statsEmptyState: {
     alignItems: "center" as const,

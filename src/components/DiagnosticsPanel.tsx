@@ -106,6 +106,139 @@ function DiagnosticsPanel({
     infoText: { color: colors.dimText },
   }), [colors]);
 
+  const prunedKeysElement = useMemo(() => {
+    const pruned = prunedUnknownKeys();
+    if (pruned.length === 0) return null;
+    const MAX_RENDERED = 3;
+    const hasMore = pruned.length > MAX_RENDERED;
+    const visibleKeys = prunedKeysExpanded ? pruned : pruned.slice(0, MAX_RENDERED);
+    const shown = visibleKeys.join(", ");
+    const suffix = hasMore && !prunedKeysExpanded
+      ? ` +${pruned.length - MAX_RENDERED} more`
+      : "";
+    const label = `Telemetry pruned ${pruned.length} unknown key${pruned.length === 1 ? "" : "s"} — client may have been downgraded`;
+    return (
+      <View style={styles.prunedKeysContainer}>
+        <Text
+          style={[
+            styles.infoText,
+            dynamicStyles.infoText,
+            { color: colors.dimText },
+          ]}
+          accessibilityLabel={label}
+        >
+          {`⚠ Telemetry pruned ${pruned.length}: ${shown}${suffix}`}
+        </Text>
+        {hasMore && (
+          <TouchableOpacity
+            onPress={onTogglePrunedKeys}
+            accessibilityRole="button"
+            accessibilityLabel={
+              prunedKeysExpanded
+                ? "Collapse pruned telemetry keys list"
+                : `Show all ${pruned.length} pruned telemetry keys`
+            }
+            accessibilityState={{ expanded: prunedKeysExpanded }}
+          >
+            <Text
+              style={[
+                styles.infoText,
+                dynamicStyles.infoText,
+                styles.prunedKeysToggle,
+                { color: colors.primary },
+              ]}
+            >
+              {prunedKeysExpanded ? "Collapse" : `Show all ${pruned.length}`}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }, [prunedKeysExpanded, onTogglePrunedKeys, colors.dimText, colors.primary, dynamicStyles.infoText]);
+
+  const manualRefreshElement = useMemo(() => {
+    if (!typeAheadStats) return null;
+    const manual = getTelemetrySnapshot()["rates.manualRefresh"];
+    const manualFailed = getTelemetrySnapshot()["rates.manualRefreshFailed"];
+    if (manual === 0) return null;
+    const failPct = Math.round((manualFailed / manual) * 100);
+    const overThreshold = manual > 0 && manualFailed / manual >= 0.25;
+    return (
+      <Text
+        style={[
+          styles.infoText,
+          dynamicStyles.infoText,
+          overThreshold ? { color: colors.errorText } : null,
+        ]}
+        accessibilityLabel={
+          manualFailed === 0
+            ? `Manual refresh: ${manual} attempt${manual === 1 ? "" : "s"}, all succeeded`
+            : `Manual refresh: ${manual} attempt${manual === 1 ? "" : "s"}, ${manualFailed} failed (${failPct}%)`
+        }
+      >
+        Manual refresh: {manual} · fail {manualFailed} ({failPct}%)
+      </Text>
+    );
+  }, [typeAheadStats, colors.errorText, dynamicStyles.infoText]);
+
+  const validationFailedElement = useMemo(() => {
+    if (!typeAheadStats) return null;
+    const validationFailed = getTelemetrySnapshot()["rates.validationFailed"];
+    if (validationFailed === 0) return null;
+    return (
+      <Text
+        style={[
+          styles.infoText,
+          dynamicStyles.infoText,
+          { color: colors.errorText },
+        ]}
+        accessibilityLabel={`Rate payload rejected: ${validationFailed} time${validationFailed === 1 ? "" : "s"}`}
+      >
+        Payload rejected: {validationFailed} (API returned invalid data)
+      </Text>
+    );
+  }, [typeAheadStats, colors.errorText, dynamicStyles.infoText]);
+
+  const freshnessGradeElement = useMemo(() => {
+    if (!ratesCacheState) return null;
+    const grade = getRatesFreshnessGrade(ratesCacheState);
+    const tag = freshnessGradeTag(grade);
+    if (!tag) return null;
+    const isCritical = grade === "stale-critical" || grade === "none";
+    return (
+      <Text
+        style={[
+          styles.infoText,
+          dynamicStyles.infoText,
+          { color: isCritical ? colors.errorText : colors.primary },
+        ]}
+        accessibilityLabel={`Rate freshness grade: ${tag}`}
+      >
+        Freshness: [{tag}]
+      </Text>
+    );
+  }, [ratesCacheState, colors.errorText, colors.primary, dynamicStyles.infoText]);
+
+  const ratesServedElement = useMemo(() => {
+    const served = getRatesServedStats();
+    if (served.total === 0) return null;
+    const hasFallback = served.fallbackServed > 0;
+    return (
+      <Text
+        style={[
+          styles.infoText,
+          dynamicStyles.infoText,
+          hasFallback ? { color: colors.errorText } : null,
+        ]}
+        accessibilityLabel={
+          `Rates served this session: ${served.staleServed} from stale cache, ${served.fallbackServed} from built-in fallback`
+        }
+      >
+        Served: stale {served.staleServed} · fallback {served.fallbackServed}
+      </Text>
+    );
+  }, [colors.errorText, dynamicStyles.infoText]);
+
   return (
     <View style={styles.infoSection}>
       <CollapsibleSection
@@ -183,54 +316,7 @@ function DiagnosticsPanel({
             {s.provider}: {s.open ? `open (${Math.ceil(s.msUntilReset / 1000)}s)` : "closed"} · failures {s.failures}
           </Text>
         ))}
-        {(() => {
-          const pruned = prunedUnknownKeys();
-          if (pruned.length === 0) return null;
-          const MAX_RENDERED = 3;
-          const hasMore = pruned.length > MAX_RENDERED;
-          const visibleKeys = prunedKeysExpanded ? pruned : pruned.slice(0, MAX_RENDERED);
-          const shown = visibleKeys.join(", ");
-          const suffix = hasMore && !prunedKeysExpanded
-            ? ` +${pruned.length - MAX_RENDERED} more`
-            : "";
-          const label = `Telemetry pruned ${pruned.length} unknown key${pruned.length === 1 ? "" : "s"} — client may have been downgraded`;
-          return (
-            <View style={{ marginTop: 4 }}>
-              <Text
-                style={[
-                  styles.infoText,
-                  dynamicStyles.infoText,
-                  { color: colors.dimText },
-                ]}
-                accessibilityLabel={label}
-              >
-                {`⚠ Telemetry pruned ${pruned.length}: ${shown}${suffix}`}
-              </Text>
-              {hasMore && (
-                <TouchableOpacity
-                  onPress={onTogglePrunedKeys}
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    prunedKeysExpanded
-                      ? "Collapse pruned telemetry keys list"
-                      : `Show all ${pruned.length} pruned telemetry keys`
-                  }
-                  accessibilityState={{ expanded: prunedKeysExpanded }}
-                >
-                  <Text
-                    style={[
-                      styles.infoText,
-                      dynamicStyles.infoText,
-                      { color: colors.primary, marginTop: 2 },
-                    ]}
-                  >
-                    {prunedKeysExpanded ? "Collapse" : `Show all ${pruned.length}`}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          );
-        })()}
+        {prunedKeysElement}
         {typeAheadStats && (
           <View style={styles.telemetryBlock}>
             <Text style={[styles.infoText, dynamicStyles.infoText, styles.telemetryTitle]}>
@@ -341,82 +427,10 @@ function DiagnosticsPanel({
                 {refreshOutcomeLabel(refreshOutcome)}
               </Text>
             )}
-            {typeAheadStats && (() => {
-              const manual = getTelemetrySnapshot()["rates.manualRefresh"];
-              const manualFailed = getTelemetrySnapshot()["rates.manualRefreshFailed"];
-              if (manual === 0) return null;
-              const failPct = Math.round((manualFailed / manual) * 100);
-              const overThreshold = manual > 0 && manualFailed / manual >= 0.25;
-              return (
-                <Text
-                  style={[
-                    styles.infoText,
-                    dynamicStyles.infoText,
-                    overThreshold ? { color: colors.errorText } : null,
-                  ]}
-                  accessibilityLabel={
-                    manualFailed === 0
-                      ? `Manual refresh: ${manual} attempt${manual === 1 ? "" : "s"}, all succeeded`
-                      : `Manual refresh: ${manual} attempt${manual === 1 ? "" : "s"}, ${manualFailed} failed (${failPct}%)`
-                  }
-                >
-                  Manual refresh: {manual} · fail {manualFailed} ({failPct}%)
-                </Text>
-              );
-            })()}
-            {typeAheadStats && (() => {
-              const validationFailed = getTelemetrySnapshot()["rates.validationFailed"];
-              if (validationFailed === 0) return null;
-              return (
-                <Text
-                  style={[
-                    styles.infoText,
-                    dynamicStyles.infoText,
-                    { color: colors.errorText },
-                  ]}
-                  accessibilityLabel={`Rate payload rejected: ${validationFailed} time${validationFailed === 1 ? "" : "s"}`}
-                >
-                  Payload rejected: {validationFailed} (API returned invalid data)
-                </Text>
-              );
-            })()}
-            {(() => {
-              const grade = getRatesFreshnessGrade(ratesCacheState);
-              const tag = freshnessGradeTag(grade);
-              if (!tag) return null;
-              const isCritical = grade === "stale-critical" || grade === "none";
-              return (
-                <Text
-                  style={[
-                    styles.infoText,
-                    dynamicStyles.infoText,
-                    { color: isCritical ? colors.errorText : colors.primary },
-                  ]}
-                  accessibilityLabel={`Rate freshness grade: ${tag}`}
-                >
-                  Freshness: [{tag}]
-                </Text>
-              );
-            })()}
-            {(() => {
-              const served = getRatesServedStats();
-              if (served.total === 0) return null;
-              const hasFallback = served.fallbackServed > 0;
-              return (
-                <Text
-                  style={[
-                    styles.infoText,
-                    dynamicStyles.infoText,
-                    hasFallback ? { color: colors.errorText } : null,
-                  ]}
-                  accessibilityLabel={
-                    `Rates served this session: ${served.staleServed} from stale cache, ${served.fallbackServed} from built-in fallback`
-                  }
-                >
-                  Served: stale {served.staleServed} · fallback {served.fallbackServed}
-                </Text>
-              );
-            })()}
+            {manualRefreshElement}
+            {validationFailedElement}
+            {freshnessGradeElement}
+            {ratesServedElement}
           </View>
         )}
         {offlineQueueStats && (offlineQueueStats.total > 0 || offlineQueueStats.deadLetter > 0 || offlineFailLast60s > 0) && (
@@ -565,6 +579,12 @@ const styles = StyleSheet.create({
   cacheProviderClearText: {
     fontSize: 11,
     fontWeight: "600",
+  },
+  prunedKeysContainer: {
+    marginTop: 4,
+  },
+  prunedKeysToggle: {
+    marginTop: 2,
   },
   telemetryBlock: {
     marginTop: 8,

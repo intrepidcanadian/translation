@@ -28,6 +28,20 @@ import { clearOCRCache } from "../services/ocrTranslation";
 import { useLiveOCR } from "../hooks/useLiveOCR";
 import { showBlockActionSheet } from "../utils/liveBlockActions";
 import { pruneBlockOpacities } from "../utils/pruneBlockOpacities";
+
+const DS_COLORS = {
+  accent: "#a8a4ff",
+  highlight: "#ffd93d",
+  highlightFaded: "rgba(255,215,61,0.6)",
+  highlightGlow: "rgba(255,215,61,0.3)",
+  highlightBorder: "rgba(255,215,61,0.25)",
+  error: "#ff6b6b",
+  errorSecondary: "#ffa07a",
+  bg: "#000",
+  text: "#fff",
+  textMuted: "#aaa",
+  button: "#6c63ff",
+} as const;
 import { DetectedBlockOverlay, getOCRLanguage, OCR_OPTIONS_BASE, type DetectedBlock } from "./OCROverlay";
 import { impactLight, impactMedium } from "../services/haptics";
 import { logger } from "../services/logger";
@@ -600,7 +614,7 @@ function DualStreamView({
             OCR {isPaused ? "paused" : detectedBlocks.length > 0 ? `${detectedBlocks.length}` : "scanning"}
           </Text>
           {isOCRTranslating && (
-            <ActivityIndicator size="small" color="#a8a4ff" style={styles.pipelineSpinner} />
+            <ActivityIndicator size="small" color={DS_COLORS.accent} style={styles.pipelineSpinner} />
           )}
         </View>
 
@@ -611,7 +625,7 @@ function DualStreamView({
             {!isMicActive ? "off" : isListening ? "listening" : "starting..."}
           </Text>
           {isSpeechTranslating && (
-            <ActivityIndicator size="small" color="#ffd93d" style={styles.pipelineSpinner} />
+            <ActivityIndicator size="small" color={DS_COLORS.highlight} style={styles.pipelineSpinner} />
           )}
         </View>
       </View>
@@ -644,7 +658,7 @@ function DualStreamView({
                   </Text>
                 ) : isSpeechTranslating ? (
                   <View style={styles.subtitleTranslatingRow}>
-                    <ActivityIndicator size="small" color="#ffd93d" />
+                    <ActivityIndicator size="small" color={DS_COLORS.highlight} />
                     <Text style={styles.subtitleTranslatingText}>Translating...</Text>
                   </View>
                 ) : null}
@@ -690,7 +704,7 @@ function DualStreamView({
             {!isMicActive ? (
               <Text style={styles.micStatusText}>Tap mic for speech subtitles</Text>
             ) : isListening ? (
-              <Text style={[styles.micStatusText, { color: "#ffd93d" }]}>
+              <Text style={[styles.micStatusText, { color: DS_COLORS.highlight }]}>
                 Speech → Subtitles active
               </Text>
             ) : (
@@ -727,7 +741,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "#000",
+    backgroundColor: DS_COLORS.bg,
     zIndex: 999,
   },
   errorContainer: {
@@ -737,27 +751,27 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   errorText: {
-    color: "#fff",
+    color: DS_COLORS.text,
     fontSize: 20,
     fontWeight: "700",
     marginBottom: 8,
     textAlign: "center",
   },
   errorSubtext: {
-    color: "#aaa",
+    color: DS_COLORS.textMuted,
     fontSize: 15,
     textAlign: "center",
     marginBottom: 24,
   },
   permissionButton: {
-    backgroundColor: "#6c63ff",
+    backgroundColor: DS_COLORS.button,
     borderRadius: 12,
     paddingVertical: 14,
     paddingHorizontal: 32,
     marginBottom: 12,
   },
   permissionButtonText: {
-    color: "#fff",
+    color: DS_COLORS.text,
     fontSize: 16,
     fontWeight: "700",
   },
@@ -766,7 +780,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   closeButtonText: {
-    color: "#6c63ff",
+    color: DS_COLORS.button,
     fontSize: 16,
     fontWeight: "600",
   },
@@ -797,7 +811,7 @@ const styles = StyleSheet.create({
     backgroundColor: primaryAlpha.active,
   },
   topButtonText: {
-    color: "#fff",
+    color: DS_COLORS.text,
     fontSize: 20,
     fontWeight: "700",
   },
@@ -811,7 +825,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   dualBadgeText: {
-    color: "#ffd93d",
+    color: DS_COLORS.highlight,
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 1,
@@ -820,10 +834,10 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
-    backgroundColor: "#ffd93d",
+    backgroundColor: DS_COLORS.highlight,
   },
   langText: {
-    color: "#fff",
+    color: DS_COLORS.text,
     fontSize: 14,
     fontWeight: "700",
   },
@@ -893,7 +907,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   subtitleTranslatedLive: {
-    color: "#ffd93d",
+    color: DS_COLORS.highlight,
     fontSize: 20,
     fontWeight: "700",
     textAlign: "center",
@@ -908,7 +922,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   subtitleTranslatingText: {
-    color: "rgba(255,215,61,0.6)",
+    color: DS_COLORS.highlightFaded,
     fontSize: 14,
   },
   subtitleHint: {
@@ -933,7 +947,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: "rgba(255,215,61,0.3)",
+    backgroundColor: DS_COLORS.highlightGlow,
   },
   micButton: {
     width: 48,
@@ -946,8 +960,8 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.2)",
   },
   micButtonActive: {
-    backgroundColor: "rgba(255,215,61,0.25)",
-    borderColor: "#ffd93d",
+    backgroundColor: DS_COLORS.highlightBorder,
+    borderColor: DS_COLORS.highlight,
   },
   micButtonIcon: {
     fontSize: 22,
@@ -961,12 +975,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   ocrErrorText: {
-    color: "#ff6b6b",
+    color: DS_COLORS.error,
     fontSize: 11,
     maxWidth: 120,
   },
   speechErrorText: {
-    color: "#ffa07a",
+    color: DS_COLORS.errorSecondary,
     fontSize: 11,
     maxWidth: 140,
   },
