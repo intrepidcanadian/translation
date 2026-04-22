@@ -454,14 +454,14 @@ function FlightPrepModal({ visible, onClose, colors, crewBaseLang = "en" }: Prop
                 accessibilityState={{ disabled: isDownloadingAll }}
               >
                 {isDownloadingAll ? (
-                  <Animated.View style={{ opacity: pulseAnim, flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <Animated.View style={[styles.downloadAllAnimRow, { opacity: pulseAnim }]}>
                     <ActivityIndicator size="small" color={colors.destructiveText} />
                     <Text style={[styles.downloadAllText, { color: colors.destructiveText }]}>
                       Downloading...
                     </Text>
                   </Animated.View>
                 ) : (
-                  <View style={{ alignItems: "center" }}>
+                  <View style={styles.downloadCenter}>
                     <Text style={[styles.downloadAllText, { color: colors.destructiveText }]}>
                       Download {downloadableCount} Language{downloadableCount === 1 ? "" : "s"}
                     </Text>
@@ -827,6 +827,16 @@ const styles = StyleSheet.create({
   closeText: {
     fontSize: 17,
     fontWeight: "600",
+  },
+
+  // Download all animated row
+  downloadAllAnimRow: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 8,
+  },
+  downloadCenter: {
+    alignItems: "center" as const,
   },
 });
 

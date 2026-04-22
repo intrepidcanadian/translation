@@ -81,14 +81,11 @@ function ChatBubble({
               : item.original}
           </Text>
         </TouchableOpacity>
-        {item.detectedLang && (() => {
-          const lang = LANGUAGE_MAP.get(item.detectedLang!);
-          return lang ? (
-            <Text style={[styles.detectedLangBadge, { color: colors.primary, backgroundColor: colors.primary + "18" }]}>
-              Detected: {lang.name}
-            </Text>
-          ) : null;
-        })()}
+        {item.detectedLang && LANGUAGE_MAP.get(item.detectedLang) ? (
+          <Text style={[styles.detectedLangBadge, { color: colors.primary, backgroundColor: colors.primary + "18" }]}>
+            Detected: {LANGUAGE_MAP.get(item.detectedLang)!.name}
+          </Text>
+        ) : null}
         {showRomanization && item.sourceLangCode && (
           <AlignedRomanization text={item.original} langCode={item.sourceLangCode} textColor={colors.secondaryText} romanColor={colors.mutedText} fontSize={14 * fontSizeScale} />
         )}
@@ -115,17 +112,15 @@ function ChatBubble({
             {originalWordCount} → {translatedWordCount} words
             {item.confidence != null ? ` · ${Math.round(item.confidence * 100)}%` : ""}
           </Text>
-          {(() => {
-            const timeStr = formatRelativeTime(item.timestamp);
-            return timeStr ? (
-              <Text style={[styles.timestampText, { color: colors.dimText }]}>{timeStr}</Text>
-            ) : null;
-          })()}
+          {formatRelativeTime(item.timestamp) ? (
+            <Text style={[styles.timestampText, { color: colors.dimText }]}>{formatRelativeTime(item.timestamp)}</Text>
+          ) : null}
           <TouchableOpacity
             style={styles.speakButton}
             onPress={handleSpeak}
             accessibilityRole="button"
             accessibilityLabel={speakingText === item.translated ? "Stop speaking" : "Speak translation"}
+            accessibilityHint={speakingText === item.translated ? "Stops text-to-speech playback" : "Reads the translation aloud"}
           >
             <Text style={[styles.speakIcon, speakingText === item.translated && styles.speakIconActive]}>
               {speakingText === item.translated ? "⏹" : "🔊"}
@@ -136,6 +131,7 @@ function ChatBubble({
             onPress={handleToggleFavorite}
             accessibilityRole="button"
             accessibilityLabel={item.favorited ? "Remove from favorites" : "Add to favorites"}
+            accessibilityHint={item.favorited ? "Removes this translation from your saved favorites" : "Saves this translation to your favorites"}
           >
             <Text style={[styles.favoriteIcon, { color: colors.dimText }, item.favorited && { color: colors.favoriteColor }]}>
               {item.favorited ? "★" : "☆"}
@@ -146,8 +142,9 @@ function ChatBubble({
             onPress={handleShare}
             accessibilityRole="button"
             accessibilityLabel="Share this translation"
+            accessibilityHint="Opens the system share sheet"
           >
-            <Text style={[{ fontSize: 14, color: colors.dimText }]}>↗</Text>
+            <Text style={[styles.shareIcon, { color: colors.dimText }]}>↗</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -254,5 +251,8 @@ const styles = StyleSheet.create({
   },
   favoriteIconActive: {
     color: "#FFD700",
+  },
+  shareIcon: {
+    fontSize: 14,
   },
 });

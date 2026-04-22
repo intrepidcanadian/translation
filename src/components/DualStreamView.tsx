@@ -600,7 +600,7 @@ function DualStreamView({
             OCR {isPaused ? "paused" : detectedBlocks.length > 0 ? `${detectedBlocks.length}` : "scanning"}
           </Text>
           {isOCRTranslating && (
-            <ActivityIndicator size="small" color="#a8a4ff" style={{ marginLeft: 4 }} />
+            <ActivityIndicator size="small" color="#a8a4ff" style={styles.pipelineSpinner} />
           )}
         </View>
 
@@ -611,7 +611,7 @@ function DualStreamView({
             {!isMicActive ? "off" : isListening ? "listening" : "starting..."}
           </Text>
           {isSpeechTranslating && (
-            <ActivityIndicator size="small" color="#ffd93d" style={{ marginLeft: 4 }} />
+            <ActivityIndicator size="small" color="#ffd93d" style={styles.pipelineSpinner} />
           )}
         </View>
       </View>
@@ -965,6 +965,9 @@ const styles = StyleSheet.create({
     color: "#ffa07a",
     fontSize: 11,
     maxWidth: 140,
+  },
+  pipelineSpinner: {
+    marginLeft: 4,
   },
 });
 
