@@ -175,19 +175,13 @@ function GlossaryModal({
         <View style={[modalStyles.content, { backgroundColor: colors.modalBg }]}>
           <Text style={[modalStyles.title, { color: colors.titleText }]}>My Glossary</Text>
           <Text
-            style={{
-              color: colors.dimText,
-              fontSize: 13,
-              textAlign: "center" as const,
-              marginBottom: 12,
-              paddingHorizontal: 20,
-            }}
+            style={[styles.descriptionText, { color: colors.dimText }]}
           >
             Custom translations override API results. Entries apply to the current language pair (
             {sourceLangName} → {targetLangName}).
           </Text>
 
-          <View style={{ paddingHorizontal: 16, marginBottom: 12 }}>
+          <View style={styles.inputSection}>
             <TextInput
               style={[
                 styles.apiKeyInput,
@@ -243,23 +237,16 @@ function GlossaryModal({
               accessibilityHint="Saves the source phrase and translation as a custom glossary entry"
               accessibilityState={{ disabled: !glossarySource.trim() || !glossaryTarget.trim() }}
             >
-              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Add Entry</Text>
+              <Text style={styles.addButtonText}>Add Entry</Text>
             </TouchableOpacity>
           </View>
 
           <FlatList
             data={filteredGlossary}
             keyExtractor={keyExtractor}
-            style={{ maxHeight: 250, paddingHorizontal: 16 }}
+            style={styles.glossaryList}
             ListEmptyComponent={
-              <Text
-                style={{
-                  color: colors.mutedText,
-                  fontSize: 14,
-                  textAlign: "center" as const,
-                  paddingVertical: 20,
-                }}
-              >
+              <Text style={[styles.emptyText, { color: colors.mutedText }]}>
                 No entries for this language pair yet.
               </Text>
             }
@@ -267,24 +254,12 @@ function GlossaryModal({
           />
 
           {glossary.length > 0 && (
-            <View style={{ paddingHorizontal: 16, marginTop: 8, gap: 8 }}>
-              <Text
-                style={{
-                  color: colors.dimText,
-                  fontSize: 12,
-                  textAlign: "center" as const,
-                }}
-              >
+            <View style={styles.footerSection}>
+              <Text style={[styles.totalCountText, { color: colors.dimText }]}>
                 {glossary.length} total {glossary.length === 1 ? "entry" : "entries"} across all
                 language pairs
               </Text>
-              <View
-                style={{
-                  flexDirection: "row" as const,
-                  justifyContent: "center" as const,
-                  gap: 12,
-                }}
-              >
+              <View style={styles.ioButtonRow}>
                 <TouchableOpacity
                   style={[styles.glossaryIOButton, { backgroundColor: colors.cardBg }]}
                   onPress={handleExportCSV}
@@ -292,9 +267,7 @@ function GlossaryModal({
                   accessibilityLabel="Export glossary as CSV"
                   accessibilityHint="Opens the share sheet with all glossary entries formatted as CSV"
                 >
-                  <Text
-                    style={{ color: colors.primary, fontSize: 13, fontWeight: "600" as const }}
-                  >
+                  <Text style={[styles.ioButtonText, { color: colors.primary }]}>
                     Export CSV
                   </Text>
                 </TouchableOpacity>
@@ -305,9 +278,7 @@ function GlossaryModal({
                   accessibilityLabel="Import glossary from clipboard CSV"
                   accessibilityHint="Reads CSV data from your clipboard and adds new glossary entries"
                 >
-                  <Text
-                    style={{ color: colors.primary, fontSize: 13, fontWeight: "600" as const }}
-                  >
+                  <Text style={[styles.ioButtonText, { color: colors.primary }]}>
                     Import from Clipboard
                   </Text>
                 </TouchableOpacity>
@@ -321,7 +292,7 @@ function GlossaryModal({
             accessibilityRole="button"
             accessibilityLabel="Close glossary"
           >
-            <Text style={{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }}>
+            <Text style={[styles.doneButtonText, { color: colors.primary }]}>
               Done
             </Text>
           </TouchableOpacity>
@@ -334,6 +305,52 @@ function GlossaryModal({
 export default React.memo(GlossaryModal);
 
 const styles = StyleSheet.create({
+  descriptionText: {
+    fontSize: 13,
+    textAlign: "center",
+    marginBottom: 12,
+    paddingHorizontal: 20,
+  },
+  inputSection: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+  },
+  addButtonText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 15,
+  },
+  glossaryList: {
+    maxHeight: 250,
+    paddingHorizontal: 16,
+  },
+  emptyText: {
+    fontSize: 14,
+    textAlign: "center",
+    paddingVertical: 20,
+  },
+  footerSection: {
+    paddingHorizontal: 16,
+    marginTop: 8,
+    gap: 8,
+  },
+  totalCountText: {
+    fontSize: 12,
+    textAlign: "center",
+  },
+  ioButtonRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 12,
+  },
+  ioButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  doneButtonText: {
+    fontSize: 17,
+    fontWeight: "600",
+  },
   apiKeyInput: {
     borderRadius: 12,
     paddingVertical: 10,

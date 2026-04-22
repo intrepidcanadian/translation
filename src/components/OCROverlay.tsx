@@ -100,12 +100,7 @@ export const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
             ? `${block.translatedText}. Tap for copy or speak options.`
             : block.translatedText
         }
-        style={{
-          flex: 1,
-          paddingHorizontal: 10,
-          paddingVertical: 3,
-          justifyContent: "center",
-        }}
+        style={ocrStyles.labelPressable}
       >
         <Text
           style={[{ color: "#fff", fontSize, fontWeight: "700", lineHeight: fontSize * 1.2 }, textOnGlass]}
@@ -120,20 +115,16 @@ export const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
 
     return (
       <Animated.View
-        style={{
-          position: "absolute",
-          top: pos.top,
-          left: pos.left,
-          maxWidth: pos.maxWidth,
-          minHeight: labelHeight,
-          backgroundColor: "rgba(26, 26, 46, 0.92)",
-          borderRadius: 8,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: primaryAlpha.border,
-          borderLeftWidth: 3,
-          borderLeftColor: "#a8a4ff",
-          opacity: animatedOpacity,
-        }}
+        style={[
+          ocrStyles.labelContainer,
+          {
+            top: pos.top,
+            left: pos.left,
+            maxWidth: pos.maxWidth,
+            minHeight: labelHeight,
+            opacity: animatedOpacity,
+          },
+        ]}
       >
         {labelBody}
       </Animated.View>
@@ -142,7 +133,7 @@ export const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
 
   // Bubble mode: stacked translation + original in a glass card
   return (
-    <View style={{ position: "absolute", top: block.frame.top, left: block.frame.left, minWidth: block.frame.width, minHeight: block.frame.height, justifyContent: "flex-start", alignItems: "flex-start" }}>
+    <View style={[ocrStyles.bubbleWrapper, { top: block.frame.top, left: block.frame.left, minWidth: block.frame.width, minHeight: block.frame.height }]}>
       <Pressable
         onPress={onPress ? () => onPress(block) : undefined}
         disabled={!onPress}
@@ -153,11 +144,53 @@ export const DetectedBlockOverlay = React.memo(function DetectedBlockOverlay({
             ? `${block.translatedText}. Tap for copy or speak options.`
             : block.translatedText
         }
-        style={{ backgroundColor: "rgba(26, 26, 46, 0.88)", borderRadius: 8, paddingVertical: 4, paddingHorizontal: 8, borderWidth: 1, borderColor: primaryAlpha.border, maxWidth: 280 }}
+        style={ocrStyles.bubblePressable}
       >
-        <Text style={[{ color: "#a8a4ff", fontSize: 14, fontWeight: "700" }, textOnGlass]} numberOfLines={2}>{block.translatedText}</Text>
-        <Text style={[{ color: "rgba(255,255,255,0.7)", fontSize: 10, marginTop: 1 }, textOnGlass]} numberOfLines={1}>{block.originalText}</Text>
+        <Text style={[ocrStyles.bubbleTranslated, textOnGlass]} numberOfLines={2}>{block.translatedText}</Text>
+        <Text style={[ocrStyles.bubbleOriginal, textOnGlass]} numberOfLines={1}>{block.originalText}</Text>
       </Pressable>
     </View>
   );
+});
+
+const ocrStyles = StyleSheet.create({
+  labelPressable: {
+    flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    justifyContent: "center",
+  },
+  labelContainer: {
+    position: "absolute",
+    backgroundColor: "rgba(26, 26, 46, 0.92)",
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: primaryAlpha.border,
+    borderLeftWidth: 3,
+    borderLeftColor: "#a8a4ff",
+  },
+  bubbleWrapper: {
+    position: "absolute",
+    justifyContent: "flex-start",
+    alignItems: "flex-start",
+  },
+  bubblePressable: {
+    backgroundColor: "rgba(26, 26, 46, 0.88)",
+    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: primaryAlpha.border,
+    maxWidth: 280,
+  },
+  bubbleTranslated: {
+    color: "#a8a4ff",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  bubbleOriginal: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 10,
+    marginTop: 1,
+  },
 });

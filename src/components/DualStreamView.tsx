@@ -699,7 +699,11 @@ function DualStreamView({
           </View>
 
           {ocrError && (
-            <Text style={styles.ocrErrorText} numberOfLines={1}>
+            <Text
+              style={styles.ocrErrorText}
+              numberOfLines={1}
+              accessibilityLiveRegion="polite"
+            >
               OCR: {ocrError}
             </Text>
           )}

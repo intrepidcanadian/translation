@@ -130,7 +130,10 @@ function LanguagePicker({ label, selected, onSelect, showAutoDetect, recentCodes
     ({ item }: { item: ListItem }) => {
       if (isSectionHeader(item)) {
         return (
-          <View style={[styles.sectionHeader, { backgroundColor: colors.sectionBg }]}>
+          <View
+            style={[styles.sectionHeader, { backgroundColor: colors.sectionBg }]}
+            accessibilityRole="header"
+          >
             <Text style={[styles.sectionHeaderText, { color: colors.primary }]}>{item.title}</Text>
           </View>
         );

@@ -95,7 +95,12 @@ function TranslationShareCard({
             options={{ format: "png", quality: 1.0 }}
             style={styles.viewShot}
           >
-            <View style={styles.card}>
+            <View
+              style={styles.card}
+              importantForAccessibility="no-hide-descendants"
+              accessible={true}
+              accessibilityLabel={`Translation card preview: ${original} translated to ${translated}`}
+            >
               {/* Gradient-like header */}
               <View style={styles.cardHeader}>
                 <Text style={styles.cardAppName}>Live Translator</Text>
