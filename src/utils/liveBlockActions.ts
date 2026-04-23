@@ -1,6 +1,7 @@
 import { Alert } from "react-native";
 import * as Speech from "expo-speech";
 import { copyWithAutoClear } from "../services/clipboard";
+import { logger } from "../services/logger";
 
 /**
  * Action sheet for a tapped OCR block — shows Copy Translation / Copy
@@ -44,7 +45,13 @@ export function showBlockActionSheet(
       },
       {
         text: "Speak",
-        onPress: () => Speech.speak(translatedText, { language: targetLangCode }),
+        onPress: () => {
+          try {
+            Speech.speak(translatedText, { language: targetLangCode });
+          } catch (err) {
+            logger.warn("Speech", "OCR block speak failed", err);
+          }
+        },
       },
       { text: "Cancel", style: "cancel" },
     ]

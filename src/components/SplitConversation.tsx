@@ -199,16 +199,17 @@ function SplitConversation({ visible, onClose }: SplitConversationProps) {
       };
 
       if (settings.autoPlayTTS) {
-        Speech.speak(translated, {
-          language: ttsLang,
-          rate: settings.speechRate,
-          onDone: handoff,
-          // onStopped fires if Speech.stop() is called (e.g. by
-          // startSpeechSession in the next mic acquire). Don't double-
-          // handoff in that case — the explicit start path is already
-          // running.
-          onError: handoff,
-        });
+        try {
+          Speech.speak(translated, {
+            language: ttsLang,
+            rate: settings.speechRate,
+            onDone: handoff,
+            onError: handoff,
+          });
+        } catch (err) {
+          logger.warn("Speech", "SplitConversation auto-TTS failed", err);
+          handoff();
+        }
       } else {
         autoSwitchTimerRef.current = setTimeout(handoff, 600);
       }
@@ -311,7 +312,11 @@ function SplitConversation({ visible, onClose }: SplitConversationProps) {
     // queue up overlapping playback.
     try { Speech.stop(); } catch (err) { logger.warn("Speech", "Speech.stop() failed in replayHalf", err); }
     const ttsLang = speaker === "A" ? targetLang.speechCode : sourceLang.speechCode;
-    Speech.speak(result.translated, { language: ttsLang, rate: settings.speechRate });
+    try {
+      Speech.speak(result.translated, { language: ttsLang, rate: settings.speechRate });
+    } catch (err) {
+      logger.warn("Speech", "SplitConversation replay TTS failed", err);
+    }
   }, [lastA, lastB, sourceLang.speechCode, targetLang.speechCode, settings.speechRate]);
 
   // Cleanup on close. Also clears the pending auto-handoff timer and

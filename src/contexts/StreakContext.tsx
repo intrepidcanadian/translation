@@ -25,8 +25,17 @@ export function StreakProvider({ children }: { children: React.ReactNode }) {
       .then((val) => {
         if (val) {
           try {
-            const data = JSON.parse(val) as Streak;
-            setStreak(data);
+            const raw = JSON.parse(val);
+            if (
+              typeof raw === "object" &&
+              raw !== null &&
+              typeof raw.current === "number" &&
+              typeof raw.lastDate === "string"
+            ) {
+              setStreak({ current: raw.current, lastDate: raw.lastDate });
+            } else {
+              logger.warn("Storage", "Streak JSON has unexpected shape, using defaults");
+            }
           } catch (err) {
             logger.warn("Storage", "Failed to parse streak JSON", err);
           }

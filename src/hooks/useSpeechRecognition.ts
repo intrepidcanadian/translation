@@ -222,7 +222,11 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
 
       if (autoPlayTTS) {
         const ttsLang = (conversationMode && speaker === "B") ? sourceSpeechCode : targetSpeechCode;
-        Speech.speak(translatedText.trim(), { language: ttsLang, rate: speechRate });
+        try {
+          Speech.speak(translatedText.trim(), { language: ttsLang, rate: speechRate });
+        } catch (err) {
+          logger.warn("Speech", "Auto-play TTS failed", err);
+        }
       }
     }
     setLiveText("");

@@ -345,10 +345,14 @@ function DualStreamView({
       });
 
       // Auto-TTS the translation
-      Speech.speak(speechTranslated.trim(), {
-        language: targetSpeechCode,
-        rate: speechRate,
-      });
+      try {
+        Speech.speak(speechTranslated.trim(), {
+          language: targetSpeechCode,
+          rate: speechRate,
+        });
+      } catch (err) {
+        logger.warn("Speech", "DualStream auto-TTS failed", err);
+      }
     }
 
     // Reset for next utterance
@@ -400,12 +404,15 @@ function DualStreamView({
 
   useSpeechRecognitionEvent("error", () => {
     setIsListening(false);
-    // Auto-restart on transient errors if mic is active
-    if (isMicActive && isMountedRef.current) {
+    // Auto-restart on transient errors if mic is active.
+    // Uses isMicActiveRef so the 1000ms setTimeout closure reads the current
+    // value — not a stale capture from handler registration time. Matches the
+    // "end" handler fix from run 31.
+    if (isMicActiveRef.current && isMountedRef.current) {
       setSpeechError(null);
       restartTimerRef.current = setTimeout(() => {
         restartTimerRef.current = null;
-        if (isMicActive && isMountedRef.current) {
+        if (isMicActiveRef.current && isMountedRef.current) {
           startSpeechRecognition();
         }
       }, 1000);

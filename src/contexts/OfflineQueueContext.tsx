@@ -67,7 +67,23 @@ export function OfflineQueueProvider({ children }: { children: React.ReactNode }
       .then((val) => {
         if (val) {
           try {
-            const data = JSON.parse(val) as OfflineQueueItem[];
+            const raw = JSON.parse(val);
+            if (!Array.isArray(raw)) {
+              logger.warn("Offline", "Offline queue JSON is not an array, discarding");
+              return;
+            }
+            const data: OfflineQueueItem[] = raw.filter(
+              (item: unknown): item is OfflineQueueItem =>
+                typeof item === "object" &&
+                item !== null &&
+                typeof (item as OfflineQueueItem).text === "string" &&
+                typeof (item as OfflineQueueItem).sourceLang === "string" &&
+                typeof (item as OfflineQueueItem).targetLang === "string" &&
+                typeof (item as OfflineQueueItem).timestamp === "number"
+            );
+            if (data.length < raw.length) {
+              logger.warn("Offline", `Filtered ${raw.length - data.length} malformed offline queue items`);
+            }
             offlineQueueRef.current = data;
             setOfflineQueue(data);
           } catch (err) {

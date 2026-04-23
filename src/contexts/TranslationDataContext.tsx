@@ -92,7 +92,7 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
         JSON.stringify({ lastOriginal: original, lastTranslated: translated, sourceLang: from.toUpperCase(), targetLang: to.toUpperCase() })
       );
       if (Platform.OS === "android") {
-        import("react-native-android-widget").then(({ requestWidgetUpdate }) => {
+        import("react-native-android-widget").then(({ requestWidgetUpdate }) =>
           import("../widgets/TranslateWidget").then(({ TranslateWidget }) => {
             requestWidgetUpdate({
               widgetName: "TranslateWidget",
@@ -100,17 +100,17 @@ export function TranslationDataProvider({ children }: { children: React.ReactNod
                 <TranslateWidget lastOriginal={original} lastTranslated={translated} sourceLang={from.toUpperCase()} targetLang={to.toUpperCase()} />
               ),
             });
-          });
-        }).catch((err: unknown) => logger.warn("Widget", "Widget update failed", err));
+          })
+        ).catch((err: unknown) => logger.warn("Widget", "Widget update failed", err));
       } else if (Platform.OS === "ios") {
-        import("../../modules/apple-translation").then((AppleTranslation) => {
+        import("../../modules/apple-translation").then((AppleTranslation) =>
           AppleTranslation.saveWidgetData({
             lastOriginal: original,
             lastTranslated: translated,
             sourceLang: from.toUpperCase(),
             targetLang: to.toUpperCase(),
-          });
-        }).catch((err: unknown) => logger.warn("Widget", "iOS widget update failed", err));
+          })
+        ).catch((err: unknown) => logger.warn("Widget", "iOS widget update failed", err));
       }
     } catch (err) {
       logger.warn("Widget", "Widget data save failed", err);

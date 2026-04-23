@@ -56,7 +56,11 @@ function SettingsScreen() {
   const closePassengerCard = useCallback(() => setShowPassengerCard(false), []);
 
   const speakText = useCallback((text: string) => {
-    Speech.speak(text, { language: targetLang.speechCode, rate: settings.speechRate });
+    try {
+      Speech.speak(text, { language: targetLang.speechCode, rate: settings.speechRate });
+    } catch (err) {
+      logger.warn("Speech", "SettingsScreen TTS failed", err);
+    }
   }, [targetLang.speechCode, settings.speechRate]);
 
   const copyToClipboard = useCallback(async (text: string) => {

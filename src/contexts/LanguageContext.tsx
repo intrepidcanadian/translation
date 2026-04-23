@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, useEffect, useMemo } from "react";
+import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Language, LANGUAGES, LANGUAGE_MAP } from "../services/translation";
 import { impactLight } from "../services/haptics";
@@ -26,18 +26,23 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 export function LanguageProvider({ children }: { children: React.ReactNode }) {
   const [sourceLang, setSourceLang] = useState<Language>(LANGUAGES[0]); // English
   const [targetLang, setTargetLang] = useState<Language>(LANGUAGES[1]); // Spanish
+  const sourceLangRef = useRef(sourceLang);
+  const targetLangRef = useRef(targetLang);
+  useEffect(() => { sourceLangRef.current = sourceLang; }, [sourceLang]);
+  useEffect(() => { targetLangRef.current = targetLang; }, [targetLang]);
 
   const swapLanguages = useCallback(() => {
     impactLight();
-    if (sourceLang.code === "autodetect") {
-      setSourceLang(targetLang);
+    const src = sourceLangRef.current;
+    const tgt = targetLangRef.current;
+    if (src.code === "autodetect") {
+      setSourceLang(tgt);
       setTargetLang(LANGUAGES[0]); // English
     } else {
-      const prev = sourceLang;
-      setSourceLang(targetLang);
-      setTargetLang(prev);
+      setSourceLang(tgt);
+      setTargetLang(src);
     }
-  }, [sourceLang, targetLang]);
+  }, []);
 
   const applyPair = useCallback((sourceCode: string, targetCode: string) => {
     const src = LANGUAGE_MAP.get(sourceCode);
