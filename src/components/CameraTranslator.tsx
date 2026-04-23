@@ -105,15 +105,13 @@ function CameraTranslator({
   translationProvider,
   colors,
 }: CameraTranslatorProps) {
-  const device = useCameraDevice("back");
+  const [cameraPosition, setCameraPosition] = useState<"back" | "front">("back");
+  const device = useCameraDevice(cameraPosition);
   const { hasPermission, requestPermission } = useCameraPermission();
   const captureRef = useRef<Camera>(null);
 
   const [isPaused, setIsPaused] = useState(false);
-  // "label" — horizontal glass label anchored next to each detected line
-  // (default, and the mode users see when opening the scanner).
-  // "bubble" — stacked translation+original in a glass card at the text's
-  // top-left. Retained for users who want to see both strings at once.
+  const [torchOn, setTorchOn] = useState(false);
   const [overlayMode, setOverlayMode] = useState<"bubble" | "label">("label");
   const blockOpacities = useRef(new Map<string, Animated.Value>()).current;
   const isMountedRef = useRef(true);
@@ -181,6 +179,11 @@ function CameraTranslator({
   }, [blockOpacities]);
 
   const handleTogglePause = useCallback(() => setIsPaused((p) => !p), []);
+  const handleToggleTorch = useCallback(() => setTorchOn((t) => !t), []);
+  const handleToggleCamera = useCallback(() => {
+    setCameraPosition((p) => p === "back" ? "front" : "back");
+    setTorchOn(false);
+  }, []);
 
   // Track screen dimensions for overlay mapping
   useEffect(() => {
@@ -299,6 +302,7 @@ function CameraTranslator({
           isActive={visible && !isCaptured}
           mode="recognize"
           photo={true}
+          torch={torchOn ? "on" : "off"}
           options={ocrOptions}
           callback={isPaused ? () => {} : handleOCRResult}
         />
@@ -411,6 +415,25 @@ function CameraTranslator({
               accessibilityState={{ disabled: isProcessingCapture }}
             >
               <View style={styles.captureButtonInner} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.topButton, torchOn && styles.topButtonActive]}
+              onPress={handleToggleTorch}
+              accessibilityRole="button"
+              accessibilityLabel={torchOn ? "Turn off flashlight" : "Turn on flashlight"}
+              accessibilityState={{ selected: torchOn }}
+            >
+              <Text style={styles.topButtonText}>{torchOn ? "🔦" : "💡"}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.topButton}
+              onPress={handleToggleCamera}
+              accessibilityRole="button"
+              accessibilityLabel={cameraPosition === "back" ? "Switch to front camera" : "Switch to back camera"}
+            >
+              <Text style={styles.topButtonText}>🔄</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

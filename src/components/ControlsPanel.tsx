@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from "react";
+import React, { useCallback, useMemo, useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,14 @@ import {
 } from "react-native";
 import { countWords } from "../utils/wordCount";
 import { glassSurface, type ThemeColors } from "../theme";
+
+function formatDuration(startTime: number | null): string {
+  if (!startTime) return "";
+  const seconds = Math.floor((Date.now() - startTime) / 1000);
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m > 0 ? `${m}:${s.toString().padStart(2, "0")}` : `0:${s.toString().padStart(2, "0")}`;
+}
 
 interface ControlsPanelProps {
   colors: ThemeColors;
@@ -28,6 +36,7 @@ interface ControlsPanelProps {
   sourceLangName: string;
   targetLangName: string;
   silenceTimeout: number;
+  recordingStartTime: number | null;
   /** #160: session-scoped "mic may be muted / environment too quiet" hint from
    * useSpeechRecognition. When true, renders a soft inline line below the mic
    * indicator explaining the pattern — previously this hint was buried in
@@ -68,6 +77,7 @@ function ControlsPanel({
   sourceLangName,
   targetLangName,
   silenceTimeout,
+  recordingStartTime,
   likelyMicMuted,
   pulseAnim,
   pulseOpacity,
@@ -90,6 +100,20 @@ function ControlsPanel({
   const handleStartListeningA = useCallback(() => onStartListeningAs("A"), [onStartListeningAs]);
   const handleStartListeningB = useCallback(() => onStartListeningAs("B"), [onStartListeningAs]);
   const handleCopyPreview = useCallback(() => onCopyToClipboard(typedPreview), [onCopyToClipboard, typedPreview]);
+
+  const [durationStr, setDurationStr] = useState("");
+  const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (recordingStartTime) {
+      setDurationStr(formatDuration(recordingStartTime));
+      durationTimerRef.current = setInterval(() => {
+        setDurationStr(formatDuration(recordingStartTime));
+      }, 1000);
+      return () => { if (durationTimerRef.current) clearInterval(durationTimerRef.current); };
+    }
+    setDurationStr("");
+    if (durationTimerRef.current) clearInterval(durationTimerRef.current);
+  }, [recordingStartTime]);
 
   return (
     <View style={[styles.controls, isLandscape && styles.controlsLandscape]}>
@@ -216,7 +240,7 @@ function ControlsPanel({
             <View style={styles.listeningIndicator} accessibilityLiveRegion="polite">
               <Text style={[styles.listeningDot, { color: colors.destructiveBg }]} importantForAccessibility="no">●</Text>
               <Text style={[styles.listeningLabel, { color: colors.destructiveBg }]}>
-                Listening...{silenceTimeout > 0 ? ` (auto-stop ${silenceTimeout}s)` : ""}
+                Listening{durationStr ? ` ${durationStr}` : "..."}{silenceTimeout > 0 ? ` (continuous)` : ""}
               </Text>
             </View>
           )}

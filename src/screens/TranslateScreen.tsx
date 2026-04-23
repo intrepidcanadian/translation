@@ -254,7 +254,7 @@ export default function TranslateScreen() {
     onShowError: showError,
   });
 
-  const { isListening, liveText, setLiveText, translatedText, isTranslating, setIsTranslating, lastDetectedLang, pulseAnim, pulseOpacity, skeletonAnim, startListening: startListeningBase, startListeningAs, stopListening, abortControllerRef, likelyMicMuted } = speech;
+  const { isListening, liveText, setLiveText, translatedText, isTranslating, setIsTranslating, lastDetectedLang, pulseAnim, pulseOpacity, skeletonAnim, startListening: startListeningBase, startListeningAs, stopListening, abortControllerRef, recordingStartTime, likelyMicMuted } = speech;
 
   const startListening = useCallback(async () => {
     setErrorMessage("");
@@ -868,6 +868,7 @@ export default function TranslateScreen() {
               sourceLangName={sourceLang.name}
               targetLangName={targetLang.name}
               silenceTimeout={settings.silenceTimeout}
+              recordingStartTime={recordingStartTime}
               likelyMicMuted={likelyMicMuted}
               pulseAnim={pulseAnim}
               pulseOpacity={pulseOpacity}

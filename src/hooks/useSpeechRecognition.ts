@@ -77,6 +77,9 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
   const isStartingRef = useRef(false); // Guard against rapid double-taps
   const isListeningRef = useRef(false);
   useEffect(() => { isListeningRef.current = isListening; }, [isListening]);
+  const isManualStopRef = useRef(false);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
 
   // Snapshot ref of the mutable options. Callbacks below read from this ref
   // instead of closing over the destructured values, so startListening and
@@ -133,6 +136,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     return () => {
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       if (translationTimeout.current) clearTimeout(translationTimeout.current);
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       abortControllerRef.current?.abort();
     };
   }, []);
@@ -156,12 +160,16 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     return () => sub.remove();
   }, []);
 
-  // Debounced translation (used by speech results)
+  // Debounced translation (used by speech results). Interim results use a
+  // shorter debounce (150ms) so the user sees translations update in near
+  // real-time while speaking. Final results translate immediately — no
+  // reason to delay when the speech engine has committed the transcript.
   const debouncedTranslate = useCallback(
-    (text: string) => {
+    (text: string, isFinal?: boolean) => {
       if (translationTimeout.current) clearTimeout(translationTimeout.current);
       if (!text.trim() || text.trim() === lastTranslatedRef.current) return;
 
+      const delay = isFinal ? 0 : 150;
       translationTimeout.current = setTimeout(async () => {
         abortControllerRef.current?.abort();
         const controller = new AbortController();
@@ -204,7 +212,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
         } finally {
           if (!controller.signal.aborted) setIsTranslating(false);
         }
-      }, 300);
+      }, delay);
     },
     [sourceLangCode, targetLangCode, conversationMode, activeSpeakerRef, onShowError, translationProvider, glossaryLookup, updateWidgetData]
   );
@@ -236,6 +244,19 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     finalTextRef.current = "";
     lastConfidenceRef.current = undefined;
     lastDetectedLangRef.current = undefined;
+
+    // Auto-restart when speech ended due to silence timeout (not a manual
+    // stop). Keeps continuous translation going as long as the user hasn't
+    // explicitly tapped stop — matching the DualStreamView behavior.
+    if (!isManualStopRef.current) {
+      restartTimerRef.current = setTimeout(() => {
+        restartTimerRef.current = null;
+        if (!isManualStopRef.current && !isListeningRef.current && !isStartingRef.current) {
+          startListeningInternal();
+        }
+      }, 400);
+    }
+    isManualStopRef.current = false;
   });
 
   useSpeechRecognitionEvent("result", (event) => {
@@ -252,11 +273,11 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
       finalTextRef.current = updated;
       setFinalText(updated);
       setLiveText(updated);
-      debouncedTranslate(updated);
+      debouncedTranslate(updated, true);
     } else {
       const combined = finalTextRef.current ? `${finalTextRef.current} ${transcript}` : transcript;
       setLiveText(combined);
-      debouncedTranslate(combined);
+      debouncedTranslate(combined, false);
     }
   });
 
@@ -309,21 +330,45 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     setIsListening(false);
   });
 
+  // Internal start — shared by the public startListening (user tap) and the
+  // auto-restart path (silence timeout re-entry). Separated so the auto-restart
+  // can skip the haptic feedback and permission request (already granted).
+  const startListeningInternal = useCallback(async () => {
+    if (isStartingRef.current || isListeningRef.current) return;
+    isStartingRef.current = true;
+
+    try {
+      const opts = optionsRef.current;
+      const speechLang = (opts.conversationMode && opts.activeSpeakerRef.current === "B")
+        ? opts.targetSpeechCode
+        : (opts.sourceLangCode === "autodetect" ? "en-US" : opts.sourceSpeechCode);
+
+      startSpeechSession({
+        lang: speechLang,
+        interimResults: true,
+        continuous: true,
+        maxAlternatives: 1,
+        requiresOnDeviceRecognition: opts.offlineSpeech,
+        ...(opts.sourceLangCode === "autodetect" ? { addsPunctuation: true } : {}),
+      });
+    } finally {
+      setTimeout(() => { isStartingRef.current = false; }, 500);
+    }
+  }, []);
+
   // Stable — reads all dynamic inputs from optionsRef and isListeningRef.
   // No deps means this identity survives across renders, which is what the
   // React.memo paths downstream rely on.
   const startListening = useCallback(async () => {
     // Prevent double-tap: ignore if already starting or listening
     if (isStartingRef.current || isListeningRef.current) return;
-    isStartingRef.current = true;
 
+    isManualStopRef.current = false;
+    setRecordingStartTime(Date.now());
     impactMedium();
     try {
       const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!result.granted) {
-        // #146: a permission denial is a speech-pipeline failure too.
-        // Tagging it as Speech warn ensures rolling diagnostics reflect
-        // users who can't start speech at all, not just translate failures.
         logger.warn("Speech", "microphone permission denied");
         Alert.alert(
           "Microphone Permission Required",
@@ -336,27 +381,11 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
         return;
       }
 
-      const opts = optionsRef.current;
-      const speechLang = (opts.conversationMode && opts.activeSpeakerRef.current === "B")
-        ? opts.targetSpeechCode
-        : (opts.sourceLangCode === "autodetect" ? "en-US" : opts.sourceSpeechCode);
-
-      // Routed through startSpeechSession (src/utils/speechSession.ts) which
-      // stops in-flight TTS and pins the iOS audio category — the only
-      // reliable way to avoid AVFoundation -11803 / OSStatus -16409 here.
-      startSpeechSession({
-        lang: speechLang,
-        interimResults: true,
-        continuous: true,
-        maxAlternatives: 1,
-        requiresOnDeviceRecognition: opts.offlineSpeech,
-        ...(opts.sourceLangCode === "autodetect" ? { addsPunctuation: true } : {}),
-      });
-    } finally {
-      // Reset guard after a short delay to allow the "start" event to fire
-      setTimeout(() => { isStartingRef.current = false; }, 500);
+      await startListeningInternal();
+    } catch (err) {
+      logger.warn("Speech", "startListening failed", err);
     }
-  }, []);
+  }, [startListeningInternal]);
 
   const startListeningAs = useCallback((speaker: "A" | "B") => {
     optionsRef.current.activeSpeakerRef.current = speaker;
@@ -364,6 +393,9 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
   }, [startListening]);
 
   const stopListening = useCallback(() => {
+    isManualStopRef.current = true;
+    setRecordingStartTime(null);
+    if (restartTimerRef.current) { clearTimeout(restartTimerRef.current); restartTimerRef.current = null; }
     impactLight();
     ExpoSpeechRecognitionModule.stop();
   }, []);
@@ -385,10 +417,8 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     startListening,
     startListeningAs,
     stopListening,
-    /** #160: session-scoped "mic may be muted" hint — true when the user has
-     * logged ≥ MIC_MUTED_HINT_THRESHOLD no-speech events without a single
-     * successful speech translation in the same mount. Cleared automatically
-     * on the first successful translate. */
+    /** Epoch ms when the current recording session started, or null if not recording. */
+    recordingStartTime,
     likelyMicMuted,
   };
 }
