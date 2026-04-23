@@ -55,6 +55,12 @@
       ],
       "expo-quick-actions",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Live Translator to select images for text recognition and translation."
+        }
+      ],
+      [
         "expo-location",
         {
           "locationAlwaysAndWhenInUsePermission": "Live Translator may use your location to suggest relevant phrases for nearby languages."

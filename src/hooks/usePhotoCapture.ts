@@ -3,14 +3,12 @@ import { Platform, Share } from "react-native";
 import { Animated } from "react-native";
 import type { Camera, PhotoFile } from "react-native-vision-camera";
 import TextRecognition from "@react-native-ml-kit/text-recognition";
+import * as ImagePicker from "expo-image-picker";
 import { getMLKitScript } from "../utils/getMLKitScript";
 import * as FileSystem from "expo-file-system";
 import { logger } from "../services/logger";
 import { showBlockActionSheet } from "../utils/liveBlockActions";
 
-// Best-effort delete of a captured photo temp file. Silent on failure — the OS
-// will reap the temp dir eventually, and we don't want cleanup errors to
-// surface to the user.
 async function deleteCapturedUri(uri: string | null): Promise<void> {
   if (!uri) return;
   try {
@@ -80,6 +78,52 @@ export function usePhotoCapture({
     };
   }, []);
 
+  const processImageForOCR = useCallback(async (uri: string, imageWidth: number, imageHeight: number) => {
+    const script = getMLKitScript(sourceLangCode);
+    const result = await TextRecognition.recognize(uri, script);
+
+    if (!result.blocks.length) {
+      setCaptureError("No text detected in photo. Try again.");
+      setIsProcessingCapture(false);
+      return;
+    }
+
+    const lines: Array<{ text: string; frame: { top: number; left: number; width: number; height: number } }> = [];
+    for (const block of result.blocks) {
+      for (const line of block.lines) {
+        if (!line.text?.trim() || !line.frame) continue;
+        lines.push({
+          text: line.text.trim(),
+          frame: {
+            top: line.frame.top ?? 0,
+            left: line.frame.left ?? 0,
+            width: line.frame.width ?? 0,
+            height: line.frame.height ?? 0,
+          },
+        });
+      }
+    }
+
+    if (lines.length === 0) {
+      setCaptureError("No text lines detected.");
+      setIsProcessingCapture(false);
+      return;
+    }
+
+    const texts = lines.map((l) => l.text);
+    const translations = await translateCapturedLines(texts, sourceLangCode, targetLangCode, translationProvider);
+
+    const blocks: CapturedBlock[] = lines.map((line, i) => ({
+      id: `cap-${i}-${line.text.slice(0, 8)}`,
+      originalText: line.text,
+      translatedText: translations[i] || line.text,
+      imageFrame: line.frame,
+      screenFrame: mapImageRectToScreen(line.frame, imageWidth, imageHeight, screenDims.width, screenDims.height),
+    }));
+
+    setCapturedBlocks(blocks);
+  }, [sourceLangCode, targetLangCode, translationProvider, screenDims]);
+
   const handleCapture = useCallback(async () => {
     if (!captureRef.current || isProcessingCapture) return;
 
@@ -96,59 +140,49 @@ export function usePhotoCapture({
       setIsCaptured(true);
       blockOpacities.clear();
 
-      const script = getMLKitScript(sourceLangCode);
-      const result = await TextRecognition.recognize(uri, script);
-
-      if (!result.blocks.length) {
-        setCaptureError("No text detected in photo. Try again.");
-        setIsProcessingCapture(false);
-        return;
-      }
-
-      const lines: Array<{ text: string; frame: { top: number; left: number; width: number; height: number } }> = [];
-      for (const block of result.blocks) {
-        for (const line of block.lines) {
-          if (!line.text?.trim() || !line.frame) continue;
-          lines.push({
-            text: line.text.trim(),
-            frame: {
-              top: line.frame.top ?? 0,
-              left: line.frame.left ?? 0,
-              width: line.frame.width ?? 0,
-              height: line.frame.height ?? 0,
-            },
-          });
-        }
-      }
-
-      if (lines.length === 0) {
-        setCaptureError("No text lines detected.");
-        setIsProcessingCapture(false);
-        return;
-      }
-
-      const texts = lines.map((l) => l.text);
-      const translations = await translateCapturedLines(texts, sourceLangCode, targetLangCode, translationProvider);
-
-      const blocks: CapturedBlock[] = lines.map((line, i) => ({
-        id: `cap-${i}-${line.text.slice(0, 8)}`,
-        originalText: line.text,
-        translatedText: translations[i] || line.text,
-        imageFrame: line.frame,
-        screenFrame: mapImageRectToScreen(line.frame, photo.width, photo.height, screenDims.width, screenDims.height),
-      }));
-
-      setCapturedBlocks(blocks);
+      await processImageForOCR(uri, photo.width, photo.height);
     } catch (err: unknown) {
       setCaptureError(err instanceof Error ? err.message : "Capture failed");
       setIsCaptured(false);
-      // Delete the stale capture if takePhoto succeeded but a later step failed.
       void deleteCapturedUri(capturedUriRef.current);
       setCapturedUri(null);
     } finally {
       setIsProcessingCapture(false);
     }
-  }, [captureRef, sourceLangCode, targetLangCode, translationProvider, screenDims, isProcessingCapture, blockOpacities]);
+  }, [captureRef, sourceLangCode, targetLangCode, translationProvider, screenDims, isProcessingCapture, blockOpacities, processImageForOCR]);
+
+  const handlePickImage = useCallback(async () => {
+    if (isProcessingCapture) return;
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 1,
+      });
+
+      if (result.canceled || !result.assets?.length) return;
+
+      const asset = result.assets[0];
+      setIsProcessingCapture(true);
+      setCaptureError(null);
+
+      const uri = asset.uri;
+      const imageWidth = asset.width;
+      const imageHeight = asset.height;
+
+      setCapturedUri(uri);
+      setIsCaptured(true);
+      blockOpacities.clear();
+
+      await processImageForOCR(uri, imageWidth, imageHeight);
+    } catch (err: unknown) {
+      setCaptureError(err instanceof Error ? err.message : "Failed to process image");
+      setIsCaptured(false);
+      setCapturedUri(null);
+    } finally {
+      setIsProcessingCapture(false);
+    }
+  }, [isProcessingCapture, blockOpacities, processImageForOCR]);
 
   const handleRetake = useCallback(() => {
     // Delete the previous photo before clearing state so we don't leak the
@@ -192,6 +226,7 @@ export function usePhotoCapture({
     isProcessingCapture,
     captureError,
     handleCapture,
+    handlePickImage,
     handleRetake,
     handleShareCapture,
     handleBlockTap,

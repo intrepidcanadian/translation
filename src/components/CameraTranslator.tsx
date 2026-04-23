@@ -119,7 +119,7 @@ function CameraTranslator({
   const [screenDims, setScreenDims] = useState(() => Dimensions.get("window"));
 
   // Photo capture hook — manages capture state, OCR, translation, share, block tap
-  const { isCaptured, capturedUri, capturedBlocks, isProcessingCapture, captureError, handleCapture, handleRetake, handleShareCapture, handleBlockTap } = usePhotoCapture({
+  const { isCaptured, capturedUri, capturedBlocks, isProcessingCapture, captureError, handleCapture, handlePickImage, handleRetake, handleShareCapture, handleBlockTap } = usePhotoCapture({
     captureRef,
     sourceLangCode,
     targetLangCode,
@@ -415,6 +415,18 @@ function CameraTranslator({
               accessibilityState={{ disabled: isProcessingCapture }}
             >
               <View style={styles.captureButtonInner} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.topButton}
+              onPress={handlePickImage}
+              disabled={isProcessingCapture}
+              accessibilityRole="button"
+              accessibilityLabel="Pick image from photo library"
+              accessibilityHint="Opens photo library to select an image for translation"
+              accessibilityState={{ disabled: isProcessingCapture }}
+            >
+              <Text style={styles.topButtonText}>🖼</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
