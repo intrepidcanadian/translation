@@ -499,7 +499,7 @@ function SplitConversation({ visible, onClose }: SplitConversationProps) {
       </View>
 
       {/* Speaker B: bottom half, rotated 180deg for face-to-face */}
-      <View style={{ flex: 1, transform: [{ rotate: "180deg" }] }}>
+      <View style={styles.rotatedHalf}>
         {renderHalf("B")}
       </View>
     </View>
@@ -637,6 +637,10 @@ const styles = StyleSheet.create({
   closeText: {
     fontSize: 16,
     fontWeight: "700",
+  },
+  rotatedHalf: {
+    flex: 1,
+    transform: [{ rotate: "180deg" }],
   },
 });
 

@@ -148,7 +148,7 @@ const ProductCard = React.memo(function ProductCard({
         accessibilityHint={isExpanded ? "Collapse product details" : "Expand product details"}
         accessibilityState={{ expanded: isExpanded }}
       >
-        <View style={{ flex: 1 }}>
+        <View style={styles.flexOne}>
           {product.brand && (
             <Text style={[styles.productBrand, { color: colors.primary }]}>{product.brand}</Text>
           )}
@@ -460,7 +460,7 @@ function DutyFreeCatalogScanner({
           <View style={styles.badge}>
             <Text style={styles.badgeText}>🛍️ Duty-Free Catalog</Text>
           </View>
-          <View style={{ width: 44 }} />
+          <View style={styles.topBarSpacer} />
         </View>
         {error && (
           <View style={styles.errorBanner}>
@@ -487,7 +487,7 @@ function DutyFreeCatalogScanner({
     return (
       <View style={styles.container}>
         <View style={styles.centerContent}>
-          <Text style={{ fontSize: 48, marginBottom: 16 }}>🛍️</Text>
+          <Text style={styles.processingEmoji}>🛍️</Text>
           <ActivityIndicator size="large" color="#6c63ff" />
           <Text style={styles.processingText}>{processingStep}</Text>
           <Text style={styles.processingHint}>Neural Engine + OCR + Currency</Text>
@@ -498,7 +498,7 @@ function DutyFreeCatalogScanner({
 
   // Results
   return (
-    <View style={{ flex: 1, backgroundColor: colors.containerBg }}>
+    <View style={[styles.flexOne, { backgroundColor: colors.containerBg }]}>
       {/* Fixed header */}
       <View style={[styles.resultsHeader, { backgroundColor: colors.containerBg, borderBottomColor: colors.border }]}>
         <TouchableOpacity onPress={handleBackToScanner} accessibilityRole="button" accessibilityLabel="Back to scanner" accessibilityHint="Returns to camera to scan another page">
@@ -825,4 +825,7 @@ const styles = StyleSheet.create({
   actionBtn: { flex: 1, paddingVertical: 14, borderRadius: 12, alignItems: "center" },
   actionBtnText: { color: "#fff", fontSize: 15, fontWeight: "700" },
   closeLinkText: { fontSize: 16, fontWeight: "600", paddingVertical: 12 },
+  flexOne: { flex: 1 },
+  topBarSpacer: { width: 44 },
+  processingEmoji: { fontSize: 48, marginBottom: 16 },
 });

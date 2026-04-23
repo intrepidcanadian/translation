@@ -337,7 +337,7 @@ function ListingGenerator({
         </Text>
         {!hasPermission && (
           <TouchableOpacity onPress={requestPermission} style={[styles.permBtn, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Grant camera permission" accessibilityHint="Opens system permission dialog">
-            <Text style={{ color: colors.destructiveText, fontWeight: "700" }}>Grant Permission</Text>
+            <Text style={[styles.permBtnText, { color: colors.destructiveText }]}>Grant Permission</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -932,6 +932,7 @@ const styles = StyleSheet.create({
   },
   priceBubbleText: { fontSize: 14, fontWeight: "700" },
   insightsHint: { fontSize: 11, fontStyle: "italic" },
+  permBtnText: { fontWeight: "700" },
 });
 
 export default React.memo(ListingGenerator);

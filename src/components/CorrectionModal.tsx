@@ -38,11 +38,11 @@ function CorrectionModal({ visible, data, onClose, onSubmit, colors }: Correctio
       <View style={[modalStyles.overlay, { backgroundColor: colors.overlayBg }]} accessibilityViewIsModal={true}>
         <View style={[modalStyles.content, { backgroundColor: colors.modalBg }]}>
           <Text style={[modalStyles.title, { color: colors.titleText }]}>Suggest Correction</Text>
-          <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
-            <Text style={[{ color: colors.dimText, fontSize: 13, marginBottom: 12 }]}>
+          <View style={styles.body}>
+            <Text style={[styles.contextText, { color: colors.dimText }]}>
               Original: "{data?.original}"
             </Text>
-            <Text style={[{ color: colors.dimText, fontSize: 13, marginBottom: 12 }]}>
+            <Text style={[styles.contextText, { color: colors.dimText }]}>
               Current: "{data?.translated}"
             </Text>
             <TextInput
@@ -66,7 +66,7 @@ function CorrectionModal({ visible, data, onClose, onSubmit, colors }: Correctio
               accessibilityHint="Saves the corrected translation and adds it to your glossary"
               accessibilityState={{ disabled: !correctionText.trim() }}
             >
-              <Text style={{ color: "#fff", fontWeight: "700", fontSize: 15 }}>Save & Add to Glossary</Text>
+              <Text style={styles.submitButtonText}>Save & Add to Glossary</Text>
             </TouchableOpacity>
           </View>
           <TouchableOpacity
@@ -76,7 +76,7 @@ function CorrectionModal({ visible, data, onClose, onSubmit, colors }: Correctio
             accessibilityLabel="Cancel correction"
             accessibilityHint="Discards the correction and returns to the translation screen"
           >
-            <Text style={[{ color: colors.primary, fontSize: 17, fontWeight: "600" as const }]}>Cancel</Text>
+            <Text style={[styles.cancelText, { color: colors.primary }]}>Cancel</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -100,5 +100,22 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: "center" as const,
     justifyContent: "center" as const,
+  },
+  body: {
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  contextText: {
+    fontSize: 13,
+    marginBottom: 12,
+  },
+  submitButtonText: {
+    color: "#fff",
+    fontWeight: "700" as const,
+    fontSize: 15,
+  },
+  cancelText: {
+    fontSize: 17,
+    fontWeight: "600" as const,
   },
 });

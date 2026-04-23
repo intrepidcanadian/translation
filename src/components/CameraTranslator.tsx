@@ -50,26 +50,28 @@ const CapturedBlockOverlay = React.memo(function CapturedBlockOverlay({
   block: CapturedBlock;
   onPress: (block: CapturedBlock) => void;
 }) {
+  const handlePress = useCallback(() => onPress(block), [onPress, block]);
   const fontSize = Math.max(10, block.screenFrame.height * 0.65);
+  const positionStyle = useMemo(() => ({
+    top: block.screenFrame.top,
+    left: block.screenFrame.left,
+    width: block.screenFrame.width,
+    minHeight: block.screenFrame.height,
+  }), [block.screenFrame.top, block.screenFrame.left, block.screenFrame.width, block.screenFrame.height]);
+  const textStyle = useMemo(() => ({
+    fontSize,
+    lineHeight: fontSize * 1.15,
+  }), [fontSize]);
   return (
     <TouchableOpacity
-      style={{
-        position: "absolute",
-        top: block.screenFrame.top,
-        left: block.screenFrame.left,
-        width: block.screenFrame.width,
-        minHeight: block.screenFrame.height,
-        backgroundColor: "rgba(255,255,255,0.92)",
-        justifyContent: "center",
-        paddingHorizontal: 2,
-      }}
-      onPress={() => onPress(block)}
+      style={[capturedStyles.overlay, positionStyle]}
+      onPress={handlePress}
       activeOpacity={0.7}
       accessibilityRole="button"
       accessibilityLabel={`${block.translatedText}. Tap for options.`}
     >
       <Text
-        style={{ fontSize, color: "#1a1a2e", fontWeight: "600", lineHeight: fontSize * 1.15 }}
+        style={[capturedStyles.text, textStyle]}
         numberOfLines={2}
         adjustsFontSizeToFit
         minimumFontScale={0.5}
@@ -693,6 +695,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginTop: 12,
+  },
+});
+
+const capturedStyles = StyleSheet.create({
+  overlay: {
+    position: "absolute",
+    backgroundColor: "rgba(255,255,255,0.92)",
+    justifyContent: "center",
+    paddingHorizontal: 2,
+  },
+  text: {
+    color: "#1a1a2e",
+    fontWeight: "600",
   },
 });
 

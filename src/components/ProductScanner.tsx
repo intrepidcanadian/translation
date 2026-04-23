@@ -230,7 +230,7 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
       <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
         <Text style={[styles.errorText, { color: colors.errorText }]}>No camera device found</Text>
         <TouchableOpacity onPress={onClose} style={[styles.closeBtn, { backgroundColor: colors.cardBg }]}>
-          <Text style={{ color: colors.primaryText }}>Close</Text>
+          <Text style={[styles.closeBtnText, { color: colors.primaryText }]}>Close</Text>
         </TouchableOpacity>
       </View>
     );
@@ -241,7 +241,7 @@ function ProductScanner({ visible, onClose, colors }: ProductScannerProps) {
       <View style={[styles.container, { backgroundColor: colors.safeBg }]}>
         <Text style={[styles.permText, { color: colors.primaryText }]}>Camera permission required</Text>
         <TouchableOpacity onPress={requestPermission} style={[styles.permBtn, { backgroundColor: colors.primary }]} accessibilityRole="button" accessibilityLabel="Grant camera permission" accessibilityHint="Opens system permission dialog for camera access">
-          <Text style={{ color: colors.destructiveText, fontWeight: "700" }}>Grant Permission</Text>
+          <Text style={[styles.permBtnText, { color: colors.destructiveText }]}>Grant Permission</Text>
         </TouchableOpacity>
       </View>
     );
@@ -638,6 +638,8 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   backBtnText: { fontSize: 18, fontWeight: "700" },
+  closeBtnText: { fontSize: 16 },
+  permBtnText: { fontWeight: "700" },
   closeBtn: { paddingVertical: 12, paddingHorizontal: 24, borderRadius: 12, marginTop: 16 },
   fallbackBtn: {
     marginTop: 32,
