@@ -410,7 +410,7 @@ function DualStreamView({
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       restartTimerRef.current = setTimeout(() => {
         restartTimerRef.current = null;
-        if (isMicActiveRef.current && isMountedRef.current && !isStartingRef.current) {
+        if (isMicActiveRef.current && isMountedRef.current && !isStartingRef.current && !isListeningRef.current) {
           startSpeechRecognition();
         }
       }, 1000);

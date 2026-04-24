@@ -87,6 +87,7 @@ export function usePhotoCapture({
 
     if (!result.blocks.length) {
       setCaptureError("No text detected in photo. Try again.");
+      setCapturedBlocks([]);
       setIsProcessingCapture(false);
       return;
     }
@@ -109,6 +110,7 @@ export function usePhotoCapture({
 
     if (lines.length === 0) {
       setCaptureError("No text lines detected.");
+      setCapturedBlocks([]);
       setIsProcessingCapture(false);
       return;
     }
@@ -179,6 +181,13 @@ export function usePhotoCapture({
       const uri = asset.uri;
       const imageWidth = asset.width;
       const imageHeight = asset.height;
+
+      if (!imageWidth || !imageHeight) {
+        setCaptureError("Image dimensions unavailable. Try another image.");
+        isProcessingRef.current = false;
+        setIsProcessingCapture(false);
+        return;
+      }
 
       setCapturedUri(uri);
       setIsCaptured(true);

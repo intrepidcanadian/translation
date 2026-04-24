@@ -145,10 +145,12 @@ export function useLiveOCR({
   // doesn't collapse the estimate and misplace subsequent frames.
   const imageDimsRef = useRef<{ width: number; height: number }>({ width: SEED_IMAGE_W, height: SEED_IMAGE_H });
 
-  // Discard queued frames when languages change — the queued data would be
-  // translated by the stale closure of the previous translateLines identity.
+  // Discard queued frames and abort in-flight translations when languages
+  // change — queued data would be translated with the stale language pair
+  // from the previous translateLines closure.
   useEffect(() => {
     translateQueueRef.current = null;
+    abortRef.current?.abort();
   }, [sourceLangCode, targetLangCode]);
 
   const translateLines = useCallback(async (
