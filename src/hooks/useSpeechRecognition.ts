@@ -80,6 +80,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
   const isManualStopRef = useRef(false);
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [recordingStartTime, setRecordingStartTime] = useState<number | null>(null);
+  const isMountedRef = useRef(true);
 
   // Snapshot ref of the mutable options. Callbacks below read from this ref
   // instead of closing over the destructured values, so startListening and
@@ -133,13 +134,21 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
 
   // Cleanup on unmount
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
       if (translationTimeout.current) clearTimeout(translationTimeout.current);
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       abortControllerRef.current?.abort();
     };
   }, []);
+
+  // Clear stale translation ref when languages change so the same phrase
+  // spoken in a new language pair isn't suppressed by the dedup check.
+  useEffect(() => {
+    lastTranslatedRef.current = "";
+  }, [sourceLangCode, targetLangCode]);
 
   // #167: reset the mic-muted session detector when the app returns from
   // background. The hook previously accumulated sessionNoSpeechCount /
@@ -184,33 +193,23 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
           const result = glossaryMatch
             ? { translatedText: glossaryMatch, confidence: 1.0 }
             : await translateText(text.trim(), fromCode, toCode, { signal: controller.signal, provider: translationProvider });
-          if (!controller.signal.aborted) {
+          if (!controller.signal.aborted && isMountedRef.current) {
             setTranslatedText(result.translatedText);
             lastTranslatedRef.current = text.trim();
             lastConfidenceRef.current = result.confidence;
             lastDetectedLangRef.current = result.detectedLanguage;
             updateWidgetData(text.trim(), result.translatedText, fromCode, toCode);
-            // #135: count the primary speech-translation pipeline too, not
-            // just DualStreamView's secondary path. Without this the session
-            // dashboard undercounts real speech usage and the fail-rate UI
-            // in Settings > Translation Diagnostics can't distinguish "no
-            // speech traffic" from "everything is succeeding".
             telemetryIncrement("speech.translateSuccess");
             setSessionSuccessCount((c) => c + 1);
           }
         } catch (err) {
-          if (controller.signal.aborted) return;
+          if (controller.signal.aborted || !isMountedRef.current) return;
           telemetryIncrement("speech.translateFail");
-          // #141: emit a tagged Speech error into the logger ring in addition
-          // to the session counter, so `logger.countBy`/`countByRolling` can
-          // surface a rolling fail rate in Settings diagnostics and the
-          // crash-report "Errors by tag" line includes speech failures. The
-          // user-facing error banner is still fired via onShowError below.
           logger.warn("Speech", "Translation failed", err);
           const msg = err instanceof Error ? err.message : "Translation failed";
           onShowError(msg);
         } finally {
-          if (!controller.signal.aborted) setIsTranslating(false);
+          if (!controller.signal.aborted && isMountedRef.current) setIsTranslating(false);
         }
       }, delay);
     },

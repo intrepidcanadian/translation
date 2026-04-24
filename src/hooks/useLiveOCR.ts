@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { Animated } from "react-native";
 import { logger } from "../services/logger";
 import type { TranslationProvider } from "../services/translation";
@@ -144,6 +144,12 @@ export function useLiveOCR({
   // detected lines — so a frame where text is near the top-left of view
   // doesn't collapse the estimate and misplace subsequent frames.
   const imageDimsRef = useRef<{ width: number; height: number }>({ width: SEED_IMAGE_W, height: SEED_IMAGE_H });
+
+  // Discard queued frames when languages change — the queued data would be
+  // translated by the stale closure of the previous translateLines identity.
+  useEffect(() => {
+    translateQueueRef.current = null;
+  }, [sourceLangCode, targetLangCode]);
 
   const translateLines = useCallback(async (
     lines: Array<{ text: string; frame: { top: number; left: number; width: number; height: number } }>

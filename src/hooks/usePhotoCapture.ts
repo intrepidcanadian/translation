@@ -61,6 +61,7 @@ export function usePhotoCapture({
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [capturedBlocks, setCapturedBlocks] = useState<CapturedBlock[]>([]);
   const [isProcessingCapture, setIsProcessingCapture] = useState(false);
+  const isProcessingRef = useRef(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
 
   // Mirror of capturedUri for the unmount cleanup effect — a ref stays current
@@ -129,8 +130,9 @@ export function usePhotoCapture({
   }, [sourceLangCode, targetLangCode, translationProvider, screenDims, isMountedRef]);
 
   const handleCapture = useCallback(async () => {
-    if (!captureRef.current || isProcessingCapture) return;
+    if (!captureRef.current || isProcessingRef.current) return;
 
+    isProcessingRef.current = true;
     setIsProcessingCapture(true);
     setCaptureError(null);
 
@@ -153,12 +155,13 @@ export function usePhotoCapture({
       }
       void deleteCapturedUri(capturedUriRef.current);
     } finally {
+      isProcessingRef.current = false;
       if (isMountedRef.current) setIsProcessingCapture(false);
     }
-  }, [captureRef, sourceLangCode, targetLangCode, translationProvider, screenDims, isProcessingCapture, blockOpacities, processImageForOCR, isMountedRef]);
+  }, [captureRef, blockOpacities, processImageForOCR, isMountedRef]);
 
   const handlePickImage = useCallback(async () => {
-    if (isProcessingCapture) return;
+    if (isProcessingRef.current) return;
 
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -169,6 +172,7 @@ export function usePhotoCapture({
       if (result.canceled || !result.assets?.length) return;
 
       const asset = result.assets[0];
+      isProcessingRef.current = true;
       setIsProcessingCapture(true);
       setCaptureError(null);
 
@@ -188,9 +192,10 @@ export function usePhotoCapture({
         setCapturedUri(null);
       }
     } finally {
+      isProcessingRef.current = false;
       if (isMountedRef.current) setIsProcessingCapture(false);
     }
-  }, [isProcessingCapture, blockOpacities, processImageForOCR, isMountedRef]);
+  }, [blockOpacities, processImageForOCR, isMountedRef]);
 
   const handleRetake = useCallback(() => {
     // Delete the previous photo before clearing state so we don't leak the
