@@ -249,6 +249,7 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
     // stop). Keeps continuous translation going as long as the user hasn't
     // explicitly tapped stop — matching the DualStreamView behavior.
     if (!isManualStopRef.current) {
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       restartTimerRef.current = setTimeout(() => {
         restartTimerRef.current = null;
         if (!isManualStopRef.current && !isListeningRef.current && !isStartingRef.current) {

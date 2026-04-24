@@ -82,6 +82,8 @@ export function usePhotoCapture({
     const script = getMLKitScript(sourceLangCode);
     const result = await TextRecognition.recognize(uri, script);
 
+    if (!isMountedRef.current) return;
+
     if (!result.blocks.length) {
       setCaptureError("No text detected in photo. Try again.");
       setIsProcessingCapture(false);
@@ -113,6 +115,8 @@ export function usePhotoCapture({
     const texts = lines.map((l) => l.text);
     const translations = await translateCapturedLines(texts, sourceLangCode, targetLangCode, translationProvider);
 
+    if (!isMountedRef.current) return;
+
     const blocks: CapturedBlock[] = lines.map((line, i) => ({
       id: `cap-${i}-${line.text.slice(0, 8)}`,
       originalText: line.text,
@@ -122,7 +126,7 @@ export function usePhotoCapture({
     }));
 
     setCapturedBlocks(blocks);
-  }, [sourceLangCode, targetLangCode, translationProvider, screenDims]);
+  }, [sourceLangCode, targetLangCode, translationProvider, screenDims, isMountedRef]);
 
   const handleCapture = useCallback(async () => {
     if (!captureRef.current || isProcessingCapture) return;
@@ -142,14 +146,16 @@ export function usePhotoCapture({
 
       await processImageForOCR(uri, photo.width, photo.height);
     } catch (err: unknown) {
-      setCaptureError(err instanceof Error ? err.message : "Capture failed");
-      setIsCaptured(false);
+      if (isMountedRef.current) {
+        setCaptureError(err instanceof Error ? err.message : "Capture failed");
+        setIsCaptured(false);
+        setCapturedUri(null);
+      }
       void deleteCapturedUri(capturedUriRef.current);
-      setCapturedUri(null);
     } finally {
-      setIsProcessingCapture(false);
+      if (isMountedRef.current) setIsProcessingCapture(false);
     }
-  }, [captureRef, sourceLangCode, targetLangCode, translationProvider, screenDims, isProcessingCapture, blockOpacities, processImageForOCR]);
+  }, [captureRef, sourceLangCode, targetLangCode, translationProvider, screenDims, isProcessingCapture, blockOpacities, processImageForOCR, isMountedRef]);
 
   const handlePickImage = useCallback(async () => {
     if (isProcessingCapture) return;
@@ -176,13 +182,15 @@ export function usePhotoCapture({
 
       await processImageForOCR(uri, imageWidth, imageHeight);
     } catch (err: unknown) {
-      setCaptureError(err instanceof Error ? err.message : "Failed to process image");
-      setIsCaptured(false);
-      setCapturedUri(null);
+      if (isMountedRef.current) {
+        setCaptureError(err instanceof Error ? err.message : "Failed to process image");
+        setIsCaptured(false);
+        setCapturedUri(null);
+      }
     } finally {
-      setIsProcessingCapture(false);
+      if (isMountedRef.current) setIsProcessingCapture(false);
     }
-  }, [isProcessingCapture, blockOpacities, processImageForOCR]);
+  }, [isProcessingCapture, blockOpacities, processImageForOCR, isMountedRef]);
 
   const handleRetake = useCallback(() => {
     // Delete the previous photo before clearing state so we don't leak the

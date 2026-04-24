@@ -114,6 +114,8 @@ function DualStreamView({
   // the closure still saw the old `true` value.
   const isMicActiveRef = useRef(false);
   useEffect(() => { isMicActiveRef.current = isMicActive; }, [isMicActive]);
+  const isListeningRef = useRef(false);
+  useEffect(() => { isListeningRef.current = isListening; }, [isListening]);
 
   // Subtitle history — keep last 3 lines for context
   const [subtitleHistory, setSubtitleHistory] = useState<
@@ -271,11 +273,12 @@ function DualStreamView({
 
   // --- Speech Translation (debounced, independent from OCR pipeline) ---
   const debouncedSpeechTranslate = useCallback(
-    (text: string) => {
+    (text: string, isFinal?: boolean) => {
       if (speechTranslationTimer.current)
         clearTimeout(speechTranslationTimer.current);
       if (!text.trim() || text.trim() === lastSpeechTranslatedRef.current) return;
 
+      const delay = isFinal ? 0 : 150;
       speechTranslationTimer.current = setTimeout(async () => {
         speechAbortRef.current?.abort();
         const controller = new AbortController();
@@ -315,7 +318,7 @@ function DualStreamView({
             setIsSpeechTranslating(false);
           }
         }
-      }, 300);
+      }, delay);
     },
     [sourceLangCode, targetLangCode, translationProvider]
   );
@@ -362,13 +365,11 @@ function DualStreamView({
     speechFinalRef.current = "";
     lastSpeechTranslatedRef.current = "";
 
-    // If mic is still "active" (user toggled it on), auto-restart.
-    // Uses isMicActiveRef so the setTimeout closure reads the current
-    // value — not a stale capture from handler registration time.
     if (isMicActiveRef.current && isMountedRef.current) {
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       restartTimerRef.current = setTimeout(() => {
         restartTimerRef.current = null;
-        if (isMicActiveRef.current && isMountedRef.current) {
+        if (isMicActiveRef.current && isMountedRef.current && !isStartingRef.current) {
           startSpeechRecognition();
         }
       }, 300);
@@ -392,27 +393,24 @@ function DualStreamView({
         : transcript;
       speechFinalRef.current = updated;
       setSpeechOriginal(updated);
-      debouncedSpeechTranslate(updated);
+      debouncedSpeechTranslate(updated, true);
     } else {
       const combined = speechFinalRef.current
         ? `${speechFinalRef.current} ${transcript}`
         : transcript;
       setSpeechOriginal(combined);
-      debouncedSpeechTranslate(combined);
+      debouncedSpeechTranslate(combined, false);
     }
   });
 
   useSpeechRecognitionEvent("error", () => {
     setIsListening(false);
-    // Auto-restart on transient errors if mic is active.
-    // Uses isMicActiveRef so the 1000ms setTimeout closure reads the current
-    // value — not a stale capture from handler registration time. Matches the
-    // "end" handler fix from run 31.
     if (isMicActiveRef.current && isMountedRef.current) {
       setSpeechError(null);
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       restartTimerRef.current = setTimeout(() => {
         restartTimerRef.current = null;
-        if (isMicActiveRef.current && isMountedRef.current) {
+        if (isMicActiveRef.current && isMountedRef.current && !isStartingRef.current) {
           startSpeechRecognition();
         }
       }, 1000);
@@ -421,7 +419,7 @@ function DualStreamView({
 
   // --- Speech Controls ---
   const startSpeechRecognition = useCallback(async () => {
-    if (isStartingRef.current || isListening) return;
+    if (isStartingRef.current || isListeningRef.current) return;
     isStartingRef.current = true;
 
     try {
@@ -443,7 +441,6 @@ function DualStreamView({
       const speechLang =
         sourceLangCode === "autodetect" ? "en-US" : sourceSpeechCode;
 
-      // See src/utils/speechSession.ts — guards against -11803 / -16409.
       startSpeechSession({
         lang: speechLang,
         interimResults: true,
@@ -457,13 +454,22 @@ function DualStreamView({
         isStartingRef.current = false;
       }, 500);
     }
-  }, [sourceLangCode, sourceSpeechCode, offlineSpeech, isListening]);
+  }, [sourceLangCode, sourceSpeechCode, offlineSpeech]);
 
   const toggleMic = useCallback(() => {
     if (isMicActive) {
       // Turn off
       setIsMicActive(false);
       impactLight();
+      if (speechTranslationTimer.current) {
+        clearTimeout(speechTranslationTimer.current);
+        speechTranslationTimer.current = null;
+      }
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+      }
+      speechAbortRef.current?.abort();
       try {
         ExpoSpeechRecognitionModule.stop();
       } catch (err) {
