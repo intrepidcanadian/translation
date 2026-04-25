@@ -103,8 +103,7 @@
         }
       ],
       "./plugins/ios-widget-plugin",
-      "./plugins/fix-resource-signing",
-      "./modules/apple-foundation-models"
+      "./plugins/fix-resource-signing"
     ],
     "extra": {
       "eas": {
