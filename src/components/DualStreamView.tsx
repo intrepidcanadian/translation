@@ -205,6 +205,18 @@ function DualStreamView({
     lastOCRTextRef.current = "";
   }, [sourceLangCode, targetLangCode, setDetectedBlocks, blockOpacities]);
 
+  // Clear pending speech translation when languages change so stale closures
+  // from the old language pair never fire.
+  useEffect(() => {
+    if (speechTranslationTimer.current) {
+      clearTimeout(speechTranslationTimer.current);
+      speechTranslationTimer.current = null;
+    }
+    speechAbortRef.current?.abort();
+    setSpeechTranslated("");
+    lastSpeechTranslatedRef.current = "";
+  }, [sourceLangCode, targetLangCode]);
+
   // Clear OCR cache and overlay state when the component becomes hidden (mode
   // switch). Prevents stale translations from leaking between scanner modes
   // and stops Animated.Value entries from accumulating across switches. (#219)

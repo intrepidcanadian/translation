@@ -25,10 +25,10 @@ const ResultRow = React.memo(function ResultRow({
 }: ResultRowProps) {
   const handleCopy = useCallback(() => onCopy(result.text), [onCopy, result.text]);
   return (
-    <View style={[styles.compareResult, { backgroundColor: colors.translatedBubbleBg, borderColor: colors.border }]}>
+    <View style={[styles.compareResult, { backgroundColor: colors.translatedBubbleBg, borderColor: colors.border }]} accessibilityLiveRegion="polite">
       <Text style={[modalStyles.label, { color: colors.primary }]}>{result.provider.toUpperCase()}</Text>
       {result.loading ? (
-        <View accessibilityLiveRegion="polite" accessibilityLabel={`Loading ${result.provider} translation`}>
+        <View accessibilityLabel={`Loading ${result.provider} translation`}>
           <Text style={[styles.loadingText, { color: colors.dimText }]}>Loading...</Text>
         </View>
       ) : (

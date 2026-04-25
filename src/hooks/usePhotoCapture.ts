@@ -116,7 +116,16 @@ export function usePhotoCapture({
     }
 
     const texts = lines.map((l) => l.text);
-    const translations = await translateCapturedLines(texts, sourceLangCode, targetLangCode, translationProvider);
+
+    let translations: string[];
+    try {
+      translations = await translateCapturedLines(texts, sourceLangCode, targetLangCode, translationProvider);
+    } catch (err) {
+      if (!isMountedRef.current) return;
+      logger.warn("Camera", "Photo translation failed", err);
+      setCaptureError(err instanceof Error ? err.message : "Translation failed");
+      translations = texts;
+    }
 
     if (!isMountedRef.current) return;
 
