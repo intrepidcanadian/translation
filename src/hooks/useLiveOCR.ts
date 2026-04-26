@@ -206,6 +206,7 @@ export function useLiveOCR({
         if (lastOCRTextRef.current !== "") {
           lastOCRTextRef.current = "";
           setDetectedBlocks([]);
+          setError(null);
         }
         return;
       }

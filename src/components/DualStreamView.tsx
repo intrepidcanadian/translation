@@ -213,7 +213,10 @@ function DualStreamView({
       speechTranslationTimer.current = null;
     }
     speechAbortRef.current?.abort();
+    setSpeechOriginal("");
     setSpeechTranslated("");
+    setSpeechError(null);
+    speechFinalRef.current = "";
     lastSpeechTranslatedRef.current = "";
   }, [sourceLangCode, targetLangCode]);
 
@@ -461,10 +464,12 @@ function DualStreamView({
         requiresOnDeviceRecognition: offlineSpeech,
         addsPunctuation: true,
       });
-    } finally {
       setTimeout(() => {
         isStartingRef.current = false;
       }, 500);
+    } catch (err) {
+      isStartingRef.current = false;
+      logger.warn("Speech", "DualStreamView startSpeechRecognition failed", err);
     }
   }, [sourceLangCode, sourceSpeechCode, offlineSpeech]);
 

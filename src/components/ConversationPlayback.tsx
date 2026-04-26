@@ -272,14 +272,18 @@ function ConversationPlayback({
       setCurrentItemIdx(idx);
       currentIdxRef.current = idx;
 
-      Speech.speak(item.translated, {
-        language: langCode,
-        rate: settings.speechRate,
-        onDone: () => {
-          if (!playingRef.current) return;
-          speakItem(session, currentIdxRef.current + 1);
-        },
-      });
+      try {
+        Speech.speak(item.translated, {
+          language: langCode,
+          rate: settings.speechRate,
+          onDone: () => {
+            if (!playingRef.current) return;
+            speakItem(session, currentIdxRef.current + 1);
+          },
+        });
+      } catch (err) {
+        logger.warn("Speech", "ConversationPlayback TTS failed", err);
+      }
     },
     [targetLang.speechCode, sourceLang.speechCode, settings.speechRate]
   );

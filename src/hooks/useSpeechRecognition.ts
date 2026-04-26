@@ -351,8 +351,10 @@ export function useSpeechRecognition(options: UseSpeechRecognitionOptions) {
         requiresOnDeviceRecognition: opts.offlineSpeech,
         ...(opts.sourceLangCode === "autodetect" ? { addsPunctuation: true } : {}),
       });
-    } finally {
       setTimeout(() => { isStartingRef.current = false; }, 500);
+    } catch (err) {
+      isStartingRef.current = false;
+      logger.warn("Speech", "startListeningInternal failed", err);
     }
   }, []);
 

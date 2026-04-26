@@ -248,6 +248,11 @@ function SplitConversation({ visible, onClose }: SplitConversationProps) {
 
   useSpeechRecognitionEvent("error", () => {
     setIsListening(false);
+    if (autoSwitchTimerRef.current) {
+      clearTimeout(autoSwitchTimerRef.current);
+      autoSwitchTimerRef.current = null;
+    }
+    setNextSpeaker(null);
   });
 
   const startListeningAs = useCallback(async (speaker: "A" | "B") => {
